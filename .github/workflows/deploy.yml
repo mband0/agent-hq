@@ -1,0 +1,40 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - name: Pull latest code to canonical path
+        working-directory: ${{ github.workspace }}
+        run: |
+          git stash --include-untracked || true
+          git checkout main
+          git pull origin main
+
+      - name: Build API
+        working-directory: ${{ github.workspace }}/api
+        run: npm ci && npm run build
+
+      - name: Restart API
+        run: |
+          pm2 delete agent-hq-api || true
+          pm2 start "${{ github.workspace }}/ecosystem.production.config.js" --only agent-hq-api
+
+      - name: Build UI
+        working-directory: ${{ github.workspace }}/ui
+        run: |
+          npm ci && npm run build
+          cp -r .next/static .next/standalone/.next/static
+          cp -r public .next/standalone/public 2>/dev/null || true
+
+      - name: Restart UI
+        run: |
+          pm2 delete agent-hq-ui || true
+          pm2 start "${{ github.workspace }}/ecosystem.production.config.js" --only agent-hq-ui
+
+      - name: Health check
+        run: curl -f http://localhost:3501/health

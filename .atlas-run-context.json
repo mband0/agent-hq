@@ -1,0 +1,8 @@
+{
+  "instance_id": 8580,
+  "task_id": 578,
+  "session_key": "hook:atlas:jobrun:8580",
+  "agent_slug": "agency-backend2",
+  "api_base": "http://localhost:3501",
+  "written_at": "2026-04-04T15:14:53.531Z"
+}

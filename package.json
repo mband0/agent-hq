@@ -1,0 +1,34 @@
+{
+  "name": "@nordinit/agent-hq",
+  "version": "0.1.26",
+  "description": "CLI launcher for Agent HQ — task management for AI agent teams",
+  "license": "SEE LICENSE IN LICENSE",
+  "bin": {
+    "agent-hq": "cli/bin/cli.js"
+  },
+  "files": [
+    "cli/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "start": "node cli/bin/cli.js start",
+    "stop": "node cli/bin/cli.js stop",
+    "status": "node cli/bin/cli.js status",
+    "open": "node cli/bin/cli.js open"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "agent-hq",
+    "task-management",
+    "ai-agents",
+    "docker",
+    "cli"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mband0/agent-hq"
+  }
+}

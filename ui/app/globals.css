@@ -1,0 +1,59 @@
+@import 'highlight.js/styles/github-dark-dimmed.min.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #1a2236;
+  --foreground: #e2e8f0;
+}
+
+body {
+  background-color: #1a2236;
+  color: #e2e8f0;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #1e2d45;
+}
+::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* Hide scrollbar while keeping scroll functionality */
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* Syntax highlighting overrides — blend with app dark theme */
+.syntax-hl-wrapper .hljs {
+  background: transparent;
+  padding: 0;
+}
+.syntax-hl-wrapper pre {
+  background: transparent;
+}
+
+
+/* Chat widget slide-up animation */
+@keyframes chat-widget-slide-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.chat-widget-enter {
+  animation: chat-widget-slide-up 0.2s ease-out;
+}
