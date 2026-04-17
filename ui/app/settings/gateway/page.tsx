@@ -4,66 +4,42 @@ import { useEffect, useMemo, useState } from 'react';
 import { AlertCircle, CheckCircle2, Loader2, RefreshCw, Save, ServerCog, TerminalSquare } from 'lucide-react';
 import { api, type GatewayConfig, type GatewayRuntimeHint, type GatewayStatus } from '@/lib/api';
 
-const RUNTIME_OPTIONS: Array<{ value: GatewayRuntimeHint; label: string }> = [
-  { value: 'powershell', label: 'Windows PowerShell' },
-  { value: 'wsl', label: 'WSL' },
-  { value: 'macos', label: 'macOS' },
-  { value: 'linux', label: 'Linux' },
-  { value: 'external', label: 'Already running elsewhere' },
-];
-
-function commandBlock(runtimeHint: GatewayRuntimeHint): { title: string; lines: string[]; note: string } {
-  switch (runtimeHint) {
-    case 'powershell':
-      return {
-        title: 'Start OpenClaw from PowerShell',
-        lines: [
-          'npm install -g openclaw',
-          'openclaw gateway run --port 18789',
-        ],
-        note: 'Run OpenClaw separately, then click Re-check below. Agent HQ will connect to the gateway but will not try to manage the process for you.',
-      };
-    case 'wsl':
-      return {
-        title: 'Start OpenClaw from WSL',
-        lines: [
-          'npm install -g openclaw',
-          'openclaw gateway run --port 18789',
-        ],
-        note: 'If your WSL networking does not mirror localhost automatically, update the gateway URL here to the Windows-reachable host and port before re-checking.',
-      };
-    case 'macos':
-      return {
-        title: 'Start OpenClaw from macOS',
-        lines: [
-          'npm install -g openclaw',
-          'openclaw gateway run --port 18789',
-        ],
-        note: 'Leave Agent HQ running, start OpenClaw in a separate terminal, then re-check the connection.',
-      };
-    case 'linux':
-      return {
-        title: 'Start OpenClaw from Linux',
-        lines: [
-          'npm install -g openclaw',
-          'openclaw gateway run --port 18789',
-        ],
-        note: 'Leave Agent HQ running, start OpenClaw in a separate terminal, then re-check the connection.',
-      };
-    case 'external':
-      return {
-        title: 'Connect to an existing OpenClaw gateway',
-        lines: [
-          'Make sure the gateway is already running.',
-          'Set the WebSocket URL below.',
-          'Click Re-check to verify connectivity.',
-        ],
-        note: 'Use this when OpenClaw is managed outside Agent HQ, including remote hosts, containers, or another shell/session.',
-      };
-  }
+function commandBlock(): { title: string; lines: string[]; note: string } {
+  return {
+    title: 'First time installing OpenClaw?',
+    lines: [
+      'npm install -g openclaw',
+      'openclaw onboard --install-daemon',
+    ],
+    note: 'If OpenClaw is already installed and running, you can skip this. Otherwise run these commands in another terminal, then come back here and re-check the gateway connection.',
+  };
 }
 
-function statusTone(status: GatewayStatus | null): { label: string; className: string } {
+function remotePairingBlock(): { title: string; lines: string[]; note: string } {
+  return {
+    title: 'Remote gateway approval',
+    lines: [
+      'openclaw devices list',
+      'openclaw devices approve <requestId>',
+    ],
+    note: 'Remote gateways require a one-time device approval. Click Re-check Gateway here to create the pending request, approve it on the remote machine, then click Re-check Gateway again.',
+  };
+}
+
+function getDefaultLocalRuntimeHint(): GatewayRuntimeHint {
+  if (typeof navigator !== 'undefined') {
+    const userAgent = navigator.userAgent.toLowerCase();
+    if (userAgent.includes('mac')) return 'macos';
+    if (userAgent.includes('linux')) return 'linux';
+  }
+  return 'powershell';
+}
+
+function isRemoteGatewayRuntime(runtimeHint: GatewayRuntimeHint): boolean {
+  return runtimeHint === 'external';
+}
+
+function statusTone(status: GatewayStatus | null, isRemoteGateway: boolean): { label: string; className: string } {
   if (!status) {
     return {
       label: 'Unknown',
@@ -78,7 +54,7 @@ function statusTone(status: GatewayStatus | null): { label: string; className: s
       };
     case 'pairing_required':
       return {
-        label: 'Pairing Required',
+        label: isRemoteGateway ? 'Pairing Required' : 'Connection Required',
         className: 'border-amber-700/50 bg-amber-500/10 text-amber-300',
       };
     case 'auth_error':
@@ -99,11 +75,31 @@ function statusTone(status: GatewayStatus | null): { label: string; className: s
   }
 }
 
+function isGatewayTokenMismatch(error: string | null | undefined): boolean {
+  const normalized = (error ?? '').toLowerCase();
+  return normalized.includes('gateway token mismatch') || normalized.includes('provide gateway auth token');
+}
+
+function gatewayStatusDetails(status: GatewayStatus | null, isRemoteGateway: boolean): string | null {
+  if (!status) return null;
+  if (isGatewayTokenMismatch(status.error)) {
+    return 'Agent HQ could not connect because the saved gateway auth token did not match.';
+  }
+  if (status.state === 'pairing_required') {
+    return isRemoteGateway
+      ? 'The remote gateway is waiting for device approval. Run the approval commands on the remote machine, then re-check here.'
+      : 'OpenClaw rejected the connection request. Restart OpenClaw and verify the gateway auth token, then try again.';
+  }
+  return status.error;
+}
+
 export default function SettingsGatewayPage() {
   const [config, setConfig] = useState<GatewayConfig | null>(null);
   const [status, setStatus] = useState<GatewayStatus | null>(null);
   const [wsUrl, setWsUrl] = useState('ws://127.0.0.1:18789');
-  const [runtimeHint, setRuntimeHint] = useState<GatewayRuntimeHint>('powershell');
+  const [runtimeHint, setRuntimeHint] = useState<GatewayRuntimeHint>(getDefaultLocalRuntimeHint);
+  const [lastLocalRuntimeHint, setLastLocalRuntimeHint] = useState<GatewayRuntimeHint>(getDefaultLocalRuntimeHint);
+  const [authToken, setAuthToken] = useState('');
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -112,8 +108,11 @@ export default function SettingsGatewayPage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [details, setDetails] = useState<string | null>(null);
 
-  const guide = useMemo(() => commandBlock(runtimeHint), [runtimeHint]);
-  const tone = statusTone(status);
+  const guide = useMemo(() => commandBlock(), []);
+  const remoteGuide = useMemo(() => remotePairingBlock(), []);
+  const isRemoteGateway = isRemoteGatewayRuntime(runtimeHint);
+  const tone = statusTone(status, isRemoteGateway);
+  const gatewayNeedsToken = isGatewayTokenMismatch(status?.error);
 
   const load = async (showSpinner = true) => {
     if (showSpinner) setLoading(true);
@@ -127,7 +126,11 @@ export default function SettingsGatewayPage() {
       setStatus(nextStatus);
       setWsUrl(cfg.ws_url);
       setRuntimeHint(cfg.runtime_hint);
-      setDetails(nextStatus.error);
+      if (!isRemoteGatewayRuntime(cfg.runtime_hint)) {
+        setLastLocalRuntimeHint(cfg.runtime_hint);
+      }
+      setAuthToken(cfg.auth_token ?? '');
+      setDetails(gatewayStatusDetails(nextStatus, isRemoteGatewayRuntime(cfg.runtime_hint)));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -139,19 +142,28 @@ export default function SettingsGatewayPage() {
     void load();
   }, []);
 
+  const persistConfig = async () => {
+    const next = await api.updateGatewayConfig({ ws_url: wsUrl, runtime_hint: runtimeHint, auth_token: authToken });
+    setConfig(next);
+    setWsUrl(next.ws_url);
+    setRuntimeHint(next.runtime_hint);
+    if (!isRemoteGatewayRuntime(next.runtime_hint)) {
+      setLastLocalRuntimeHint(next.runtime_hint);
+    }
+    setAuthToken(next.auth_token ?? '');
+    return next;
+  };
+
   const handleSave = async () => {
     setSaving(true);
     setError(null);
     setSuccess(null);
     try {
-      const next = await api.updateGatewayConfig({ ws_url: wsUrl, runtime_hint: runtimeHint });
-      setConfig(next);
-      setWsUrl(next.ws_url);
-      setRuntimeHint(next.runtime_hint);
+      const next = await persistConfig();
       setSuccess('Gateway settings saved.');
       const nextStatus = await api.getGatewayStatus();
       setStatus(nextStatus);
-      setDetails(nextStatus.error);
+      setDetails(gatewayStatusDetails(nextStatus, isRemoteGateway));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -164,10 +176,11 @@ export default function SettingsGatewayPage() {
     setError(null);
     setSuccess(null);
     try {
+      await persistConfig();
       const nextStatus = await api.getGatewayStatus();
       setStatus(nextStatus);
-      setDetails(nextStatus.error);
-      setSuccess(nextStatus.state === 'ready' ? 'Gateway is reachable.' : 'Gateway check completed.');
+      setDetails(gatewayStatusDetails(nextStatus, isRemoteGateway));
+      setSuccess(nextStatus.state === 'ready' ? 'Gateway is reachable.' : null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -182,14 +195,23 @@ export default function SettingsGatewayPage() {
     try {
       const response = await api.restartGateway();
       setSuccess(response.message ?? 'Gateway restart attempted.');
-      setDetails(response.output ?? response.pairing_message ?? null);
+      setDetails(response.output ?? response.message ?? null);
       const nextStatus = await api.getGatewayStatus();
       setStatus(nextStatus);
+      setDetails(gatewayStatusDetails(nextStatus, isRemoteGateway) ?? response.output ?? response.message ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setRestarting(false);
     }
+  };
+
+  const setGatewayLocation = (mode: 'local' | 'remote') => {
+    if (mode === 'remote') {
+      setRuntimeHint('external');
+      return;
+    }
+    setRuntimeHint(lastLocalRuntimeHint);
   };
 
   return (
@@ -201,7 +223,9 @@ export default function SettingsGatewayPage() {
         <div>
           <h2 className="text-lg font-semibold text-white">OpenClaw Gateway Setup</h2>
           <p className="text-sm text-zinc-400">
-            Agent HQ connects to an existing OpenClaw gateway. Start OpenClaw yourself, then verify it here.
+            {isRemoteGateway
+              ? 'Agent HQ is pointed at a remote OpenClaw gateway. Re-check here to create the pending device request, approve it on the remote machine, then re-check again.'
+              : 'Agent HQ automatically checks the saved local gateway URL and token. Start OpenClaw, then verify the gateway here.'}
           </p>
         </div>
       </div>
@@ -227,13 +251,41 @@ export default function SettingsGatewayPage() {
               <div>
                 <h3 className="text-sm font-semibold text-white">Connection</h3>
                 <p className="text-xs leading-5 text-zinc-400">
-                  Set the gateway URL Agent HQ should use, then run OpenClaw in a separate terminal.
+                  Agent HQ uses this WebSocket URL for Atlas and agent chat once the gateway is reachable.
                 </p>
               </div>
               <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${tone.className}`}>
                 {tone.label}
               </span>
             </div>
+
+            <label className="block space-y-2">
+              <span className="text-xs font-medium uppercase tracking-wide text-zinc-400">Gateway location</span>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setGatewayLocation('local')}
+                  className={`rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                    !isRemoteGateway
+                      ? 'border-amber-400 bg-amber-500/10 text-amber-300'
+                      : 'border-zinc-700 bg-zinc-900 text-zinc-300 hover:border-zinc-500'
+                  }`}
+                >
+                  Local machine
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGatewayLocation('remote')}
+                  className={`rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                    isRemoteGateway
+                      ? 'border-amber-400 bg-amber-500/10 text-amber-300'
+                      : 'border-zinc-700 bg-zinc-900 text-zinc-300 hover:border-zinc-500'
+                  }`}
+                >
+                  Remote machine
+                </button>
+              </div>
+            </label>
 
             <label className="block space-y-2">
               <span className="text-xs font-medium uppercase tracking-wide text-zinc-400">Gateway URL</span>
@@ -245,25 +297,54 @@ export default function SettingsGatewayPage() {
               />
             </label>
 
-            <div className="space-y-2">
-              <span className="text-xs font-medium uppercase tracking-wide text-zinc-400">How are you running OpenClaw?</span>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {RUNTIME_OPTIONS.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => setRuntimeHint(option.value)}
-                    className={`rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
-                      runtimeHint === option.value
-                        ? 'border-amber-400 bg-amber-500/10 text-amber-300'
-                        : 'border-zinc-700 bg-zinc-900 text-zinc-300 hover:border-zinc-500'
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
+            <label className="block space-y-2">
+              <span className="text-xs font-medium uppercase tracking-wide text-zinc-400">Gateway Auth Token</span>
+              <input
+                type="password"
+                value={authToken}
+                onChange={(event) => setAuthToken(event.target.value)}
+                className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-white outline-none transition-colors focus:border-amber-400"
+                placeholder="Paste the token from the dashboard URL if needed"
+              />
+              <p className="text-xs leading-5 text-zinc-400">
+                {isRemoteGateway
+                  ? 'Paste the remote gateway token here. If the check says the token does not match, run `openclaw dashboard --no-open` on the remote machine and copy the token from the URL.'
+                  : 'Leave this alone unless the automatic check says the gateway token does not match.'}
+              </p>
+            </label>
+
+            {gatewayNeedsToken && (
+              <div className="rounded-xl border border-amber-400/40 bg-amber-500/10 p-4 space-y-3">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+                  <div>
+                    <p className="text-sm font-semibold text-amber-200">Gateway token needed</p>
+                    <p className="text-xs leading-5 text-amber-100/90">
+                      The saved token did not match this OpenClaw gateway.
+                    </p>
+                  </div>
+                </div>
+                <pre className="overflow-x-auto rounded-lg border border-amber-400/30 bg-zinc-950 p-3 text-xs leading-6 text-amber-100">
+                  openclaw dashboard --no-open
+                </pre>
+                <p className="text-xs leading-5 text-amber-100/90">
+                  Copy the token from the dashboard URL, paste it into the field above, then click Re-check Gateway.
+                </p>
               </div>
-            </div>
+            )}
+
+            {isRemoteGateway && (
+              <div className="rounded-xl border border-amber-400/30 bg-zinc-900/80 p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-amber-400" />
+                  <h3 className="text-sm font-semibold text-white">{remoteGuide.title}</h3>
+                </div>
+                <pre className="overflow-x-auto rounded-lg border border-zinc-700 bg-zinc-950 p-4 text-xs leading-6 text-zinc-200">
+                  {remoteGuide.lines.join('\n')}
+                </pre>
+                <p className="text-xs leading-5 text-zinc-400">{remoteGuide.note}</p>
+              </div>
+            )}
 
             <div className="flex flex-wrap gap-3">
               <button
@@ -284,15 +365,17 @@ export default function SettingsGatewayPage() {
                 {checking ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                 Re-check Gateway
               </button>
-              <button
-                type="button"
-                onClick={handleRestart}
-                disabled={restarting || loading}
-                className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-300 transition-colors hover:border-zinc-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {restarting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ServerCog className="h-4 w-4" />}
-                Try Local Restart
-              </button>
+              {!isRemoteGateway && (
+                <button
+                  type="button"
+                  onClick={handleRestart}
+                  disabled={restarting || loading}
+                  className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-300 transition-colors hover:border-zinc-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {restarting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ServerCog className="h-4 w-4" />}
+                  Try Local Restart
+                </button>
+              )}
             </div>
 
             {details && (

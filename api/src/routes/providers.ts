@@ -6,6 +6,7 @@ import * as http from 'http';
 import * as crypto from 'crypto';
 import { getDb } from '../db/client';
 import { OPENCLAW_BIN, OPENCLAW_CONFIG_PATH, OPENCLAW_ENABLED } from '../config';
+import { ATLAS_AGENT_SLUG } from '../lib/atlasAgent';
 
 const router = Router();
 
@@ -136,6 +137,23 @@ function maskConfig(slug: string, config: Record<string, unknown>): Record<strin
   const out: Record<string, unknown> = { ...config };
   if (out.api_key && typeof out.api_key === 'string') {
     out.api_key = maskSecret(out.api_key);
+  }
+  if (out.OPENAI_API_KEY && typeof out.OPENAI_API_KEY === 'string') {
+    out.OPENAI_API_KEY = maskSecret(out.OPENAI_API_KEY);
+  }
+  for (const field of ['access_token', 'refresh_token', 'id_token'] as const) {
+    if (typeof out[field] === 'string') {
+      out[field] = maskSecret(out[field] as string);
+    }
+  }
+  if (out.tokens && typeof out.tokens === 'object') {
+    const tokens = { ...(out.tokens as Record<string, unknown>) };
+    for (const field of ['access_token', 'refresh_token', 'id_token'] as const) {
+      if (typeof tokens[field] === 'string') {
+        tokens[field] = maskSecret(tokens[field] as string);
+      }
+    }
+    out.tokens = tokens;
   }
   return out;
 }
@@ -391,48 +409,162 @@ router.get('/minimax/models', (_req: Request, res: Response) => {
 
 // ─── OAuth validation ───────────────────────────────────────────────────────
 
-function validateOAuthProvider(slug: string): { ok: boolean; error?: string } {
-  if (!OPENCLAW_ENABLED) {
-    return { ok: false, error: 'OpenClaw runtime is not enabled. OAuth providers require OpenClaw.' };
-  }
+type OAuthTokenPayload = {
+  access_token: string;
+  refresh_token: string;
+  expires_in: number;
+  id_token?: string;
+};
+
+function getOAuthProfileKey(slug: string): string {
+  return `${slug}:default`;
+}
+
+function buildAgentAuthProfilesPath(agentId: string): string {
+  return path.join(path.dirname(OPENCLAW_CONFIG_PATH), 'agents', agentId, 'agent', 'auth-profiles.json');
+}
+
+function createEmptyAuthProfilesDocument(): Record<string, unknown> {
+  return {
+    version: 1,
+    profiles: {},
+    lastGood: {},
+    usageStats: {},
+  };
+}
+
+function readJsonFile(filePath: string): Record<string, unknown> | null {
   try {
-    const raw = fs.readFileSync(OPENCLAW_CONFIG_PATH, 'utf-8');
-    const ocConfig = JSON.parse(raw);
-    const profiles = ocConfig?.auth?.profiles ?? {};
-    const profileKey = `${slug}:default`;
-    const profile = profiles[profileKey];
-    if (!profile || profile.mode !== 'oauth') {
-      return { ok: false, error: `No OAuth profile "${profileKey}" found. Click "Sign in" to authenticate.` };
-    }
-    const openclawDir = path.dirname(OPENCLAW_CONFIG_PATH);
-    const agentsDir = path.join(openclawDir, 'agents');
-    if (fs.existsSync(agentsDir)) {
-      for (const agentId of fs.readdirSync(agentsDir)) {
-        const authFile = path.join(agentsDir, agentId, 'agent', 'auth-profiles.json');
-        if (!fs.existsSync(authFile)) continue;
-        try {
-          const authData = JSON.parse(fs.readFileSync(authFile, 'utf-8'));
-          const entries = authData?.profiles ? Object.values(authData.profiles) : [];
-          for (const entry of entries as Array<Record<string, unknown>>) {
-            if (entry?.provider === slug && entry?.type === 'oauth' && entry?.access) {
-              if (!entry.expires || (entry.expires as number) > Date.now()) return { ok: true };
-            }
-          }
-        } catch { /* skip */ }
+    return JSON.parse(fs.readFileSync(filePath, 'utf-8')) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function collectOAuthAuthProfilePaths(): string[] {
+  const agentIds = new Set<string>([ATLAS_AGENT_SLUG]);
+  const db = getDb();
+  try {
+    const rows = db.prepare(`
+      SELECT DISTINCT openclaw_agent_id
+      FROM agents
+      WHERE openclaw_agent_id IS NOT NULL
+        AND trim(openclaw_agent_id) <> ''
+    `).all() as Array<{ openclaw_agent_id: string }>;
+    for (const row of rows) {
+      if (typeof row.openclaw_agent_id === 'string' && row.openclaw_agent_id.trim()) {
+        agentIds.add(row.openclaw_agent_id.trim());
       }
     }
-    return { ok: true, error: 'OAuth profile configured. Token may need refresh on next dispatch.' };
-  } catch (err) {
-    return { ok: false, error: `Could not read OpenClaw config: ${err instanceof Error ? err.message : String(err)}` };
+  } catch {
+    // Best effort — during bootstrap, the agents table may not be ready yet.
   }
+
+  const agentsDir = path.join(path.dirname(OPENCLAW_CONFIG_PATH), 'agents');
+  if (fs.existsSync(agentsDir)) {
+    for (const agentId of fs.readdirSync(agentsDir)) {
+      if (agentId.trim()) {
+        agentIds.add(agentId.trim());
+      }
+    }
+  }
+
+  return Array.from(agentIds).map(buildAgentAuthProfilesPath);
+}
+
+function readOAuthProfile(slug: string): Record<string, unknown> | null {
+  const profileKey = getOAuthProfileKey(slug);
+  for (const filePath of collectOAuthAuthProfilePaths()) {
+    if (!fs.existsSync(filePath)) continue;
+    const data = readJsonFile(filePath);
+    const profiles = data?.profiles;
+    if (!profiles || typeof profiles !== 'object') continue;
+    const profile = (profiles as Record<string, unknown>)[profileKey];
+    if (profile && typeof profile === 'object') {
+      return profile as Record<string, unknown>;
+    }
+  }
+  return null;
+}
+
+function upsertOAuthProfile(filePath: string, slug: string, profile: Record<string, unknown>): void {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const data = fs.existsSync(filePath)
+    ? (readJsonFile(filePath) ?? createEmptyAuthProfilesDocument())
+    : createEmptyAuthProfilesDocument();
+  const profiles = (data.profiles && typeof data.profiles === 'object')
+    ? data.profiles as Record<string, unknown>
+    : {};
+  profiles[getOAuthProfileKey(slug)] = profile;
+  data.profiles = profiles;
+
+  const lastGood = (data.lastGood && typeof data.lastGood === 'object')
+    ? data.lastGood as Record<string, string>
+    : {};
+  lastGood[slug] = getOAuthProfileKey(slug);
+  data.lastGood = lastGood;
+
+  if (!data.usageStats || typeof data.usageStats !== 'object') {
+    data.usageStats = {};
+  }
+
+  fs.writeFileSync(filePath, JSON.stringify(data, null, 2) + '\n');
+}
+
+function validateOAuthProvider(slug: string): { ok: boolean; error?: string } {
+  try {
+    const profile = readOAuthProfile(slug);
+    if (!profile || profile.type !== 'oauth' || profile.provider !== slug) {
+      return { ok: false, error: `No OAuth profile "${getOAuthProfileKey(slug)}" found. Click "Sign in" to authenticate.` };
+    }
+
+    const access = typeof profile.access === 'string' && profile.access.trim() ? profile.access.trim() : '';
+    const refresh = typeof profile.refresh === 'string' && profile.refresh.trim() ? profile.refresh.trim() : '';
+    const expires = typeof profile.expires === 'number' ? profile.expires : null;
+
+    if (!access && !refresh) {
+      return { ok: false, error: 'OAuth profile is present but has no usable tokens. Sign in again.' };
+    }
+
+    if (expires !== null && expires <= Date.now()) {
+      if (refresh) {
+        return { ok: true, error: 'OAuth token stored successfully. Access token is expired, but a refresh token is available for the next runtime use.' };
+      }
+      return { ok: false, error: 'OAuth token is expired and no refresh token is available. Sign in again.' };
+    }
+
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: `Could not read OAuth profile: ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
+
+function buildStoredOAuthConfig(slug: string, tokens: OAuthTokenPayload): Record<string, unknown> {
+  const accountId = extractAccountIdFromJwt(tokens.access_token);
+  const expiresAt = Date.now() + tokens.expires_in * 1000;
+  return {
+    auth_type: 'oauth',
+    managed_by: 'agent-hq',
+    provider: slug,
+    profile_key: getOAuthProfileKey(slug),
+    account_id: accountId,
+    expires_at: expiresAt,
+    last_refresh: new Date().toISOString(),
+    tokens: {
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+      ...(tokens.id_token ? { id_token: tokens.id_token } : {}),
+      ...(accountId ? { account_id: accountId } : {}),
+    },
+  };
 }
 
 // ─── OpenAI Codex OAuth (native PKCE flow) ─────────────────────────────────
 //
 // Implements the same OAuth flow as OpenClaw's `models auth login --provider
 // openai-codex` but without requiring the OpenClaw CLI or a TTY. Uses the
-// same public client_id, redirect_uri, and token storage format so OpenClaw
-// picks up the tokens automatically from auth-profiles.json.
+// same public client_id and redirect_uri, stores a local backup in Agent HQ's
+// provider_config table, and writes per-agent OpenClaw auth files.
 
 const OPENAI_OAUTH = {
   clientId: 'app_EMoamEEZ73f0CkXaXp7hrann',
@@ -448,7 +580,7 @@ let pendingOAuth: {
   state: string;
   codeVerifier: string;
   server: http.Server;
-  resolve: (tokens: { access_token: string; refresh_token: string; expires_in: number }) => void;
+  resolve: (tokens: OAuthTokenPayload) => void;
   reject: (err: Error) => void;
   timeout: ReturnType<typeof setTimeout>;
 } | null = null;
@@ -466,41 +598,29 @@ function extractAccountIdFromJwt(accessToken: string): string | null {
   } catch { return null; }
 }
 
-function writeTokensToAuthProfiles(tokens: { access_token: string; refresh_token: string; expires_in: number }): void {
-  const openclawDir = path.dirname(OPENCLAW_CONFIG_PATH);
-  const agentsDir = path.join(openclawDir, 'agents');
-  if (!fs.existsSync(agentsDir)) return;
-
+function writeTokensToAuthProfiles(slug: string, tokens: OAuthTokenPayload): void {
   const accountId = extractAccountIdFromJwt(tokens.access_token);
   const expiresAt = Date.now() + tokens.expires_in * 1000;
   const profile = {
     type: 'oauth',
-    provider: 'openai-codex',
+    provider: slug,
     access: tokens.access_token,
     refresh: tokens.refresh_token,
     expires: expiresAt,
     ...(accountId ? { accountId } : {}),
   };
 
-  for (const agentId of fs.readdirSync(agentsDir)) {
-    const authFile = path.join(agentsDir, agentId, 'agent', 'auth-profiles.json');
-    try {
-      let data: Record<string, unknown> = { version: 1, profiles: {}, lastGood: {}, usageStats: {} };
-      if (fs.existsSync(authFile)) {
-        data = JSON.parse(fs.readFileSync(authFile, 'utf-8'));
-      }
-      const profiles = (data.profiles ?? {}) as Record<string, unknown>;
-      profiles['openai-codex:default'] = profile;
-      data.profiles = profiles;
-      const lastGood = (data.lastGood ?? {}) as Record<string, string>;
-      lastGood['openai-codex'] = 'openai-codex:default';
-      data.lastGood = lastGood;
-      fs.writeFileSync(authFile, JSON.stringify(data, null, 2) + '\n');
-      console.log(`[providers] Wrote OpenAI Codex OAuth tokens to ${authFile}`);
-    } catch (err) {
-      console.warn(`[providers] Failed to write tokens to ${authFile}:`, err instanceof Error ? err.message : err);
-    }
+  const authProfilePaths = collectOAuthAuthProfilePaths();
+  for (const authProfilePath of authProfilePaths) {
+    upsertOAuthProfile(authProfilePath, slug, profile);
   }
+  console.log(`[providers] Wrote ${slug} OAuth tokens to ${authProfilePaths.length} OpenClaw agent auth profile(s)`);
+}
+
+function persistOAuthTokens(slug: string, tokens: OAuthTokenPayload): Record<string, unknown> {
+  const config = buildStoredOAuthConfig(slug, tokens);
+  writeTokensToAuthProfiles(slug, tokens);
+  return config;
 }
 
 // ─── POST /providers/:slug/oauth/initiate ───────────────────────────────────
@@ -522,7 +642,7 @@ router.post('/:slug/oauth/initiate', async (req: Request, res: Response) => {
 
   // Start local callback server
   try {
-    const tokenPromise = new Promise<{ access_token: string; refresh_token: string; expires_in: number }>((resolve, reject) => {
+    const tokenPromise = new Promise<OAuthTokenPayload>((resolve, reject) => {
       const server = http.createServer(async (req, res) => {
         if (!req.url?.startsWith('/auth/callback')) {
           res.writeHead(404);
@@ -567,9 +687,19 @@ router.post('/:slug/oauth/initiate', async (req: Request, res: Response) => {
             throw new Error(`Token exchange failed (${tokenRes.status}): ${errBody.slice(0, 300)}`);
           }
 
-          const tokens = await tokenRes.json() as { access_token: string; refresh_token: string; expires_in: number };
+          const tokens = await tokenRes.json() as OAuthTokenPayload;
+          const storedConfig = persistOAuthTokens(slug, tokens);
+          const validation = validateOAuthProvider(slug);
+          if (!validation.ok) {
+            throw new Error(validation.error || 'OAuth validation failed after token exchange.');
+          }
+
+          const db = getDb();
+          db.prepare("UPDATE provider_config SET status = 'connected', config = ?, validation_error = ?, updated_at = datetime('now') WHERE slug = ?")
+            .run(JSON.stringify(storedConfig), validation.error || null, slug);
+
           res.writeHead(200, { 'Content-Type': 'text/html' });
-          res.end('<html><body><h2>Authentication successful!</h2><p>You can close this tab and return to Atlas HQ.</p><script>window.close()</script></body></html>');
+          res.end(`<!doctype html><html><body><h2>Authentication successful!</h2><p>Atlas HQ saved your OpenAI connection. This tab will close automatically.</p><p>If it stays open, return to Agent HQ. If the provider still is not connected there, copy the full URL and paste it into the OAuth field.</p><script>(function(){try{if(window.opener&&!window.opener.closed){window.opener.postMessage({type:'agent-hq-oauth-complete',slug:${JSON.stringify(slug)},ok:true},'*');}}catch(e){}try{window.close();}catch(e){}})();</script></body></html>`);
           resolve(tokens);
         } catch (err) {
           res.writeHead(500, { 'Content-Type': 'text/html' });
@@ -625,18 +755,11 @@ router.post('/:slug/oauth/initiate', async (req: Request, res: Response) => {
     } catch { /* row may exist */ }
 
     // Return URL immediately — token exchange happens async via callback
-    res.json({ ok: true, oauthUrl, message: 'Complete sign-in in the browser tab, then click "Check Connection".' });
+    res.json({ ok: true, oauthUrl, message: 'Complete sign-in in the browser tab. Agent HQ will finish automatically if the localhost callback succeeds.' });
 
-    // Wait for token exchange in background, then write to auth-profiles
-    tokenPromise.then((tokens) => {
-      console.log(`[providers] OpenAI Codex OAuth tokens received — writing to auth-profiles`);
-      writeTokensToAuthProfiles(tokens);
-
-      // Mark provider as connected
-      try {
-        const db = getDb();
-        db.prepare("UPDATE provider_config SET status = 'connected', validation_error = NULL, updated_at = datetime('now') WHERE slug = ?").run(slug);
-      } catch { /* best effort */ }
+    // Wait for token exchange in background so errors still mark the provider row.
+    tokenPromise.then(() => {
+      console.log(`[providers] OpenAI Codex OAuth completed successfully for ${slug}`);
     }).catch((err) => {
       console.error(`[providers] OpenAI Codex OAuth failed:`, err instanceof Error ? err.message : err);
       try {
@@ -720,13 +843,18 @@ router.post('/:slug/oauth/exchange', async (req: Request, res: Response) => {
       throw new Error(`Token exchange failed (${tokenRes.status}): ${errBody.slice(0, 300)}`);
     }
 
-    const tokens = await tokenRes.json() as { access_token: string; refresh_token: string; expires_in: number };
+    const tokens = await tokenRes.json() as OAuthTokenPayload;
 
-    console.log(`[providers] OpenAI Codex OAuth tokens received via manual exchange — writing to auth-profiles`);
-    writeTokensToAuthProfiles(tokens);
+    console.log(`[providers] OpenAI Codex OAuth tokens received via manual exchange — persisting local/provider auth state`);
+    const storedConfig = persistOAuthTokens(slug, tokens);
+    const validation = validateOAuthProvider(slug);
+    if (!validation.ok) {
+      throw new Error(validation.error || 'OAuth validation failed after manual exchange.');
+    }
 
     const db = getDb();
-    db.prepare("UPDATE provider_config SET status = 'connected', validation_error = NULL, updated_at = datetime('now') WHERE slug = ?").run(slug);
+    db.prepare("UPDATE provider_config SET status = 'connected', config = ?, validation_error = ?, updated_at = datetime('now') WHERE slug = ?")
+      .run(JSON.stringify(storedConfig), validation.error || null, slug);
 
     res.json({ ok: true, message: 'OpenAI Codex connected successfully.' });
   } catch (err) {

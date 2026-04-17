@@ -2,7 +2,7 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { OPENCLAW_CONFIG_PATH } from '../config';
+import { getConfiguredGatewayAuthToken } from './gatewaySettings';
 
 export interface GatewayDeviceIdentity {
   version: number;
@@ -13,21 +13,15 @@ export interface GatewayDeviceIdentity {
 }
 
 export function readGatewayTokenFromConfig(): string | null {
-  try {
-    const raw = fs.readFileSync(OPENCLAW_CONFIG_PATH, 'utf-8');
-    const cfg = JSON.parse(raw) as { gateway?: { auth?: { token?: string } } };
-    const token = cfg.gateway?.auth?.token;
-    return typeof token === 'string' && token.trim() ? token.trim() : null;
-  } catch {
-    return null;
-  }
+  const token = getConfiguredGatewayAuthToken();
+  return token || null;
 }
 
 export function getGatewayAuthToken(): string {
   return (
     process.env.GATEWAY_TOKEN
     ?? process.env.OPENCLAW_GATEWAY_TOKEN
-    ?? readGatewayTokenFromConfig()
+    ?? getConfiguredGatewayAuthToken()
     ?? ''
   );
 }

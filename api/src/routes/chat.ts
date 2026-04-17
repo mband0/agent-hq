@@ -8,12 +8,11 @@ import * as os from 'os';
 import { randomUUID } from 'crypto';
 import multer from 'multer';
 import { getDb } from '../db/client';
-import { OPENCLAW_CONFIG_PATH } from '../config';
 import { ATLAS_SESSION_KEY } from '../lib/atlasAgent';
 import { normalizeChatMessageRole } from '../lib/chatMessageRoles';
 import { extractGatewayErrorMessage, summarizeGatewayErrorForUi } from '../lib/chatGatewayErrors';
-import { getConfiguredGatewayWsUrl } from '../lib/gatewaySettings';
-import { ensureLocalGatewayPairing, isPairingRequiredClose, isPairingRequiredText } from '../lib/openclawAutoPair';
+import { getConfiguredGatewayAuthToken, getConfiguredGatewayWsUrl } from '../lib/gatewaySettings';
+import { isPairingRequiredClose, isPairingRequiredText } from '../lib/openclawAutoPair';
 import { openClawGatewayWsOptions } from '../lib/openclawGatewayWs';
 import {
   buildGatewayDirectSessionKey,
@@ -119,17 +118,6 @@ router.get('/attachments/:id/download', (req: Request, res: Response) => {
 
 function getDefaultGatewayUrl(): string {
   return getConfiguredGatewayWsUrl();
-}
-
-function readGatewayTokenFromConfig(): string | null {
-  try {
-    const raw = fs.readFileSync(OPENCLAW_CONFIG_PATH, 'utf-8');
-    const cfg = JSON.parse(raw) as { gateway?: { auth?: { token?: string } } };
-    const token = cfg.gateway?.auth?.token;
-    return typeof token === 'string' && token.trim() ? token.trim() : null;
-  } catch {
-    return null;
-  }
 }
 
 function sessionSlug(sessionKey: string | null | undefined): string | null {
@@ -238,7 +226,7 @@ function getGatewayToken(): string {
   return (
     process.env.GATEWAY_TOKEN
     ?? process.env.OPENCLAW_GATEWAY_TOKEN
-    ?? readGatewayTokenFromConfig()
+    ?? getConfiguredGatewayAuthToken()
     ?? ''
   );
 }
@@ -350,20 +338,7 @@ async function gatewayRpc(method: string, params: Record<string, unknown>, gatew
         };
       };
 
-      let connectResult = await sendRpc('connect', buildConnectParams());
-      if (connectResult.ok !== true) {
-        const connectError = gatewayErrorMessage(connectResult.error, `Gateway connect failed during ${method}`);
-        if (isPairingRequiredText(connectError)) {
-          try {
-            const pairResult = ensureLocalGatewayPairing(gatewayUrl);
-            if (pairResult.ok && pairResult.approved) {
-              connectResult = await sendRpc('connect', buildConnectParams());
-            }
-          } catch {
-            // Fall through to the original gateway error below.
-          }
-        }
-      }
+      const connectResult = await sendRpc('connect', buildConnectParams());
 
       if (connectResult.ok !== true) {
         finish({
@@ -1158,6 +1133,7 @@ export function setupChatProxy(wss: WebSocketServer) {
     const pending = new Map<string, string>();
     // Track streaming state for delta computation
     let streamText = '';
+    let pendingAssistantResponse = false;
     // Track which session the UI is currently viewing
     let activeSessionKey: string | null = null;
     // Transcript capture state
@@ -1173,24 +1149,9 @@ export function setupChatProxy(wss: WebSocketServer) {
       if (pairingRetryAttempted || pairingRetryInFlight) return false;
       pairingRetryAttempted = true;
       pairingRetryInFlight = true;
-      try {
-        const pairResult = ensureLocalGatewayPairing(currentGatewayUrl);
-        if (!pairResult.ok || !pairResult.approved) {
-          console.warn(`[chat-proxy] Auto-pair failed for ${currentGatewayUrl}: ${pairResult.message}`);
-          return false;
-        }
-        console.log(`[chat-proxy] Auto-pair approved for ${currentGatewayUrl}: ${pairResult.message}`);
-        gatewayReady = false;
-        const nextGw = new WsClient(currentGatewayUrl, openClawGatewayWsOptions(currentGatewayUrl));
-        gatewayWs = nextGw;
-        attachGatewayHandlers(nextGw);
-        return true;
-      } catch (err) {
-        console.warn('[chat-proxy] Auto-pair retry failed:', err instanceof Error ? err.message : String(err));
-        return false;
-      } finally {
-        pairingRetryInFlight = false;
-      }
+      console.warn(`[chat-proxy] Pairing is manual for ${currentGatewayUrl}. Approve the pending request with openclaw devices list/approve, then retry.`);
+      pairingRetryInFlight = false;
+      return false;
     }
 
     // ── Gateway → Client ──────────────────────────────────────────────────
@@ -1266,6 +1227,7 @@ export function setupChatProxy(wss: WebSocketServer) {
           // Translate gateway chat event to UI format
           const state = payload?.state as string;
           if (state === 'delta') {
+            pendingAssistantResponse = true;
             const newText = extractText(payload?.message);
             // Gateway sends cumulative text; compute incremental delta
             const delta = newText.startsWith(streamText) ? newText.slice(streamText.length) : newText;
@@ -1279,6 +1241,7 @@ export function setupChatProxy(wss: WebSocketServer) {
               lastStreamFlushLen = streamText.length;
             }
           } else if (state === 'final') {
+            pendingAssistantResponse = false;
             // Final event contains the complete text — flush any remaining delta
             const finalText = extractText(payload?.message);
             if (finalText) {
@@ -1297,6 +1260,7 @@ export function setupChatProxy(wss: WebSocketServer) {
             streamText = '';
             clientWs.send(JSON.stringify({ type: 'chat', role: 'assistant', delta: '', done: true }));
           } else if (state === 'aborted' || state === 'error') {
+            pendingAssistantResponse = false;
             // Persist whatever was streamed before abort
             if (sessionCtx && streamText) {
               persistFinalMessage(sessionCtx, streamText, assistantMsgIndex++);
@@ -1334,7 +1298,10 @@ export function setupChatProxy(wss: WebSocketServer) {
             if (isPairingRequiredText(String(errMsg)) && retryGatewayAfterPairing()) {
               return;
             }
-            clientWs.send(JSON.stringify({ type: 'error', message: String(errMsg) }));
+            clientWs.send(JSON.stringify({
+              type: 'error',
+              message: summarizeGatewayErrorForUi(frame.error ?? errMsg),
+            }));
             clientWs.close();
           } else {
             // Flush any messages that arrived before auth completed
@@ -1349,11 +1316,16 @@ export function setupChatProxy(wss: WebSocketServer) {
 
         if (method === 'chat.send') {
           if (ok) {
+            pendingAssistantResponse = true;
             streamText = '';
             clientWs.send(JSON.stringify({ type: 'chat.send' }));
           } else {
+            pendingAssistantResponse = false;
             const errMsg = (frame.error as Record<string, unknown>)?.message ?? 'chat.send failed';
-            clientWs.send(JSON.stringify({ type: 'error', message: String(errMsg) }));
+            clientWs.send(JSON.stringify({
+              type: 'error',
+              message: summarizeGatewayErrorForUi(frame.error ?? errMsg),
+            }));
           }
           return;
         }
@@ -1378,6 +1350,8 @@ export function setupChatProxy(wss: WebSocketServer) {
         }
 
         if (method === 'chat.abort') {
+          pendingAssistantResponse = false;
+          streamText = '';
           // Nothing to do for abort ack
           return;
         }
@@ -1389,7 +1363,15 @@ export function setupChatProxy(wss: WebSocketServer) {
     gw.on('error', (err) => {
       console.error('[chat-proxy] Gateway WS error:', err.message);
       if (clientWs.readyState === WsClient.OPEN) {
-        clientWs.send(JSON.stringify({ type: 'error', message: 'Gateway connection failed' }));
+        const message = pendingAssistantResponse
+          ? 'Connection to Atlas was interrupted before a response completed. Retry.'
+          : 'Gateway connection failed';
+        pendingAssistantResponse = false;
+        streamText = '';
+        clientWs.send(JSON.stringify({
+          type: 'error',
+          message,
+        }));
         clientWs.close();
       }
     });
@@ -1398,6 +1380,14 @@ export function setupChatProxy(wss: WebSocketServer) {
       if (gw !== gatewayWs || clientWs.readyState !== WsClient.OPEN) return;
       if (isPairingRequiredClose(code, reason) && retryGatewayAfterPairing()) {
         return;
+      }
+      if (pendingAssistantResponse) {
+        pendingAssistantResponse = false;
+        streamText = '';
+        clientWs.send(JSON.stringify({
+          type: 'error',
+          message: 'Connection to Atlas was interrupted before a response completed. Retry.',
+        }));
       }
       clientWs.close();
     });
@@ -1483,6 +1473,7 @@ export function setupChatProxy(wss: WebSocketServer) {
         assistantMsgIndex = 0;
         lastStreamFlushLen = 0;
         streamText = '';
+        pendingAssistantResponse = false;
 
         clientWs.send(JSON.stringify({ type: 'chat.new', sessionKey: newSessionKey }));
         return;
@@ -1541,6 +1532,8 @@ export function setupChatProxy(wss: WebSocketServer) {
       }
 
       if (type === 'chat.abort') {
+        pendingAssistantResponse = false;
+        streamText = '';
         const gatewaySessionKey = toGatewaySessionKey(msg.sessionKey as string | null | undefined, resolveAgentRowForSessionKey(msg.sessionKey as string | null | undefined));
         const reqId = randomUUID();
         pending.set(reqId, 'chat.abort');

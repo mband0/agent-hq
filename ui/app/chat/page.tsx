@@ -59,6 +59,7 @@ import {
 // How many historical messages to load (older ones need "load more")
 const HISTORY_LIMIT = 80;
 const DIRECT_SESSION_STORAGE_PREFIX = 'agent-hq:direct-chat-session:';
+const CHAT_RESPONSE_STALL_MS = 45000;
 
 function sessionSlug(sessionKey: string | null | undefined, runtimeSlug?: string | null): string | null {
   if (runtimeSlug) return runtimeSlug;
@@ -247,6 +248,8 @@ function ChatPageInner() {
   const streamBufRef = useRef<string>('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollPendingRef = useRef(false); // throttle: only scroll after new committed message
+  const pendingResponseRef = useRef(false);
+  const responseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Resolved session key (for direct-chat mode — not job runs)
   const [resolvedSessionKey, setResolvedSessionKey] = useState<string | null>(null);
@@ -263,6 +266,32 @@ function ChatPageInner() {
     ?? null;
 
   const streaming = streamContent !== null;
+
+  const clearResponseWatchdog = useCallback(() => {
+    if (responseTimeoutRef.current) {
+      clearTimeout(responseTimeoutRef.current);
+      responseTimeoutRef.current = null;
+    }
+  }, []);
+
+  const clearPendingResponse = useCallback((message?: string | null) => {
+    pendingResponseRef.current = false;
+    clearResponseWatchdog();
+    streamBufRef.current = '';
+    setStreamContent(null);
+    setSending(false);
+    if (message) {
+      setSendError(message);
+    }
+  }, [clearResponseWatchdog]);
+
+  const armResponseWatchdog = useCallback(() => {
+    clearResponseWatchdog();
+    responseTimeoutRef.current = setTimeout(() => {
+      if (!pendingResponseRef.current) return;
+      clearPendingResponse('Atlas did not return a response. Check the OpenClaw/provider logs, then retry.');
+    }, CHAT_RESPONSE_STALL_MS);
+  }, [clearPendingResponse, clearResponseWatchdog]);
 
   // ── Stop instance state ──
   const [stopConfirming, setStopConfirming] = useState(false);
@@ -570,10 +599,13 @@ function ChatPageInner() {
     };
 
     ws.onclose = () => {
+      if (pendingResponseRef.current) {
+        clearPendingResponse('Connection to Atlas was interrupted before a response completed. Retry.');
+      }
       console.log('[chat] WebSocket closed');
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [clearPendingResponse]);
 
   const handleWsMessage = useCallback((data: Record<string, unknown>) => {
     const type = data.type as string;
@@ -587,9 +619,7 @@ function ChatPageInner() {
         content: (m.content as string) || '',
         timestamp: (m.timestamp as string) || new Date().toISOString(),
       }));
-      streamBufRef.current = '';
-      setStreamContent(null);
-      setSending(false);
+      clearPendingResponse();
       setHistoryTotal(total);
       setMessages(parsed);
       // Scroll to bottom after history loads
@@ -602,6 +632,8 @@ function ChatPageInner() {
 
       if (role === 'assistant') {
         if (done) {
+          pendingResponseRef.current = false;
+          clearResponseWatchdog();
           // Commit the streamed content into the messages list
           const finalContent = streamBufRef.current;
           streamBufRef.current = '';
@@ -617,6 +649,8 @@ function ChatPageInner() {
             setMessages(prev => [...prev, committedMsg]);
           }
         } else if (delta) {
+          pendingResponseRef.current = true;
+          armResponseWatchdog();
           streamBufRef.current += delta;
           // Update only the streaming bubble — does NOT touch messages array
           setStreamContent(streamBufRef.current);
@@ -624,6 +658,8 @@ function ChatPageInner() {
       }
 
     } else if (type === 'chat.send') {
+      pendingResponseRef.current = true;
+      armResponseWatchdog();
       setSending(false);
       streamBufRef.current = '';
       setStreamContent(''); // start streaming (empty string = streaming started)
@@ -635,20 +671,20 @@ function ChatPageInner() {
         return [];
       });
       setMessages([]);
-      setStreamContent(null);
+      clearPendingResponse();
       setHistoryTotal(0);
-      streamBufRef.current = '';
       setSendError(null);
-      setSending(false);
       setSelectedInstanceId(null);
       setResolvedSessionKey(nextSessionKey);
     } else if (type === 'error') {
+      pendingResponseRef.current = false;
+      clearResponseWatchdog();
       setSendError((data.message as string) || 'Gateway error');
       setSending(false);
       streamBufRef.current = '';
       setStreamContent(null);
     }
-  }, []);
+  }, [armResponseWatchdog, clearPendingResponse, clearResponseWatchdog]);
 
   useEffect(() => {
     if (!selectedAgentId || selectedInstanceId !== null || !resolvedSessionKey) return;
@@ -679,12 +715,13 @@ function ChatPageInner() {
     }
 
     return () => {
+      clearResponseWatchdog();
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;
       }
     };
-  }, [activeSessionKey, chatConfig, connectWs]);
+  }, [activeSessionKey, chatConfig, connectWs, clearResponseWatchdog]);
 
   // ── Attachment state ──
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
@@ -771,7 +808,10 @@ function ChatPageInner() {
           if (!(data as { ok: boolean }).ok) setSendError((data as { error?: string }).error ?? 'Send failed');
         })
         .catch(err => setSendError((err as Error).message ?? 'Send failed'))
-        .finally(() => setSending(false));
+        .finally(() => {
+          clearPendingResponse();
+          setSending(false);
+        });
       return;
     }
 
@@ -787,6 +827,8 @@ function ChatPageInner() {
       ? [text, ...readyAttachments.map(a => `[Attachment: ${a.file.name} — /api/v1/chat/attachments/${a.uploadedId}/download]`)].filter(Boolean).join('\n')
       : text;
 
+    pendingResponseRef.current = true;
+    armResponseWatchdog();
     ws.send(JSON.stringify({
       id: generateId(),
       type: 'chat.send',
@@ -801,8 +843,7 @@ function ChatPageInner() {
     if (useCanonical && selectedInstanceId) {
       fetch(`/api/v1/chat/instances/${selectedInstanceId}/abort`, { method: 'POST' })
         .catch(err => console.warn('[chat] Abort failed:', err));
-      setStreamContent(null);
-      setSending(false);
+      clearPendingResponse();
       return;
     }
 
@@ -815,8 +856,7 @@ function ChatPageInner() {
       type: 'chat.abort',
       sessionKey: activeSessionKey,
     }));
-    setStreamContent(null);
-    setSending(false);
+    clearPendingResponse();
   };
 
   const handleNewDirectChat = () => {
@@ -833,9 +873,7 @@ function ChatPageInner() {
       prev.forEach(att => { if (att.previewUrl) URL.revokeObjectURL(att.previewUrl); });
       return [];
     });
-    streamBufRef.current = '';
-    setStreamContent(null);
-    setSending(false);
+    clearPendingResponse();
     setSendError(null);
     ws.send(JSON.stringify({
       id: generateId(),

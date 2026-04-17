@@ -34,6 +34,7 @@ function generateId(): string {
 
 const HISTORY_LIMIT = 50;
 const DIRECT_SESSION_STORAGE_PREFIX = 'agent-hq:direct-chat-session:';
+const CHAT_RESPONSE_STALL_MS = 45000;
 
 function sessionSlug(sessionKey: string | null | undefined, runtimeSlug?: string | null): string | null {
   if (runtimeSlug) return runtimeSlug;
@@ -310,12 +311,40 @@ export default function ChatWidget() {
   const userScrolledUpRef = useRef(false);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastHeartbeatMessageIdRef = useRef<string | null>(null);
+  const pendingResponseRef = useRef(false);
+  const responseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const streaming = streamContent !== null;
 
   // Keep refs in sync
   useEffect(() => { openRef.current = open; }, [open]);
   useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
+
+  const clearResponseWatchdog = useCallback(() => {
+    if (responseTimeoutRef.current) {
+      clearTimeout(responseTimeoutRef.current);
+      responseTimeoutRef.current = null;
+    }
+  }, []);
+
+  const clearPendingResponse = useCallback((message?: string | null) => {
+    pendingResponseRef.current = false;
+    clearResponseWatchdog();
+    streamBufRef.current = '';
+    setStreamContent(null);
+    setSending(false);
+    if (message) {
+      setSendError(message);
+    }
+  }, [clearResponseWatchdog]);
+
+  const armResponseWatchdog = useCallback(() => {
+    clearResponseWatchdog();
+    responseTimeoutRef.current = setTimeout(() => {
+      if (!pendingResponseRef.current) return;
+      clearPendingResponse('Atlas did not return a response. Check the OpenClaw/provider logs, then retry.');
+    }, CHAT_RESPONSE_STALL_MS);
+  }, [clearPendingResponse, clearResponseWatchdog]);
 
   const focusComposer = useCallback((delay = 80) => {
     setTimeout(() => inputRef.current?.focus(), delay);
@@ -605,9 +634,7 @@ export default function ChatWidget() {
         content: (m.content as string) || '',
         timestamp: (m.timestamp as string) || new Date().toISOString(),
       }));
-      streamBufRef.current = '';
-      setStreamContent(null);
-      setSending(false);
+      clearPendingResponse();
       setMessages(parsed);
       scrollToBottom('auto');
     } else if (type === 'chat') {
@@ -617,6 +644,8 @@ export default function ChatWidget() {
 
       if (role === 'assistant') {
         if (done) {
+          pendingResponseRef.current = false;
+          clearResponseWatchdog();
           const finalContent = streamBufRef.current;
           streamBufRef.current = '';
           setStreamContent(null);
@@ -636,11 +665,15 @@ export default function ChatWidget() {
             }
           }
         } else if (delta) {
+          pendingResponseRef.current = true;
+          armResponseWatchdog();
           streamBufRef.current += delta;
           setStreamContent(streamBufRef.current);
         }
       }
     } else if (type === 'chat.send') {
+      pendingResponseRef.current = true;
+      armResponseWatchdog();
       setSending(false);
       streamBufRef.current = '';
       setStreamContent('');
@@ -649,19 +682,19 @@ export default function ChatWidget() {
       if (!nextSessionKey) return;
       setShowNewChatConfirm(false);
       setMessages([]);
-      setStreamContent(null);
-      streamBufRef.current = '';
+      clearPendingResponse();
       setSendError(null);
-      setSending(false);
       userScrolledUpRef.current = false;
       setSessionKey(nextSessionKey);
     } else if (type === 'error') {
+      pendingResponseRef.current = false;
+      clearResponseWatchdog();
       setSendError((data.message as string) || 'Gateway error');
       setSending(false);
       streamBufRef.current = '';
       setStreamContent(null);
     }
-  }, [scrollToBottom]);
+  }, [armResponseWatchdog, clearPendingResponse, clearResponseWatchdog, scrollToBottom]);
 
   // ── Connect WebSocket with auto-reconnect ──
   const connectWs = useCallback(() => {
@@ -693,24 +726,28 @@ export default function ChatWidget() {
 
     ws.onerror = () => console.warn('[chat-widget] WebSocket error');
     ws.onclose = () => {
+      if (pendingResponseRef.current) {
+        clearPendingResponse('Connection to Atlas was interrupted before a response completed. Retry.');
+      }
       setConnected(false);
       wsRef.current = null;
       console.log('[chat-widget] WebSocket closed, reconnecting in 3s…');
       reconnectTimerRef.current = setTimeout(connectWs, 3000);
     };
-  }, [chatConfig, sessionKey, handleWsMessage]);
+  }, [chatConfig, sessionKey, handleWsMessage, clearPendingResponse]);
 
   useEffect(() => {
     connectWs();
     return () => {
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      clearResponseWatchdog();
       if (wsRef.current) {
         wsRef.current.onclose = null;
         wsRef.current.close();
         wsRef.current = null;
       }
     };
-  }, [connectWs]);
+  }, [connectWs, clearResponseWatchdog]);
 
   // ── Attachment helpers ──
   const addFiles = useCallback((files: File[]) => {
@@ -814,6 +851,8 @@ export default function ChatWidget() {
     };
     setMessages(prev => [...prev, userMsg]);
     setSending(true);
+    pendingResponseRef.current = true;
+    armResponseWatchdog();
     userScrolledUpRef.current = false;
     scrollToBottom('smooth');
 
@@ -831,8 +870,7 @@ export default function ChatWidget() {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN || !sessionKey) return;
     ws.send(JSON.stringify({ id: generateId(), type: 'chat.abort', sessionKey }));
-    setStreamContent(null);
-    setSending(false);
+    clearPendingResponse();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -865,6 +903,7 @@ export default function ChatWidget() {
     setIsDragOver(false);
     setViewingSessionId(undefined);
     setViewingMessages(null);
+    clearPendingResponse();
     ws.send(JSON.stringify({ id: generateId(), type: 'chat.new', sessionKey, channel: 'web' }));
   };
 

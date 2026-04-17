@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, Agent, GatewayRuntimeHint, GatewayStatus, ProviderSlug } from '@/lib/api';
 import { findAtlasAgent } from '@/lib/atlas';
@@ -55,12 +55,10 @@ export function getStoredUserName(): string {
 // provider step is inserted between project-setup and agent (per spec §2.1)
 type Step = 'personalize' | 'project-setup' | 'provider' | 'gateway' | 'agent' | 'done';
 const STEPS: Step[] = ['personalize', 'project-setup', 'provider', 'gateway', 'agent', 'done'];
-const STEP_LABELS = ['You', 'Project', 'Providers', 'Gateway', 'Agents', 'Done'];
+const STEP_LABELS = ['You', 'Project', 'Providers', 'Runtime', 'Agents', 'Done'];
 
 // ─── Project types ─────────────────────────────────────────────────────────────
 type ProjectType = 'software' | 'content' | 'business-ops';
-type TeamMode = 'solo' | 'team';
-
 interface AgentRole {
   id: string;
   label: string;
@@ -70,66 +68,49 @@ interface AgentRole {
   checked: boolean;
 }
 
-const GATEWAY_RUNTIME_OPTIONS: Array<{ value: GatewayRuntimeHint; label: string }> = [
-  { value: 'powershell', label: 'Windows PowerShell' },
-  { value: 'wsl', label: 'WSL' },
-  { value: 'macos', label: 'macOS' },
-  { value: 'linux', label: 'Linux' },
-  { value: 'external', label: 'Already running elsewhere' },
-];
-
-function gatewayCommandBlock(runtimeHint: GatewayRuntimeHint): { title: string; lines: string[]; note: string } {
-  switch (runtimeHint) {
-    case 'powershell':
-      return {
-        title: 'Start OpenClaw from PowerShell',
-        lines: [
-          'npm install -g openclaw',
-          'openclaw gateway run --port 18789',
-        ],
-        note: 'Run OpenClaw in a separate terminal, then come back here and re-check the gateway. Agent HQ will connect to it but will not try to manage the process for you.',
-      };
-    case 'wsl':
-      return {
-        title: 'Start OpenClaw from WSL',
-        lines: [
-          'npm install -g openclaw',
-          'openclaw gateway run --port 18789',
-        ],
-        note: 'If localhost does not bridge cleanly from WSL to Windows on your machine, update the gateway URL here to the Windows-reachable host before re-checking.',
-      };
-    case 'macos':
-      return {
-        title: 'Start OpenClaw from macOS',
-        lines: [
-          'npm install -g openclaw',
-          'openclaw gateway run --port 18789',
-        ],
-        note: 'Keep Agent HQ open, start OpenClaw in another terminal, then re-check the connection here.',
-      };
-    case 'linux':
-      return {
-        title: 'Start OpenClaw from Linux',
-        lines: [
-          'npm install -g openclaw',
-          'openclaw gateway run --port 18789',
-        ],
-        note: 'Keep Agent HQ open, start OpenClaw in another terminal, then re-check the connection here.',
-      };
-    case 'external':
-      return {
-        title: 'Connect to an existing OpenClaw gateway',
-        lines: [
-          'Make sure the gateway is already running.',
-          'Set the WebSocket URL below.',
-          'Click Re-check to verify connectivity.',
-        ],
-        note: 'Use this when OpenClaw is managed outside Agent HQ, including remote hosts, containers, or another shell/session.',
-      };
-  }
+interface AgentRolePreset {
+  label: string;
+  desc: string;
+  icon: React.ComponentType<{ className?: string }>;
+  checked: boolean;
 }
 
-function gatewayStatusTone(status: GatewayStatus | null): { label: string; className: string } {
+function gatewayCommandBlock(): { title: string; lines: string[]; note: string } {
+  return {
+    title: 'First time installing OpenClaw?',
+    lines: [
+      'npm install -g openclaw',
+      'openclaw onboard --install-daemon',
+    ],
+    note: 'If OpenClaw is already installed and running, you can skip this. Otherwise run these commands in another terminal, then come back here and re-check the gateway connection.',
+  };
+}
+
+function gatewayRemotePairingBlock(): { title: string; lines: string[]; note: string } {
+  return {
+    title: 'Remote gateway approval',
+    lines: [
+      'openclaw devices list',
+      'openclaw devices approve <requestId>',
+    ],
+    note: 'Remote gateways require a one-time device approval. Click Re-check gateway here to create the pending request, approve it on the remote machine, then click Re-check gateway again.',
+  };
+}
+
+function getDefaultLocalRuntimeHint(): GatewayRuntimeHint {
+  if (typeof navigator !== 'undefined') {
+    const userAgent = navigator.userAgent.toLowerCase();
+    if (userAgent.includes('mac')) return 'macos';
+    if (userAgent.includes('linux')) return 'linux';
+  }
+  return 'powershell';
+}
+
+function isRemoteGatewayRuntime(runtimeHint: GatewayRuntimeHint): boolean {
+  return runtimeHint === 'external';
+}
+
+function gatewayStatusTone(status: GatewayStatus | null, isRemoteGateway: boolean): { label: string; className: string } {
   if (!status) {
     return {
       label: 'Unknown',
@@ -145,7 +126,7 @@ function gatewayStatusTone(status: GatewayStatus | null): { label: string; class
       };
     case 'pairing_required':
       return {
-        label: 'Pairing Required',
+        label: isRemoteGateway ? 'Pairing Required' : 'Connection Required',
         className: 'border-amber-500/40 bg-amber-500/10 text-amber-300',
       };
     case 'auth_error':
@@ -166,7 +147,88 @@ function gatewayStatusTone(status: GatewayStatus | null): { label: string; class
   }
 }
 
-function buildDefaultRoles(_teamMode: TeamMode, hasGithub: boolean): AgentRole[] {
+function isGatewayTokenMismatch(error: string | null | undefined): boolean {
+  const normalized = (error ?? '').toLowerCase();
+  return normalized.includes('gateway token mismatch') || normalized.includes('provide gateway auth token');
+}
+
+function gatewayStatusDetails(status: GatewayStatus | null, isRemoteGateway: boolean): string | null {
+  if (!status) return null;
+  if (isGatewayTokenMismatch(status.error)) {
+    return 'Agent HQ could not connect because the saved gateway auth token did not match.';
+  }
+  if (status.state === 'pairing_required') {
+    return isRemoteGateway
+      ? 'The remote gateway is waiting for device approval. Run the approval commands on the remote machine, then re-check here.'
+      : 'OpenClaw rejected the connection request. Restart OpenClaw and verify the gateway auth token, then try again.';
+  }
+  return status.error;
+}
+
+function buildDefaultRoles(projectType: ProjectType, hasGithub: boolean): AgentRole[] {
+  const rolePresets: Record<Exclude<AgentRole['id'], 'atlas'>, AgentRolePreset> = projectType === 'content'
+    ? {
+        dev: {
+          label: 'Content Agent',
+          desc: 'Drafts articles, scripts, marketing copy, and creative deliverables.',
+          icon: FileText,
+          checked: true,
+        },
+        qa: {
+          label: 'Editorial Review Agent',
+          desc: 'Reviews tone, accuracy, structure, and consistency before anything ships.',
+          icon: ShieldCheck,
+          checked: true,
+        },
+        ops: {
+          label: 'Publishing Agent',
+          desc: 'Handles calendars, asset handoff, publishing steps, and channel-specific packaging.',
+          icon: Rocket,
+          checked: false,
+        },
+      }
+    : projectType === 'business-ops'
+      ? {
+          dev: {
+            label: 'Automation Agent',
+            desc: 'Builds workflows, automations, dashboards, and internal tooling.',
+            icon: Briefcase,
+            checked: true,
+          },
+          qa: {
+            label: 'Analysis Agent',
+            desc: 'Validates outputs, checks reporting quality, and catches process regressions.',
+            icon: ShieldCheck,
+            checked: true,
+          },
+          ops: {
+            label: 'Operations Agent',
+            desc: 'Owns rollouts, recurring processes, and operational follow-through across the business.',
+            icon: Rocket,
+            checked: true,
+          },
+        }
+      : {
+          dev: {
+            label: 'Development Agent',
+            desc: 'Builds features, fixes bugs, and handles implementation work.',
+            icon: Code2,
+            checked: true,
+          },
+          qa: {
+            label: 'QA Agent',
+            desc: 'Reviews work, runs tests, verifies quality.',
+            icon: ShieldCheck,
+          checked: hasGithub,
+          },
+          ops: {
+            label: 'Operations Agent',
+            desc: 'Handles releases, deployments, maintenance, and operational work.',
+            icon: Rocket,
+            checked: hasGithub,
+          },
+        };
+
   return [
     {
       id: 'atlas',
@@ -178,27 +240,27 @@ function buildDefaultRoles(_teamMode: TeamMode, hasGithub: boolean): AgentRole[]
     },
     {
       id: 'dev',
-      label: 'Development Agent',
-      desc: 'Builds features, fixes bugs, and handles implementation work.',
-      icon: Code2,
+      label: rolePresets.dev.label,
+      desc: rolePresets.dev.desc,
+      icon: rolePresets.dev.icon,
       alwaysChecked: false,
-      checked: true,
+      checked: rolePresets.dev.checked,
     },
     {
       id: 'qa',
-      label: 'QA Agent',
-      desc: 'Reviews work, runs tests, verifies quality.',
-      icon: ShieldCheck,
+      label: rolePresets.qa.label,
+      desc: rolePresets.qa.desc,
+      icon: rolePresets.qa.icon,
       alwaysChecked: false,
-      checked: true,
+      checked: rolePresets.qa.checked,
     },
     {
       id: 'ops',
-      label: 'Operations Agent',
-      desc: 'Handles releases, deployments, maintenance, and operational work.',
-      icon: Rocket,
+      label: rolePresets.ops.label,
+      desc: rolePresets.ops.desc,
+      icon: rolePresets.ops.icon,
       alwaysChecked: false,
-      checked: hasGithub,
+      checked: rolePresets.ops.checked,
     },
   ];
 }
@@ -312,12 +374,14 @@ export default function OnboardingWizard({ onClose }: Props) {
 
   // Step 2 — project + team setup
   const [projectType, setProjectType] = useState<ProjectType | null>(null);
-  const [teamMode, setTeamMode] = useState<TeamMode | null>(null);
   const [hasGithub, setHasGithub] = useState<boolean | null>(null);
+  const teamMode: 'solo' | 'team' = hasGithub === true ? 'team' : 'solo';
   const [projectSetupError, setProjectSetupError] = useState<string | null>(null);
   const [agentRoles, setAgentRoles] = useState<AgentRole[]>([]);
   const [gatewayWsUrl, setGatewayWsUrl] = useState('ws://127.0.0.1:18789');
-  const [gatewayRuntimeHint, setGatewayRuntimeHint] = useState<GatewayRuntimeHint>('powershell');
+  const [gatewayRuntimeHint, setGatewayRuntimeHint] = useState<GatewayRuntimeHint>(getDefaultLocalRuntimeHint);
+  const [lastLocalGatewayRuntimeHint, setLastLocalGatewayRuntimeHint] = useState<GatewayRuntimeHint>(getDefaultLocalRuntimeHint);
+  const [gatewayAuthToken, setGatewayAuthToken] = useState('');
   const [gatewayStatus, setGatewayStatus] = useState<GatewayStatus | null>(null);
   const [gatewayLoading, setGatewayLoading] = useState(false);
   const [gatewayChecking, setGatewayChecking] = useState(false);
@@ -336,8 +400,11 @@ export default function OnboardingWizard({ onClose }: Props) {
   const [projectCreating, setProjectCreating] = useState(false);
   const [projectCreated, setProjectCreated] = useState(false);
   const [finishError, setFinishError] = useState<string | null>(null);
-  const gatewayGuide = useMemo(() => gatewayCommandBlock(gatewayRuntimeHint), [gatewayRuntimeHint]);
-  const gatewayTone = gatewayStatusTone(gatewayStatus);
+  const gatewayGuide = useMemo(() => gatewayCommandBlock(), []);
+  const gatewayRemoteGuide = useMemo(() => gatewayRemotePairingBlock(), []);
+  const isRemoteGateway = isRemoteGatewayRuntime(gatewayRuntimeHint);
+  const gatewayTone = gatewayStatusTone(gatewayStatus, isRemoteGateway);
+  const gatewayNeedsToken = isGatewayTokenMismatch(gatewayStatus?.error);
   const gatewayRestartState: { phase: 'idle' | 'loading' | 'done' | 'error'; message?: string } = { phase: 'idle' };
 
   // ── Step 1: save name to localStorage + create project via API ──────────────
@@ -373,16 +440,12 @@ export default function OnboardingWizard({ onClose }: Props) {
       setProjectSetupError('Please select a project type.');
       return;
     }
-    if (!teamMode) {
-      setProjectSetupError('Please select solo or team.');
-      return;
-    }
     if (hasGithub === null) {
       setProjectSetupError('Please answer the GitHub question.');
       return;
     }
     setProjectSetupError(null);
-    const roles = buildDefaultRoles(teamMode, hasGithub);
+    const roles = buildDefaultRoles(projectType, hasGithub);
     setAgentRoles(roles);
     setStep('provider');
   }
@@ -399,8 +462,12 @@ export default function OnboardingWizard({ onClose }: Props) {
       ]);
       setGatewayWsUrl(config.ws_url);
       setGatewayRuntimeHint(config.runtime_hint);
+      if (!isRemoteGatewayRuntime(config.runtime_hint)) {
+        setLastLocalGatewayRuntimeHint(config.runtime_hint);
+      }
+      setGatewayAuthToken(config.auth_token ?? '');
       setGatewayStatus(status);
-      setGatewayDetails(status.error);
+      setGatewayDetails(gatewayStatusDetails(status, isRemoteGatewayRuntime(config.runtime_hint)));
       setGatewayLoaded(true);
     } catch (err) {
       setGatewayError(err instanceof Error ? err.message : String(err));
@@ -409,20 +476,35 @@ export default function OnboardingWizard({ onClose }: Props) {
     }
   }
 
+  async function persistGatewaySettings() {
+    const config = await api.updateGatewayConfig({
+      ws_url: gatewayWsUrl,
+      runtime_hint: gatewayRuntimeHint,
+      auth_token: gatewayAuthToken,
+    });
+    setGatewayWsUrl(config.ws_url);
+    setGatewayRuntimeHint(config.runtime_hint);
+    if (!isRemoteGatewayRuntime(config.runtime_hint)) {
+      setLastLocalGatewayRuntimeHint(config.runtime_hint);
+    }
+    setGatewayAuthToken(config.auth_token ?? '');
+    return config;
+  }
+
   async function handleGatewaySave() {
     setGatewaySaving(true);
     setGatewayError(null);
     setGatewaySuccess(null);
     try {
-      const config = await api.updateGatewayConfig({
-        ws_url: gatewayWsUrl,
-        runtime_hint: gatewayRuntimeHint,
-      });
+      const config = await persistGatewaySettings();
       setGatewayWsUrl(config.ws_url);
       setGatewayRuntimeHint(config.runtime_hint);
+      if (!isRemoteGatewayRuntime(config.runtime_hint)) {
+        setLastLocalGatewayRuntimeHint(config.runtime_hint);
+      }
       const status = await api.getGatewayStatus();
       setGatewayStatus(status);
-      setGatewayDetails(status.error);
+      setGatewayDetails(gatewayStatusDetails(status, isRemoteGateway));
       setGatewaySuccess('Gateway settings saved.');
     } catch (err) {
       setGatewayError(err instanceof Error ? err.message : String(err));
@@ -436,10 +518,11 @@ export default function OnboardingWizard({ onClose }: Props) {
     setGatewayError(null);
     setGatewaySuccess(null);
     try {
+      await persistGatewaySettings();
       const status = await api.getGatewayStatus();
       setGatewayStatus(status);
-      setGatewayDetails(status.error);
-      setGatewaySuccess(status.state === 'ready' ? 'Gateway is reachable.' : 'Gateway check completed.');
+      setGatewayDetails(gatewayStatusDetails(status, isRemoteGateway));
+      setGatewaySuccess(status.state === 'ready' ? 'Gateway is reachable.' : null);
     } catch (err) {
       setGatewayError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -449,18 +532,31 @@ export default function OnboardingWizard({ onClose }: Props) {
 
   function handleGatewayNext() {
     if (gatewayStatus?.state !== 'ready') {
-      setGatewayError('Start OpenClaw and re-check the gateway before continuing.');
+      setGatewayError(isRemoteGateway
+        ? 'Approve the pending device request on the remote gateway, then re-check it here before continuing.'
+        : 'Start OpenClaw and make sure the gateway shows Ready before continuing.');
       return;
     }
     setStep('agent');
   }
 
+  function setGatewayLocation(mode: 'local' | 'remote') {
+    if (mode === 'remote') {
+      setGatewayRuntimeHint('external');
+      return;
+    }
+    setGatewayRuntimeHint(lastLocalGatewayRuntimeHint);
+  }
+
   function handleProviderGatePassed() {
     setStep('gateway');
-    if (!gatewayLoaded) {
-      void loadGatewayStep();
-    }
   }
+
+  useEffect(() => {
+    if (step === 'gateway') {
+      void loadGatewayStep(!gatewayLoaded);
+    }
+  }, [step]);
 
   function toggleRole(id: string) {
     setAgentRoles(prev =>
@@ -786,14 +882,14 @@ export default function OnboardingWizard({ onClose }: Props) {
             </div>
 
             {/* Q2 — solo or team */}
-            <div className="space-y-2">
+            <div className="hidden">
               <p className="text-sm font-medium text-slate-300">
-                Is this solo or a team project?
+                Do you have a GitHub repo for this project?
               </p>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
-                  onClick={() => setTeamMode('solo')}
+                  onClick={() => undefined}
                   className={`flex items-center gap-2.5 p-3 rounded-xl border text-left transition-all ${
                     teamMode === 'solo'
                       ? 'border-amber-400 bg-amber-400/10 ring-1 ring-amber-400/30'
@@ -808,7 +904,7 @@ export default function OnboardingWizard({ onClose }: Props) {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setTeamMode('team')}
+                  onClick={() => undefined}
                   className={`flex items-center gap-2.5 p-3 rounded-xl border text-left transition-all ${
                     teamMode === 'team'
                       ? 'border-amber-400 bg-amber-400/10 ring-1 ring-amber-400/30'
@@ -901,7 +997,9 @@ export default function OnboardingWizard({ onClose }: Props) {
                 Connect OpenClaw
               </h2>
               <p className="text-slate-400 text-sm leading-relaxed">
-                Start OpenClaw yourself, then verify the gateway here before Agent HQ provisions anything against it.
+                {isRemoteGateway
+                  ? 'Agent HQ is pointed at a remote OpenClaw gateway. Re-check here to create the pending device request, approve it on the remote machine, then re-check again before continuing.'
+                  : 'Agent HQ automatically checks the saved local gateway URL and token when this step opens. Start OpenClaw, then verify the gateway here before Agent HQ provisions anything against it.'}
               </p>
             </div>
 
@@ -925,13 +1023,41 @@ export default function OnboardingWizard({ onClose }: Props) {
                   <div>
                     <p className="text-sm font-semibold text-white">Gateway connection</p>
                     <p className="text-xs text-slate-500 mt-1">
-                      Agent HQ uses this WebSocket URL for Atlas and agent chat.
+                      Agent HQ uses this WebSocket URL for Atlas and agent chat once the gateway is reachable.
                     </p>
                   </div>
                   <span className={`rounded-full border px-2.5 py-1 text-xs font-medium ${gatewayTone.className}`}>
                     {gatewayTone.label}
                   </span>
                 </div>
+
+                <label className="block space-y-2">
+                  <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Gateway location</span>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => setGatewayLocation('local')}
+                      className={`rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                        !isRemoteGateway
+                          ? 'border-amber-400 bg-amber-500/10 text-amber-300'
+                          : 'border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500'
+                      }`}
+                    >
+                      Local machine
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setGatewayLocation('remote')}
+                      className={`rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                        isRemoteGateway
+                          ? 'border-amber-400 bg-amber-500/10 text-amber-300'
+                          : 'border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500'
+                      }`}
+                    >
+                      Remote machine
+                    </button>
+                  </div>
+                </label>
 
                 <label className="block space-y-2">
                   <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Gateway URL</span>
@@ -943,25 +1069,54 @@ export default function OnboardingWizard({ onClose }: Props) {
                   />
                 </label>
 
-                <div className="space-y-2">
-                  <span className="text-xs font-medium uppercase tracking-wide text-slate-500">How are you running OpenClaw?</span>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {GATEWAY_RUNTIME_OPTIONS.map((option) => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        onClick={() => setGatewayRuntimeHint(option.value)}
-                        className={`rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
-                          gatewayRuntimeHint === option.value
-                            ? 'border-amber-400 bg-amber-500/10 text-amber-300'
-                            : 'border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500'
-                        }`}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
+                <label className="block space-y-2">
+                  <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Gateway Auth Token</span>
+                  <input
+                    type="password"
+                    value={gatewayAuthToken}
+                    onChange={(event) => setGatewayAuthToken(event.target.value)}
+                    className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 transition-colors"
+                    placeholder="Paste the token from the dashboard URL if needed"
+                  />
+                  <p className="text-xs leading-5 text-slate-500">
+                    {isRemoteGateway
+                      ? 'Paste the remote gateway token here. If the check says the token does not match, run `openclaw dashboard --no-open` on the remote machine and copy the token from the URL.'
+                      : 'Leave this alone unless the automatic check says the gateway token does not match.'}
+                  </p>
+                </label>
+
+                {gatewayNeedsToken && (
+                  <div className="rounded-xl border border-amber-400/40 bg-amber-500/10 p-4 space-y-3">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-amber-300" />
+                      <div>
+                        <p className="text-sm font-semibold text-amber-200">Gateway token needed</p>
+                        <p className="text-xs leading-5 text-amber-100/90">
+                          The saved token did not match this OpenClaw gateway.
+                        </p>
+                      </div>
+                    </div>
+                    <pre className="overflow-x-auto rounded-lg border border-amber-400/30 bg-slate-950 p-3 text-xs leading-6 text-amber-100">
+                      openclaw dashboard --no-open
+                    </pre>
+                    <p className="text-xs leading-5 text-amber-100/90">
+                      Copy the token from the dashboard URL, paste it into the field above, then click Re-check gateway.
+                    </p>
                   </div>
-                </div>
+                )}
+
+                {isRemoteGateway && (
+                  <div className="rounded-xl border border-amber-400/30 bg-slate-900/80 p-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-amber-400" />
+                      <p className="text-sm font-semibold text-white">{gatewayRemoteGuide.title}</p>
+                    </div>
+                    <pre className="overflow-x-auto rounded-lg border border-slate-700 bg-slate-950 p-4 text-xs leading-6 text-slate-200">
+                      {gatewayRemoteGuide.lines.join('\n')}
+                    </pre>
+                    <p className="text-xs leading-5 text-slate-400">{gatewayRemoteGuide.note}</p>
+                  </div>
+                )}
 
                 <div className="flex flex-wrap gap-3">
                   <button
@@ -1004,7 +1159,7 @@ export default function OnboardingWizard({ onClose }: Props) {
                 {gatewayLoading && (
                   <div className="flex items-center gap-2 text-sm text-slate-400">
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    Loading gateway settings...
+                    Checking gateway connection...
                   </div>
                 )}
               </div>
@@ -1053,9 +1208,7 @@ export default function OnboardingWizard({ onClose }: Props) {
                       created
                     </span>
                   </div>
-                  <div className="flex items-center gap-2 text-xs text-slate-500">
-                    <Users className="w-3.5 h-3.5" />
-                    <span>{teamMode === 'team' ? 'Team project' : 'Solo project'}</span>
+                  <div className="hidden">
                     <span className="text-slate-700">•</span>
                     <span>{projectType === 'software' ? 'Software' : projectType === 'content' ? 'Content' : 'Business Ops'}</span>
                     {hasGithub && (
@@ -1270,14 +1423,11 @@ export default function OnboardingWizard({ onClose }: Props) {
                 })}
             </div>
 
-            <div className="rounded-xl border border-amber-400/20 bg-amber-400/10 p-4 text-left">
-              <p className="text-sm font-medium text-amber-200">One last step outside Agent HQ</p>
-              <p className="mt-1 text-sm leading-relaxed text-amber-100/90">
-                Your agents are provisioned. Restart or reload the OpenClaw gateway process you started earlier so it picks up the new agent configuration.
+            <div className="rounded-xl border border-green-500/20 bg-green-500/10 p-4 text-left">
+              <p className="text-sm font-medium text-green-200">Your runtime is ready</p>
+              <p className="mt-1 text-sm leading-relaxed text-green-100/90">
+                Your agents were provisioned and OpenClaw picked up the new configuration automatically.
               </p>
-              <pre className="mt-3 overflow-x-auto rounded-lg border border-amber-400/20 bg-slate-950/70 p-3 text-xs leading-6 text-slate-200">
-                {gatewayGuide.lines.join('\n')}
-              </pre>
             </div>
 
             {finishError && <p className="text-sm text-red-400">{finishError}</p>}

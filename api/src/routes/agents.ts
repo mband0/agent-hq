@@ -20,8 +20,6 @@ import { syncStarterRoutingForProject } from '../lib/starterSetup';
 import { getSkillMaterializationAdapter } from '../runtimes/skillMaterialization';
 import { syncAssignedMcpForAgent } from '../runtimes/mcpMaterialization';
 import { VALID_TASK_TYPES } from '../lib/taskTypes';
-import { getConfiguredGatewayWsUrl } from '../lib/gatewaySettings';
-import { ensureLocalGatewayPairing } from '../lib/openclawAutoPair';
 import { ensureOpenClawGatewayAvailable, requireOpenClawOutput, runOpenClawSync } from '../lib/openclawCli';
 
 const router = Router();
@@ -209,8 +207,6 @@ interface WorkspaceScaffoldResult {
   workspacePath: string;
   memoryDir: string;
   docsWritten: string[];
-  authProfilesCopied: boolean;
-  authProfilesPath: string | null;
 }
 
 interface OpenClawRegistrationResult {
@@ -220,22 +216,104 @@ interface OpenClawRegistrationResult {
   added: boolean;
   updated: boolean;
   gatewayRestarted: boolean;
+  authProvidersSynced: string[];
 }
 
 function normalizeJsonArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }
 
-function findCanonicalAuthProfilesSource(): string | null {
-  const candidates = [
-    path.join(os.homedir(), '.openclaw', 'auth-profiles.json'),
-    path.join(os.homedir(), '.openclaw', 'workspace', 'auth-profiles.json'),
-    path.join(os.homedir(), '.openclaw', 'workspace', '.openclaw', 'auth-profiles.json'),
-  ];
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) return candidate;
+function createEmptyAuthProfilesDocument(): Record<string, unknown> {
+  return {
+    version: 1,
+    profiles: {},
+    lastGood: {},
+    usageStats: {},
+  };
+}
+
+function readJsonFile(filePath: string): Record<string, unknown> | null {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf-8')) as Record<string, unknown>;
+  } catch {
+    return null;
   }
-  return null;
+}
+
+function upsertAgentAuthProfile(filePath: string, slug: string, profile: Record<string, unknown>): void {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const data = fs.existsSync(filePath)
+    ? (readJsonFile(filePath) ?? createEmptyAuthProfilesDocument())
+    : createEmptyAuthProfilesDocument();
+  const profiles = (data.profiles && typeof data.profiles === 'object')
+    ? data.profiles as Record<string, unknown>
+    : {};
+  profiles[`${slug}:default`] = profile;
+  data.profiles = profiles;
+
+  const lastGood = (data.lastGood && typeof data.lastGood === 'object')
+    ? data.lastGood as Record<string, string>
+    : {};
+  lastGood[slug] = `${slug}:default`;
+  data.lastGood = lastGood;
+
+  if (!data.usageStats || typeof data.usageStats !== 'object') {
+    data.usageStats = {};
+  }
+
+  fs.writeFileSync(filePath, JSON.stringify(data, null, 2) + '\n', 'utf-8');
+}
+
+function syncStoredProviderAuthProfiles(agentDirPath: string): string[] {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT slug, config
+    FROM provider_config
+    WHERE status = 'connected'
+  `).all() as Array<{ slug: string; config: string }>;
+
+  const synced: string[] = [];
+  const authFilePath = path.join(agentDirPath, 'auth-profiles.json');
+  for (const row of rows) {
+    let config: Record<string, unknown>;
+    try {
+      config = JSON.parse(row.config ?? '{}') as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+
+    if (row.slug !== 'openai-codex' || config.auth_type !== 'oauth') {
+      continue;
+    }
+
+    const tokens = config.tokens && typeof config.tokens === 'object'
+      ? config.tokens as Record<string, unknown>
+      : null;
+    const accessToken = typeof tokens?.access_token === 'string' ? tokens.access_token.trim() : '';
+    const refreshToken = typeof tokens?.refresh_token === 'string' ? tokens.refresh_token.trim() : '';
+    if (!accessToken && !refreshToken) {
+      continue;
+    }
+
+    const expiresAt = typeof config.expires_at === 'number' && Number.isFinite(config.expires_at)
+      ? config.expires_at
+      : Date.now() + 3600_000;
+    const accountId = typeof config.account_id === 'string' && config.account_id.trim()
+      ? config.account_id.trim()
+      : null;
+
+    upsertAgentAuthProfile(authFilePath, row.slug, {
+      type: 'oauth',
+      provider: row.slug,
+      access: accessToken,
+      refresh: refreshToken,
+      expires: expiresAt,
+      ...(accountId ? { accountId } : {}),
+    });
+    synced.push(row.slug);
+  }
+
+  return synced;
 }
 
 function buildDefaultWorkspacePath(slug: string): string {
@@ -298,20 +376,10 @@ function ensureWorkspaceScaffold(params: {
     docsWritten.push('AGENTS.md');
   }
 
-  const authProfilesSource = findCanonicalAuthProfilesSource();
-  const authProfilesTarget = path.join(params.workspacePath, 'auth-profiles.json');
-  let authProfilesCopied = false;
-  if (authProfilesSource && !fs.existsSync(authProfilesTarget)) {
-    fs.copyFileSync(authProfilesSource, authProfilesTarget);
-    authProfilesCopied = true;
-  }
-
   return {
     workspacePath: params.workspacePath,
     memoryDir,
     docsWritten,
-    authProfilesCopied,
-    authProfilesPath: authProfilesSource ? authProfilesTarget : null,
   };
 }
 
@@ -333,6 +401,7 @@ function ensureOpenClawRegistration(params: {
   const list = (agentsConfig.list as Array<Record<string, unknown>> | undefined) ?? [];
   const agentDirPath = buildDefaultAgentDirPath(params.slug);
   fs.mkdirSync(agentDirPath, { recursive: true });
+  const authProvidersSynced = syncStoredProviderAuthProfiles(agentDirPath);
 
   let added = false;
   let updated = false;
@@ -373,6 +442,7 @@ function ensureOpenClawRegistration(params: {
     added,
     updated,
     gatewayRestarted,
+    authProvidersSynced,
   };
 }
 
@@ -700,9 +770,7 @@ router.post('/provision-full', (req: Request, res: Response) => {
           workspace_path: workspaceResult.workspacePath,
           memory_dir: workspaceResult.memoryDir,
           docs_written: workspaceResult.docsWritten,
-          auth_profiles_path: workspaceResult.authProfilesPath,
         },
-        warnings: workspaceResult.authProfilesPath ? [] : ['No canonical auth-profiles.json source was found; skipped copy'],
       };
 
       openclawResult = ensureOpenClawRegistration({
@@ -718,6 +786,7 @@ router.post('/provision-full', (req: Request, res: Response) => {
           openclaw_agent_id: openclawResult.slug,
           agent_dir: openclawResult.agentDirPath,
           gateway_restarted: openclawResult.gatewayRestarted,
+          auth_providers_synced: openclawResult.authProvidersSynced,
         },
       };
 
@@ -1576,6 +1645,7 @@ router.post('/:id/provision', (req: Request, res: Response) => {
 
     // --- 3. Create agentDir ----------------------------------------------------
     fs.mkdirSync(agentDirPath, { recursive: true });
+    const authProvidersSynced = syncStoredProviderAuthProfiles(agentDirPath);
 
     // --- 4. Patch openclaw.json ------------------------------------------------
     let gatewayRestarted = false;
@@ -1627,13 +1697,8 @@ router.post('/:id/provision', (req: Request, res: Response) => {
         gatewayError = restartErr instanceof Error ? restartErr.message : String(restartErr);
       // Non-fatal — workspace + config are already set up
     }
-      try {
-        const pairResult = ensureLocalGatewayPairing(getConfiguredGatewayWsUrl());
-        pairingApproved = pairResult.approved;
-        pairingMessage = pairResult.message;
-      } catch (pairErr) {
-        pairingMessage = pairErr instanceof Error ? pairErr.message : String(pairErr);
-      }
+      pairingApproved = false;
+      pairingMessage = 'Pairing is manual. If the restarted gateway asks for pairing, approve the pending request with `openclaw devices list` and `openclaw devices approve <requestId>`.';
 
     }
 
@@ -1647,12 +1712,13 @@ router.post('/:id/provision', (req: Request, res: Response) => {
       agent_dir: agentDirPath,
       model: agentModel,
       openclaw_agent_id: slug,
+      auth_providers_synced: authProvidersSynced,
       gateway_restarted: gatewayRestarted,
       gateway_error: gatewayError,
       restart_required: !shouldRestartGateway,
       message: shouldRestartGateway
         ? (gatewayError ? 'Agent provisioned, but gateway restart did not complete.' : 'Agent provisioned and gateway restart attempted.')
-        : 'Agent provisioned. Restart or reload OpenClaw manually to pick up the new agent.',
+        : 'Agent provisioned. OpenClaw can pick up the new agent configuration without a manual restart.',
       pairing_approved: pairingApproved,
       pairing_message: pairingMessage,
     });

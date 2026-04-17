@@ -198,29 +198,63 @@ export default function ProviderConnectionsManager({
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (showSpinner = true) => {
+    if (showSpinner) setLoading(true);
     setPageError(null);
     try {
       const response = await api.getProviders();
       setProviders(response.providers);
       setGatePassed(response.onboarding_provider_gate_passed);
-      const next = {} as Record<ProviderSlug, CardState>;
-      for (const meta of PROVIDERS) {
-        next[meta.slug] = extractCardState(
-          meta,
-          response.providers.find(provider => provider.slug === meta.slug)
-        );
-      }
-      setCards(next);
+      setCards(prev => {
+        const next = {} as Record<ProviderSlug, CardState>;
+        for (const meta of PROVIDERS) {
+          const provider = response.providers.find(item => item.slug === meta.slug);
+          const base = extractCardState(meta, provider);
+          const prevCard = prev[meta.slug];
+          next[meta.slug] = {
+            ...base,
+            expanded: prevCard?.expanded ?? false,
+            oauthPending: provider?.status === 'connected' || provider?.status === 'failed' ? false : prevCard?.oauthPending,
+            oauthCallbackUrl: provider?.status === 'connected' || provider?.status === 'failed' ? '' : (prevCard?.oauthCallbackUrl ?? ''),
+          };
+          if (next[meta.slug].oauthPending && provider?.status !== 'connected' && !next[meta.slug].warning) {
+            next[meta.slug].warning = 'Agent HQ is waiting for the localhost callback. If the OAuth tab does not close automatically, copy the full final URL and paste it below.';
+          }
+        }
+        return next;
+      });
     } catch (error) {
       setPageError(error instanceof Error ? error.message : String(error));
     } finally {
-      setLoading(false);
+      if (showSpinner) setLoading(false);
     }
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      const data = event.data as { type?: string; slug?: string; ok?: boolean } | null;
+      if (!data || data.type !== 'agent-hq-oauth-complete' || !data.ok) return;
+      void load(false);
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [load]);
+
+  const hasPendingOAuth = useMemo(
+    () => Object.values(cards).some(card => card.oauthPending),
+    [cards]
+  );
+
+  useEffect(() => {
+    if (!hasPendingOAuth) return;
+    const timer = window.setInterval(() => {
+      void load(false);
+    }, 1500);
+    return () => window.clearInterval(timer);
+  }, [hasPendingOAuth, load]);
 
   const connectedCount = useMemo(
     () => providers.filter(provider => provider.status === 'connected').length,
@@ -238,10 +272,10 @@ export default function ProviderConnectionsManager({
       if (result.oauthUrl) {
         window.open(result.oauthUrl, '_blank');
       }
-      await load();
+      await load(false);
       setCard(meta.slug, {
         status: 'idle', error: null, loading: false, oauthPending: true, oauthCallbackUrl: '',
-        warning: 'Sign in with OpenAI in the new tab. Then paste the redirect URL below (the page that says "localhost refused to connect").',
+        warning: 'Agent HQ will finish automatically if the localhost callback succeeds. If the OAuth tab stays open or lands on a localhost URL, copy the full final URL and paste it below.',
       });
     } catch (error) {
       setCard(meta.slug, { status: 'failed', error: error instanceof Error ? error.message : String(error), loading: false });
@@ -352,7 +386,7 @@ export default function ProviderConnectionsManager({
         {mode === 'settings' && (
           <button
             type="button"
-            onClick={load}
+            onClick={() => { void load(); }}
             disabled={loading}
             className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-700 text-slate-300 hover:text-white hover:border-slate-600 disabled:opacity-50"
           >
@@ -450,7 +484,7 @@ export default function ProviderConnectionsManager({
                         <p className="text-xs text-slate-400">
                           Authenticates via browser OAuth through OpenClaw. No API key needed &mdash; tokens are managed by OpenClaw automatically.
                         </p>
-                        <p className="text-xs text-slate-500">Requires OpenClaw runtime. After signing in, click &quot;Check Connection&quot; to verify.</p>
+                        <p className="text-xs text-slate-500">Agent HQ will mark this connected automatically if the localhost callback succeeds. If not, paste the full redirect URL below.</p>
                       </>
                     ) : (
                       <>
@@ -519,7 +553,7 @@ export default function ProviderConnectionsManager({
                         <p className="text-xs text-slate-400">
                           Authenticates via browser OAuth through OpenClaw. No API key needed — tokens are managed automatically.
                         </p>
-                        <p className="text-xs text-slate-500">Requires OpenClaw runtime. After signing in, click &quot;Check Connection&quot; to verify.</p>
+                        <p className="text-xs text-slate-500">Agent HQ will mark this connected automatically if the localhost callback succeeds. If not, paste the full redirect URL below.</p>
                         {subOAuthCard.warning && (
                           <div className="flex items-start gap-2 text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg p-2">
                             <AlertCircle className="w-3 h-3 shrink-0 mt-0.5" />

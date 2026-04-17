@@ -1,9 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { getDb } from '../db/client';
 import { probeGateway } from '../lib/gatewayHealth';
-import { getConfiguredGatewayWsUrl, readGatewaySettings, saveGatewaySettings, type GatewayRuntimeHint } from '../lib/gatewaySettings';
+import { pairGateway } from '../lib/gatewayPair';
+import { readGatewaySettings, saveGatewaySettings, type GatewayRuntimeHint } from '../lib/gatewaySettings';
 import { ensureOpenClawGatewayAvailable } from '../lib/openclawCli';
-import { ensureLocalGatewayPairing } from '../lib/openclawAutoPair';
 
 const router = Router();
 
@@ -148,6 +148,9 @@ router.get('/gateway/config', (_req: Request, res: Response) => {
       ws_url: settings.wsUrl,
       http_url: settings.httpUrl,
       runtime_hint: settings.runtimeHint,
+      auth_token: settings.authToken,
+      auth_token_configured: settings.authTokenConfigured,
+      auth_token_source: settings.authTokenSource,
       source: settings.source,
     });
   } catch (err) {
@@ -161,6 +164,9 @@ router.put('/gateway/config', (req: Request, res: Response) => {
     const runtimeHint = typeof req.body?.runtime_hint === 'string'
       ? req.body.runtime_hint.trim().toLowerCase()
       : '';
+    const authToken = typeof req.body?.auth_token === 'string'
+      ? req.body.auth_token
+      : null;
 
     if (!wsUrl) {
       return res.status(400).json({ ok: false, error: 'ws_url is required' });
@@ -174,13 +180,18 @@ router.put('/gateway/config', (req: Request, res: Response) => {
     const saved = saveGatewaySettings({
       wsUrl,
       runtimeHint: runtimeHint as GatewayRuntimeHint,
+      authToken,
     });
+    const settings = readGatewaySettings();
 
     return res.json({
       ok: true,
       ws_url: saved.wsUrl,
       http_url: saved.httpUrl,
       runtime_hint: saved.runtimeHint,
+      auth_token: settings.authToken,
+      auth_token_configured: settings.authTokenConfigured,
+      auth_token_source: settings.authTokenSource,
     });
   } catch (err) {
     return res.status(500).json({ ok: false, error: String(err) });
@@ -196,12 +207,42 @@ router.get('/gateway/status', async (_req: Request, res: Response) => {
       ws_url: settings.wsUrl,
       http_url: settings.httpUrl,
       runtime_hint: settings.runtimeHint,
+      auth_token_configured: settings.authTokenConfigured,
+      auth_token_source: settings.authTokenSource,
       source: settings.source,
       state: probe.state,
       reachable: probe.reachable,
       pairing_required: probe.pairing_required,
       checked_at: probe.checked_at,
       error: probe.error,
+    });
+  } catch (err) {
+    return res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+});
+
+router.post('/gateway/pair', async (_req: Request, res: Response) => {
+  try {
+    const settings = readGatewaySettings();
+    const result = await pairGateway(settings.wsUrl, settings.runtimeHint);
+    return res.json({
+      ok: true,
+      ws_url: settings.wsUrl,
+      http_url: settings.httpUrl,
+      runtime_hint: settings.runtimeHint,
+      source: settings.source,
+      state: result.state,
+      reachable: result.reachable,
+      pairing_required: result.pairing_required,
+      checked_at: result.checked_at,
+      error: result.error,
+      auto_pair_supported: result.auto_pair_supported,
+      manual_required: result.manual_required,
+      pairing_approved: result.pairing_approved,
+      message: result.message,
     });
   } catch (err) {
     return res.status(500).json({
@@ -220,16 +261,6 @@ router.post('/gateway/restart', (_req: Request, res: Response) => {
         error: `Failed to restart OpenClaw gateway: ${gateway.message}`,
       });
     }
-    let pairingApproved = false;
-    let pairingMessage: string | null = null;
-    try {
-      const pairResult = ensureLocalGatewayPairing(getConfiguredGatewayWsUrl());
-      pairingApproved = pairResult.approved;
-      pairingMessage = pairResult.message;
-    } catch (pairErr) {
-      pairingMessage = pairErr instanceof Error ? pairErr.message : String(pairErr);
-    }
-
     res.json({
       ok: true,
       message: gateway.usedDirectFallback
@@ -238,8 +269,8 @@ router.post('/gateway/restart', (_req: Request, res: Response) => {
           ? 'OpenClaw gateway command was repaired and the gateway was restarted successfully.'
           : 'OpenClaw gateway restarted successfully.',
       output: gateway.message || null,
-      pairing_approved: pairingApproved,
-      pairing_message: pairingMessage,
+      pairing_approved: false,
+      pairing_message: 'Pairing is manual. If the gateway asks for pairing, approve the pending request with `openclaw devices list` and `openclaw devices approve <requestId>`.',
     });
   } catch (err) {
     const output = err instanceof Error ? err.message : String(err);

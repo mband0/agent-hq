@@ -84,6 +84,16 @@ export function summarizeGatewayErrorForUi(value: unknown): string {
   const normalized = raw.replace(/\s+/g, ' ').trim();
   const lower = normalized.toLowerCase();
 
+  if (
+    lower.includes('dns lookup for the provider endpoint failed')
+    || lower.includes('getaddrinfo')
+    || lower.includes('enotfound')
+    || lower.includes('eai_again')
+    || lower.includes('name resolution')
+  ) {
+    return 'The machine running OpenClaw could not resolve the provider endpoint. Check its internet/DNS connection, then retry.';
+  }
+
   if (lower.includes('device identity required')) {
     return 'OpenClaw device identity is required. Restart or pair the local gateway again, then retry.';
   }

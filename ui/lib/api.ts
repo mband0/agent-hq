@@ -240,10 +240,12 @@ export const api = {
     apiFetch<ProvisionStatus>(`/api/v1/agents/${id}/provision-status`),
   getGatewayConfig: () =>
     apiFetch<GatewayConfig>('/api/v1/settings/gateway/config'),
-  updateGatewayConfig: (data: { ws_url: string; runtime_hint: GatewayRuntimeHint }) =>
+  updateGatewayConfig: (data: { ws_url: string; runtime_hint: GatewayRuntimeHint; auth_token?: string | null }) =>
     apiFetch<GatewayConfig>('/api/v1/settings/gateway/config', { method: 'PUT', body: JSON.stringify(data) }),
   getGatewayStatus: () =>
     apiFetch<GatewayStatus>('/api/v1/settings/gateway/status'),
+  pairGateway: () =>
+    apiFetch<GatewayPairResponse>('/api/v1/settings/gateway/pair', { method: 'POST' }),
   restartGateway: () =>
     apiFetch<GatewayRestartResponse>('/api/v1/settings/gateway/restart', { method: 'POST' }),
 
@@ -918,6 +920,9 @@ export interface GatewayConfig {
   ws_url: string;
   http_url: string;
   runtime_hint: GatewayRuntimeHint;
+  auth_token?: string;
+  auth_token_configured?: boolean;
+  auth_token_source?: 'stored' | 'local' | 'none';
   source?: 'stored' | 'default';
   error?: string | null;
 }
@@ -928,6 +933,13 @@ export interface GatewayStatus extends GatewayConfig {
   pairing_required: boolean;
   checked_at: string;
   error: string | null;
+}
+
+export interface GatewayPairResponse extends GatewayStatus {
+  auto_pair_supported: boolean;
+  manual_required: boolean;
+  pairing_approved: boolean;
+  message: string | null;
 }
 
 export interface ClaudeMdResult {
