@@ -20,6 +20,8 @@
  * across all remote runtimes.
  */
 
+import { getAgentHqBaseUrl } from '../lib/agentHqBaseUrl';
+
 // ── Lifecycle data types ─────────────────────────────────────────────────────
 
 /** Structured lifecycle data extracted from a remote agent's response. */
@@ -78,7 +80,8 @@ export interface LifecycleContext {
 // ── Lifecycle proxy config ───────────────────────────────────────────────────
 
 export interface LifecycleProxyConfig {
-  /** Atlas HQ API base URL. Defaults to AGENT_HQ_URL / legacy ATLAS_HQ_URL / ATLAS_INTERNAL_BASE_URL / localhost:3501. */
+  /** Agent HQ API base URL. Prefer agentHqBaseUrl; atlasBaseUrl remains as a legacy alias. */
+  agentHqBaseUrl?: string;
   atlasBaseUrl?: string;
 }
 
@@ -103,11 +106,9 @@ export interface LifecycleResult {
 
 function getAtlasBaseUrl(config?: LifecycleProxyConfig): string {
   return (
+    config?.agentHqBaseUrl ??
     config?.atlasBaseUrl ??
-    process.env.AGENT_HQ_URL ??
-    process.env.ATLAS_HQ_URL ??
-    process.env.ATLAS_INTERNAL_BASE_URL ??
-    'http://localhost:3501'
+    getAgentHqBaseUrl()
   );
 }
 

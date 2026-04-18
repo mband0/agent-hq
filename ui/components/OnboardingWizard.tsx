@@ -378,7 +378,7 @@ export default function OnboardingWizard({ onClose }: Props) {
   const teamMode: 'solo' | 'team' = hasGithub === true ? 'team' : 'solo';
   const [projectSetupError, setProjectSetupError] = useState<string | null>(null);
   const [agentRoles, setAgentRoles] = useState<AgentRole[]>([]);
-  const [gatewayWsUrl, setGatewayWsUrl] = useState('ws://127.0.0.1:18789');
+  const [gatewayWsUrl, setGatewayWsUrl] = useState('wss://127.0.0.1:18789');
   const [gatewayRuntimeHint, setGatewayRuntimeHint] = useState<GatewayRuntimeHint>(getDefaultLocalRuntimeHint);
   const [lastLocalGatewayRuntimeHint, setLastLocalGatewayRuntimeHint] = useState<GatewayRuntimeHint>(getDefaultLocalRuntimeHint);
   const [gatewayAuthToken, setGatewayAuthToken] = useState('');
@@ -1065,7 +1065,7 @@ export default function OnboardingWizard({ onClose }: Props) {
                     value={gatewayWsUrl}
                     onChange={(event) => setGatewayWsUrl(event.target.value)}
                     className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 transition-colors"
-                    placeholder="ws://127.0.0.1:18789"
+                    placeholder="wss://127.0.0.1:18789"
                   />
                 </label>
 

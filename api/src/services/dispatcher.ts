@@ -40,6 +40,7 @@ import {
 import { getSkillMaterializationAdapter } from '../runtimes/skillMaterialization';
 import { materializeAgentMcpConfig } from '../runtimes/mcpMaterialization';
 import { getDb } from '../db/client';
+import { getAgentHqBaseUrl } from '../lib/agentHqBaseUrl';
 import { buildHookSessionKey, resolveRuntimeAgentSlug } from '../lib/sessionKeys';
 
 // ── Dispatch failure backoff (task #355) ─────────────────────────────────────
@@ -707,7 +708,7 @@ interface InstanceCallbackContractInput {
   sprintType?: string | null;
   agentSlug: string;
   sessionKey: string;
-  /** Base URL for callback curl examples. Defaults to ATLAS_INTERNAL_BASE_URL (localhost). */
+  /** Base URL for callback curl examples. Defaults to Agent HQ base URL env vars (localhost). */
   baseUrl?: string;
   /** Transport mode override — determined by resolveTransportMode() when not specified. */
   transportMode?: 'local' | 'remote-direct' | 'proxy-managed';
@@ -1484,8 +1485,8 @@ function dispatchTaskToJob(
 
   // Remote agents (Veri) need the external Tailscale URL; local agents use localhost.
   const callbackBaseUrl = job.runtime_type === 'veri'
-    ? (process.env.AGENT_HQ_URL ?? process.env.ATLAS_HQ_URL ?? process.env.ATLAS_INTERNAL_BASE_URL ?? 'http://localhost:3501')
-    : undefined; // undefined → default (ATLAS_INTERNAL_BASE_URL / localhost)
+    ? getAgentHqBaseUrl()
+    : undefined; // undefined → default Agent HQ base URL / localhost
 
   // ── GitHub identity injection (task #613) ────────────────────────────────
   // Resolve and inject per-agent GitHub credentials so routed agents can

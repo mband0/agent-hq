@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
+import { getAgentHqBaseUrl } from '@/lib/agentHqBaseUrl';
 
-const API_BASE = process.env.ATLAS_INTERNAL_BASE_URL ?? 'http://127.0.0.1:3551';
+const API_BASE = getAgentHqBaseUrl();
 const HOP_BY_HOP_HEADERS = new Set([
   'connection',
   'content-length',

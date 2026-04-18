@@ -17,6 +17,7 @@ import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentRuntime, DispatchParams } from './types';
 import type Database from 'better-sqlite3';
 import { validateAndLogViolation } from '../lib/workspaceBoundary';
+import { getAgentHqBaseUrl } from '../lib/agentHqBaseUrl';
 import { fetchAgentTools, createAgentToolServer } from './toolInjection';
 
 // ── Config ───────────────────────────────────────────────────────────────────
@@ -148,7 +149,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     sessionKey?: string,
     agentSlug?: string,
   ): Promise<void> {
-    const baseUrl = process.env.ATLAS_INTERNAL_BASE_URL ?? 'http://localhost:3501';
+    const baseUrl = getAgentHqBaseUrl();
 
     // Determine the effective working directory.
     // Priority: config.workingDirectory (agent-specific) → workspaceRoot (dispatcher-provided)

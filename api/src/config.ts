@@ -8,7 +8,7 @@
 
 import path from 'path';
 import os from 'os';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { execFileSync } from 'child_process';
 
 const HOME = process.env.HOME ?? os.homedir();
@@ -77,8 +77,40 @@ export function prependPathEntries(entries: string[], currentPath = process.env.
 
 export const OPENCLAW_PATH: string = prependPathEntries([NODE_BIN_DIR, OPENCLAW_BIN_DIR]);
 
+function readLocalGatewayDefaults(): { port: number; tlsEnabled: boolean } {
+  const fallback = { port: 18789, tlsEnabled: false };
+  try {
+    const raw = JSON.parse(readFileSync(OPENCLAW_CONFIG_PATH, 'utf-8')) as {
+      gateway?: {
+        port?: unknown;
+        tls?: {
+          enabled?: unknown;
+        };
+      };
+    };
+    const port = raw.gateway?.port;
+    const tlsEnabled = raw.gateway?.tls?.enabled;
+    return {
+      port: typeof port === 'number' && Number.isInteger(port) && port > 0 && port <= 65535
+        ? port
+        : fallback.port,
+      tlsEnabled: tlsEnabled === true,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+export function resolveDefaultGatewayUrl(target: 'http' | 'ws'): string {
+  const defaults = readLocalGatewayDefaults();
+  const scheme = target === 'http'
+    ? (defaults.tlsEnabled ? 'https' : 'http')
+    : (defaults.tlsEnabled ? 'wss' : 'ws');
+  return `${scheme}://127.0.0.1:${defaults.port}`;
+}
+
 function normalizeGatewayUrl(raw: string | undefined, target: 'http' | 'ws'): string {
-  const fallback = target === 'http' ? 'http://127.0.0.1:18789' : 'ws://127.0.0.1:18789';
+  const fallback = resolveDefaultGatewayUrl(target);
   try {
     const parsed = new URL(raw ?? fallback);
     if (target === 'http') {

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getAgentHqBaseUrl } from '@/lib/agentHqBaseUrl';
 
 function buildGatewayUrl(req: NextRequest, apiBase: string): string {
   const internalApiUrl = new URL(apiBase);
@@ -25,7 +26,7 @@ function buildGatewayUrl(req: NextRequest, apiBase: string): string {
 }
 
 export async function GET(req: NextRequest) {
-  const apiBase = process.env.ATLAS_INTERNAL_BASE_URL ?? 'http://127.0.0.1:3551';
+  const apiBase = getAgentHqBaseUrl();
   try {
     const res = await fetch(`${apiBase}/api/v1/chat/config`, {
       cache: 'no-store',

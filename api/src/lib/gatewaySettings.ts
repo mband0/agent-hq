@@ -1,5 +1,5 @@
 import { getDb } from '../db/client';
-import { OPENCLAW_CONFIG_PATH, OPENCLAW_GATEWAY_URL, OPENCLAW_GATEWAY_WS_URL } from '../config';
+import { OPENCLAW_CONFIG_PATH, OPENCLAW_GATEWAY_URL, OPENCLAW_GATEWAY_WS_URL, resolveDefaultGatewayUrl } from '../config';
 import fs from 'fs';
 
 export type GatewayRuntimeHint = 'powershell' | 'wsl' | 'macos' | 'linux' | 'external';
@@ -28,7 +28,9 @@ function setSetting(key: string, value: string | null): void {
 }
 
 export function normalizeGatewayUrl(raw: string | undefined, target: 'http' | 'ws'): string {
-  const fallback = target === 'http' ? OPENCLAW_GATEWAY_URL : OPENCLAW_GATEWAY_WS_URL;
+  const fallback = raw
+    ? (target === 'http' ? OPENCLAW_GATEWAY_URL : OPENCLAW_GATEWAY_WS_URL)
+    : resolveDefaultGatewayUrl(target);
   try {
     const parsed = new URL(raw ?? fallback);
     if (target === 'http') {

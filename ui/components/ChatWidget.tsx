@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { api, AtlasHeartbeatStatus, CanonicalMessage, ChatMessage, ChatConfig, ChatSession } from '@/lib/api';
 import { findAtlasAgent } from '@/lib/atlas';
+import { parseCanonicalMessages, parseGatewayHistoryMessages, parseStoredChatMessages } from '@/lib/chatMessages';
 import {
   ATLAS_WIDGET_COMMAND_EVENT,
   consumePendingAtlasWidgetCommand,
@@ -14,6 +15,7 @@ import remarkGfm from 'remark-gfm';
 import { Bot, Send, X, Loader2, Square, MessageCircle, Settings, SquarePen, Activity, History, ArrowLeft } from 'lucide-react';
 import TelegramSettings from './TelegramSettings';
 import { formatTime } from '@/lib/date';
+import { ThoughtBubble, ToolCallBubble, ToolResultBubble, TurnStartDivider, ErrorBubble } from '@/components/chat/EventBubbles';
 import {
   PendingAttachment,
   validateFile,
@@ -34,7 +36,7 @@ function generateId(): string {
 
 const HISTORY_LIMIT = 50;
 const DIRECT_SESSION_STORAGE_PREFIX = 'agent-hq:direct-chat-session:';
-const CHAT_RESPONSE_STALL_MS = 45000;
+const CHAT_RESPONSE_STALL_MS = 20 * 60 * 1000;
 
 function sessionSlug(sessionKey: string | null | undefined, runtimeSlug?: string | null): string | null {
   if (runtimeSlug) return runtimeSlug;
@@ -79,21 +81,6 @@ function setStoredDirectSessionKey(agentId: number, sessionKey: string): void {
   } catch {
     // ignore storage failures
   }
-}
-
-function parseCanonicalMessages(rows: CanonicalMessage[]): ChatMessage[] {
-  return rows.reduce<ChatMessage[]>((acc, message) => {
-    const text = message.content ?? '';
-    if (!text && message.event_type === 'text') return acc;
-    acc.push({
-      id: String(message.id),
-      role: message.role,
-      content: text,
-      timestamp: message.timestamp,
-      event_type: message.event_type,
-    });
-    return acc;
-  }, []);
 }
 
 function formatTokenCount(value: number | null | undefined): string {
@@ -187,6 +174,24 @@ const HeartbeatBubble = memo(function HeartbeatBubble({ msg }: { msg: ChatMessag
       </div>
     </div>
   );
+});
+
+const WidgetEventMessage = memo(function WidgetEventMessage({ msg }: { msg: ChatMessage }) {
+  switch (msg.event_type) {
+    case 'thought':
+      return <ThoughtBubble msg={msg} />;
+    case 'tool_call':
+      return <ToolCallBubble msg={msg} />;
+    case 'tool_result':
+      return <ToolResultBubble msg={msg} />;
+    case 'turn_start':
+      return <TurnStartDivider msg={msg} />;
+    case 'error':
+      return <ErrorBubble msg={msg} />;
+    case 'text':
+    default:
+      return <WidgetBubble msg={msg} />;
+  }
 });
 
 // ─── Streaming bubble ─────────────────────────────────────────────────────────
@@ -613,7 +618,7 @@ export default function ChatWidget() {
     setViewingLoading(true);
     setViewingMessages(null);
     api.getChatSessionMessages(session.instance_id, session.session_key, 200)
-      .then(msgs => setViewingMessages(msgs))
+      .then(msgs => setViewingMessages(parseStoredChatMessages(msgs)))
       .catch(err => {
         console.error('[chat-widget] session messages error:', err);
         setViewingMessages([]);
@@ -628,12 +633,7 @@ export default function ChatWidget() {
 
     if (type === 'chat.history') {
       const historyMsgs = (data.messages as Array<Record<string, unknown>>) || [];
-      const parsed: ChatMessage[] = historyMsgs.map((m, i) => ({
-        id: (m.id as string) || `hist-${i}`,
-        role: (m.role as 'user' | 'assistant' | 'system') || 'assistant',
-        content: (m.content as string) || '',
-        timestamp: (m.timestamp as string) || new Date().toISOString(),
-      }));
+      const parsed = parseGatewayHistoryMessages(historyMsgs);
       clearPendingResponse();
       setMessages(parsed);
       scrollToBottom('auto');
@@ -664,6 +664,9 @@ export default function ChatWidget() {
               scrollToBottom('smooth');
             }
           }
+          if (wsRef.current?.readyState === WebSocket.OPEN && sessionKey) {
+            wsRef.current.send(JSON.stringify({ id: generateId(), type: 'chat.history', sessionKey, limit: HISTORY_LIMIT }));
+          }
         } else if (delta) {
           pendingResponseRef.current = true;
           armResponseWatchdog();
@@ -693,8 +696,11 @@ export default function ChatWidget() {
       setSending(false);
       streamBufRef.current = '';
       setStreamContent(null);
+      if (wsRef.current?.readyState === WebSocket.OPEN && sessionKey) {
+        wsRef.current.send(JSON.stringify({ id: generateId(), type: 'chat.history', sessionKey, limit: HISTORY_LIMIT }));
+      }
     }
-  }, [armResponseWatchdog, clearPendingResponse, clearResponseWatchdog, scrollToBottom]);
+  }, [armResponseWatchdog, clearPendingResponse, clearResponseWatchdog, scrollToBottom, sessionKey]);
 
   // ── Connect WebSocket with auto-reconnect ──
   const connectWs = useCallback(() => {
@@ -1111,7 +1117,7 @@ export default function ChatWidget() {
                       </p>
                     </div>
                     {displayMessages.map((msg, i) => (
-                      <WidgetBubble key={msg.id || `hm-${i}`} msg={msg} />
+                      <WidgetEventMessage key={msg.id || `hm-${i}`} msg={msg} />
                     ))}
                     <div ref={messagesEndRef} />
                   </>
@@ -1124,7 +1130,7 @@ export default function ChatWidget() {
               ) : (
                 <>
                   {messages.map(msg => (
-                    <WidgetBubble key={msg.id} msg={msg} />
+                    <WidgetEventMessage key={msg.id} msg={msg} />
                   ))}
                   {chatStreamActive && streamContent !== null && (
                     <WidgetStreamBubble content={streamContent} isHeartbeat={false} />

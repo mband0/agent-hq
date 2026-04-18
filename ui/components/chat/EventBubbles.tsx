@@ -4,6 +4,219 @@ import { memo, useState } from 'react';
 import { ChatMessage } from '@/lib/api';
 import { Brain, Wrench, Terminal, ChevronDown, ChevronRight, AlertCircle } from 'lucide-react';
 
+function pickString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function truncateMiddle(value: string, max = 72): string {
+  if (value.length <= max) return value;
+  const keep = Math.max(8, Math.floor((max - 3) / 2));
+  return `${value.slice(0, keep)}...${value.slice(-keep)}`;
+}
+
+function getArgString(args: unknown, keys: string[]): string | null {
+  if (!args || typeof args !== 'object') return null;
+  const record = args as Record<string, unknown>;
+  for (const key of keys) {
+    const value = pickString(record[key]);
+    if (value) return value;
+  }
+  return null;
+}
+
+function describeReadTarget(pathValue: string): { title: string; detail: string } {
+  const skillMatch = pathValue.match(/\/skills\/([^/]+)\/(.*)$/i);
+  if (skillMatch) {
+    const [, skillName, remainder] = skillMatch;
+    if (remainder === 'SKILL.md') {
+      return { title: 'Loaded Skill', detail: skillName };
+    }
+    return { title: 'Read Skill File', detail: `${skillName}/${remainder}` };
+  }
+
+  return {
+    title: 'Read File',
+    detail: truncateMiddle(pathValue, 88),
+  };
+}
+
+function describeToolCall(msg: ChatMessage): { title: string; detail: string | null; toolName: string } {
+  const toolName = (msg.meta?.name as string) || msg.content || 'unknown tool';
+  const args = msg.meta?.args;
+
+  if (toolName === 'read') {
+    const pathValue = getArgString(args, ['path', 'file']);
+    if (pathValue) {
+      const summary = describeReadTarget(pathValue);
+      return { ...summary, toolName };
+    }
+    return { title: 'Read File', detail: null, toolName };
+  }
+
+  if (toolName === 'exec') {
+    const command = getArgString(args, ['command', 'cmd']);
+    return {
+      title: 'Executed Command',
+      detail: command ? truncateMiddle(command, 104) : null,
+      toolName,
+    };
+  }
+
+  if (toolName === 'update_plan') {
+    return { title: 'Updated Plan', detail: null, toolName };
+  }
+
+  if (toolName === 'list_mcp_resources') {
+    const server = getArgString(args, ['server']);
+    return {
+      title: 'Listed MCP Resources',
+      detail: server ?? null,
+      toolName,
+    };
+  }
+
+  if (toolName === 'list_mcp_resource_templates') {
+    const server = getArgString(args, ['server']);
+    return {
+      title: 'Listed MCP Templates',
+      detail: server ?? null,
+      toolName,
+    };
+  }
+
+  if (toolName === 'read_mcp_resource') {
+    const server = getArgString(args, ['server']);
+    const uri = getArgString(args, ['uri', 'path']);
+    return {
+      title: 'Read MCP Resource',
+      detail: [server, uri].filter(Boolean).join(' · ') || null,
+      toolName,
+    };
+  }
+
+  if (toolName.startsWith('mcp__')) {
+    return {
+      title: 'Called MCP Tool',
+      detail: toolName.replace(/^mcp__/, ''),
+      toolName,
+    };
+  }
+
+  return {
+    title: 'Called Tool',
+    detail: toolName,
+    toolName,
+  };
+}
+
+function safeParseJson(raw: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}
+
+function prettifyToolName(toolName: string): string {
+  const normalized = toolName
+    .replace(/^mcp__/, '')
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return normalized ? normalized[0].toUpperCase() + normalized.slice(1) : toolName;
+}
+
+function describeToolResult(msg: ChatMessage): {
+  title: string;
+  detail: string | null;
+  rawOutput: string;
+  isError: boolean;
+} {
+  const rawOutput = (msg.meta?.output as string) || msg.content || '';
+  const toolName = pickString(msg.meta?.tool_name) ?? pickString(msg.meta?.name);
+  const details = msg.meta?.details && typeof msg.meta.details === 'object'
+    ? msg.meta.details as Record<string, unknown>
+    : null;
+  const parsed = rawOutput ? safeParseJson(rawOutput) : null;
+
+  if (parsed?.status === 'error') {
+    const tool = pickString(parsed.tool) ?? 'Tool';
+    const error = pickString(parsed.error) ?? 'Unknown error';
+    return {
+      title: `${tool} failed`,
+      detail: truncateMiddle(error, 104),
+      rawOutput,
+      isError: true,
+    };
+  }
+
+  if (rawOutput.trim() === 'Plan updated.') {
+    return {
+      title: 'Plan Updated',
+      detail: null,
+      rawOutput,
+      isError: false,
+    };
+  }
+
+  if (toolName === 'update_plan') {
+    return {
+      title: 'Plan Updated',
+      detail: null,
+      rawOutput,
+      isError: false,
+    };
+  }
+
+  if (toolName === 'exec' && typeof details?.exitCode === 'number') {
+    const exitCode = details.exitCode;
+    return {
+      title: exitCode === 0 ? 'Command Completed' : 'Command Failed',
+      detail: `Exit code ${exitCode}`,
+      rawOutput,
+      isError: exitCode !== 0,
+    };
+  }
+
+  const exitCodeMatch = rawOutput.match(/Command exited with code (\d+)/i);
+  if (exitCodeMatch) {
+    const exitCode = Number(exitCodeMatch[1]);
+    return {
+      title: exitCode === 0 ? 'Command Completed' : 'Command Failed',
+      detail: `Exit code ${exitCode}`,
+      rawOutput,
+      isError: exitCode !== 0,
+    };
+  }
+
+  if (toolName === 'read' && rawOutput.trim()) {
+    return {
+      title: 'Read Output Hidden',
+      detail: `${rawOutput.length.toLocaleString()} chars`,
+      rawOutput,
+      isError: false,
+    };
+  }
+
+  if (rawOutput.trim()) {
+    const title = toolName ? `${prettifyToolName(toolName)} output hidden` : 'Tool Output Hidden';
+    return {
+      title,
+      detail: `${rawOutput.length.toLocaleString()} chars`,
+      rawOutput,
+      isError: false,
+    };
+  }
+
+  return {
+    title: 'Tool Result',
+    detail: null,
+    rawOutput,
+    isError: false,
+  };
+}
+
 // ─── Thought bubble — collapsible italic muted block ─────────────────────────
 export const ThoughtBubble = memo(function ThoughtBubble({ msg }: { msg: ChatMessage }) {
   const [expanded, setExpanded] = useState(false);
@@ -38,7 +251,7 @@ export const ThoughtBubble = memo(function ThoughtBubble({ msg }: { msg: ChatMes
 // ─── Tool call bubble — card with name + collapsible args ────────────────────
 export const ToolCallBubble = memo(function ToolCallBubble({ msg }: { msg: ChatMessage }) {
   const [expanded, setExpanded] = useState(false);
-  const toolName = (msg.meta?.name as string) || msg.content || 'unknown tool';
+  const { title, detail, toolName } = describeToolCall(msg);
   const args = msg.meta?.args;
   const hasArgs = !!(args && typeof args === 'object' && Object.keys(args as object).length > 0);
 
@@ -50,12 +263,22 @@ export const ToolCallBubble = memo(function ToolCallBubble({ msg }: { msg: ChatM
           className={`w-full flex items-center gap-2 px-3 py-2 text-xs ${hasArgs ? 'hover:bg-slate-700/30 cursor-pointer' : 'cursor-default'} transition-colors`}
         >
           <Wrench className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-          <span className="text-blue-300 font-medium font-mono">{toolName}</span>
+          <div className="min-w-0 text-left">
+            <div className="text-blue-200 font-medium">{title}</div>
+            {detail && (
+              <div className="text-slate-400 text-[11px] font-mono truncate">
+                {detail}
+              </div>
+            )}
+          </div>
+          <span className="ml-auto shrink-0 rounded bg-slate-900/60 px-1.5 py-0.5 text-[10px] font-mono text-blue-300/80">
+            {toolName}
+          </span>
           {hasArgs && (
             expanded ? (
-              <ChevronDown className="w-3 h-3 text-slate-600 ml-auto" />
+              <ChevronDown className="w-3 h-3 text-slate-600 shrink-0" />
             ) : (
-              <ChevronRight className="w-3 h-3 text-slate-600 ml-auto" />
+              <ChevronRight className="w-3 h-3 text-slate-600 shrink-0" />
             )
           )}
         </button>
@@ -74,32 +297,37 @@ export const ToolCallBubble = memo(function ToolCallBubble({ msg }: { msg: ChatM
 // ─── Tool result bubble — card with name + truncated output (expandable) ─────
 export const ToolResultBubble = memo(function ToolResultBubble({ msg }: { msg: ChatMessage }) {
   const [expanded, setExpanded] = useState(false);
-  const toolName = (msg.meta?.name as string) || 'tool';
-  const output = msg.content || (msg.meta?.output as string) || '';
-  const truncateAt = 200;
-  const needsTruncation = output.length > truncateAt;
-  const displayOutput = expanded || !needsTruncation ? output : output.slice(0, truncateAt) + '…';
+  const { title, detail, rawOutput, isError } = describeToolResult(msg);
 
   return (
     <div className="flex justify-start mb-2">
       <div className="max-w-[80%] w-full bg-slate-800/50 border border-slate-700/50 rounded-lg overflow-hidden">
         <div className="flex items-center gap-2 px-3 py-2">
-          <Terminal className="w-3.5 h-3.5 text-green-400 shrink-0" />
-          <span className="text-green-300 text-xs font-medium font-mono">{toolName}</span>
-          <span className="text-slate-600 text-xs ml-auto">result</span>
+          <Terminal className={`w-3.5 h-3.5 shrink-0 ${isError ? 'text-red-400' : 'text-green-400'}`} />
+          <div className="min-w-0">
+            <div className={`text-xs font-medium ${isError ? 'text-red-300' : 'text-green-300'}`}>
+              {title}
+            </div>
+            {detail && (
+              <div className="text-[11px] text-slate-400 font-mono truncate">
+                {detail}
+              </div>
+            )}
+          </div>
+          <span className="text-slate-600 text-xs ml-auto shrink-0">result</span>
         </div>
-        {output && (
+        {rawOutput && (
           <div className="border-t border-slate-700/40 px-3 py-2">
-            <pre className="text-xs text-slate-400 overflow-x-auto whitespace-pre-wrap font-mono leading-relaxed">
-              {displayOutput}
-            </pre>
-            {needsTruncation && (
-              <button
-                onClick={() => setExpanded(!expanded)}
-                className="text-xs text-slate-500 hover:text-slate-400 mt-1 transition-colors"
-              >
-                {expanded ? 'Show less' : 'Show more'}
-              </button>
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="text-xs text-slate-500 hover:text-slate-400 transition-colors"
+            >
+              {expanded ? 'Hide raw output' : 'Show raw output'}
+            </button>
+            {expanded && (
+              <pre className="mt-2 text-xs text-slate-400 overflow-x-auto whitespace-pre-wrap font-mono leading-relaxed">
+                {rawOutput}
+              </pre>
             )}
           </div>
         )}

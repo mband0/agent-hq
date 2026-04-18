@@ -6,6 +6,7 @@ import {
   buildDispatchMessage, buildDispatchTaskNotesSection, buildInstanceCallbackContract,
   dispatchInstance, getDispatchTaskNotesContext,
 } from '../services/dispatcher';
+import { getAgentHqBaseUrl } from '../lib/agentHqBaseUrl';
 import { buildHookSessionKey, resolveRuntimeAgentSlug } from '../lib/sessionKeys';
 
 interface Agent {
@@ -174,7 +175,7 @@ function loadAndSchedule(): void {
         message += `\n\n${contract}`;
       } else {
         // Non-task dispatch — minimal completion instruction
-        const completionUrl = process.env.ATLAS_INTERNAL_BASE_URL ?? 'http://localhost:3501';
+        const completionUrl = getAgentHqBaseUrl();
         message += `\n\n---\n## Atlas HQ completion contract\nWhen you have fully completed this task, report back to Atlas HQ:\ncurl -s -X PUT ${completionUrl}/api/v1/instances/${instanceId}/complete \\\n  -H "Content-Type: application/json" \\\n  -d '{"status":"done","summary":"<one sentence summary of what you accomplished>"}'\n---`;
       }
 

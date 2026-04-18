@@ -35,6 +35,7 @@ import {
   buildLifecycleUserPromptSection,
   type LifecycleContext,
 } from './lifecycleProxy';
+import { getAgentHqBaseUrl } from '../lib/agentHqBaseUrl';
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
@@ -152,7 +153,7 @@ export class WebhookRuntime implements AgentRuntime {
       await proxyStart(lifecycleCtx);
     }
 
-    const baseUrl = process.env.ATLAS_INTERNAL_BASE_URL ?? 'http://localhost:3501';
+    const baseUrl = getAgentHqBaseUrl();
 
     // In proxy mode, callbackUrls are still provided for backward compat / documentation,
     // but the remote agent is NOT expected to use them — the runtime drives lifecycle.

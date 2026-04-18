@@ -46,11 +46,28 @@ function isCodexChallengeHtml(raw: string): boolean {
 }
 
 export function extractGatewayErrorMessage(value: unknown): string | null {
+  return extractGatewayErrorMessageInternal(value, new Set<unknown>());
+}
+
+function extractGatewayErrorMessageInternal(value: unknown, seen: Set<unknown>): string | null {
   if (typeof value === 'string' && value.trim()) {
     return value.trim();
   }
 
   if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  if (seen.has(value)) {
+    return null;
+  }
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const nested = extractGatewayErrorMessageInternal(entry, seen);
+      if (nested) return nested;
+    }
     return null;
   }
 
@@ -64,11 +81,17 @@ export function extractGatewayErrorMessage(value: unknown): string | null {
   ]);
   if (direct) return direct;
 
-  if (typeof record.message === 'string' && record.message.trim()) {
-    return record.message.trim();
-  }
-  if (record.message && typeof record.message === 'object') {
-    const nested = extractGatewayErrorMessage(record.message);
+  const nestedValues = [
+    record.error,
+    record.message,
+    record.data,
+    record.payload,
+    record.details,
+    record.reasonDetail,
+    record.cause,
+  ];
+  for (const nestedValue of nestedValues) {
+    const nested = extractGatewayErrorMessageInternal(nestedValue, seen);
     if (nested) return nested;
   }
 

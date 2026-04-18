@@ -4,6 +4,7 @@ import { writeProjectAudit, diffFields, extractActor } from '../lib/projectAudit
 import { buildDispatchMessage, dispatchInstance } from '../services/dispatcher';
 import { seedSprintTaskPolicy } from '../lib/sprintTaskPolicy';
 import { syncStarterRoutingForSprint } from '../lib/starterSetup';
+import { getAgentHqBaseUrl } from '../lib/agentHqBaseUrl';
 
 const router = Router();
 
@@ -571,7 +572,7 @@ function completeSprint(sprintId: number): void {
       sprintGoal: sprint.goal || null,
       summaryRequest: `The sprint "${sprint.name}" has ended. Please summarize: (1) what tasks you completed this sprint, (2) what tasks remain unfinished, and (3) any current blockers. Keep it concise.`,
     });
-    const completionUrl = process.env.ATLAS_INTERNAL_BASE_URL ?? 'http://localhost:3501';
+    const completionUrl = getAgentHqBaseUrl();
     message += `\n\n---\n## Atlas HQ completion contract\nWhen you have fully completed this task, report back to Atlas HQ:\ncurl -s -X PUT ${completionUrl}/api/v1/instances/${instanceId}/complete \\\n  -H "Content-Type: application/json" \\\n  -d '{"status":"done","summary":"<one sentence summary of what you accomplished>"}'\n---`;
 
     dispatchInstance({

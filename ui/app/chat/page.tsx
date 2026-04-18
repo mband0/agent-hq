@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback, Suspense, memo } from 'react'
 import { useSearchParams } from 'next/navigation';
 import { formatTime, timeAgo } from '@/lib/date';
 import { findAtlasAgent } from '@/lib/atlas';
+import { parseCanonicalMessages, parseGatewayHistoryMessages } from '@/lib/chatMessages';
 
 // crypto.randomUUID() requires a secure context (HTTPS); fall back for plain HTTP
 function generateId(): string {
@@ -15,32 +16,7 @@ function generateId(): string {
     return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
   });
 }
-import { api, Agent, CanonicalMessage, CanonicalSession, ChatMessage, ChatConfig, ChatEventType, JobInstance } from '@/lib/api';
-
-/** Convert canonical session_messages rows into ChatMessage[] for rendering. */
-function parseCanonicalMessages(rows: CanonicalMessage[]): ChatMessage[] {
-  return rows.reduce<ChatMessage[]>((acc, m) => {
-    const eventType = (m.event_type as ChatEventType) || 'text';
-    let eventMeta: Record<string, unknown> = {};
-    try {
-      eventMeta = m.event_meta ? JSON.parse(m.event_meta) : {};
-    } catch { /* ignore parse errors */ }
-
-    const text = m.content ?? '';
-    // Skip empty text-only messages but keep event bubbles (thought, tool_call, etc.)
-    if (!text && eventType === 'text') return acc;
-
-    acc.push({
-      id: String(m.id),
-      role: m.role,
-      content: text,
-      timestamp: m.timestamp,
-      event_type: eventType,
-      meta: eventMeta,
-    });
-    return acc;
-  }, []);
-}
+import { api, Agent, CanonicalSession, ChatMessage, ChatConfig, JobInstance } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import ReactMarkdown from 'react-markdown';
@@ -59,7 +35,7 @@ import {
 // How many historical messages to load (older ones need "load more")
 const HISTORY_LIMIT = 80;
 const DIRECT_SESSION_STORAGE_PREFIX = 'agent-hq:direct-chat-session:';
-const CHAT_RESPONSE_STALL_MS = 45000;
+const CHAT_RESPONSE_STALL_MS = 20 * 60 * 1000;
 
 function sessionSlug(sessionKey: string | null | undefined, runtimeSlug?: string | null): string | null {
   if (runtimeSlug) return runtimeSlug;
@@ -612,13 +588,8 @@ function ChatPageInner() {
 
     if (type === 'chat.history') {
       const historyMsgs = (data.messages as Array<Record<string, unknown>>) || [];
-      const total = (data.total as number) ?? historyMsgs.length;
-      const parsed: ChatMessage[] = historyMsgs.map((m, i) => ({
-        id: (m.id as string) || `hist-${i}`,
-        role: (m.role as 'user' | 'assistant' | 'system') || 'assistant',
-        content: (m.content as string) || '',
-        timestamp: (m.timestamp as string) || new Date().toISOString(),
-      }));
+      const parsed = parseGatewayHistoryMessages(historyMsgs);
+      const total = (data.total as number) ?? parsed.length;
       clearPendingResponse();
       setHistoryTotal(total);
       setMessages(parsed);
@@ -647,6 +618,9 @@ function ChatPageInner() {
             };
             scrollPendingRef.current = true;
             setMessages(prev => [...prev, committedMsg]);
+          }
+          if (wsRef.current?.readyState === WebSocket.OPEN && activeSessionKey) {
+            wsRef.current.send(JSON.stringify({ id: generateId(), type: 'chat.history', sessionKey: activeSessionKey, limit: HISTORY_LIMIT }));
           }
         } else if (delta) {
           pendingResponseRef.current = true;
@@ -683,8 +657,11 @@ function ChatPageInner() {
       setSending(false);
       streamBufRef.current = '';
       setStreamContent(null);
+      if (wsRef.current?.readyState === WebSocket.OPEN && activeSessionKey) {
+        wsRef.current.send(JSON.stringify({ id: generateId(), type: 'chat.history', sessionKey: activeSessionKey, limit: HISTORY_LIMIT }));
+      }
     }
-  }, [armResponseWatchdog, clearPendingResponse, clearResponseWatchdog]);
+  }, [activeSessionKey, armResponseWatchdog, clearPendingResponse, clearResponseWatchdog]);
 
   useEffect(() => {
     if (!selectedAgentId || selectedInstanceId !== null || !resolvedSessionKey) return;

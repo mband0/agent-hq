@@ -1,7 +1,9 @@
+import { getAgentHqBaseUrl } from './agentHqBaseUrl';
+
 export const getApiBase = () => {
   // Browser clients should always use the UI origin and rely on Next rewrites / route handlers.
   if (typeof window !== 'undefined') return '';
-  return process.env.ATLAS_INTERNAL_BASE_URL || 'http://127.0.0.1:3551';
+  return getAgentHqBaseUrl();
 };
 
 export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {

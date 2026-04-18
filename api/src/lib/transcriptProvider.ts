@@ -26,6 +26,7 @@ import * as os from 'os';
 import { getDb } from '../db/client';
 import { gatewayGetHistory } from '../runtimes/OpenClawRuntime';
 import { normalizeChatMessageRole, type PersistedChatRole } from './chatMessageRoles';
+import { extractGatewayStructuredEvents, extractTextFromGatewayMessage } from './openclawMessageEvents';
 import { buildGatewayRunSessionKey, parseHookSessionKey, resolveRuntimeAgentSlug } from './sessionKeys';
 
 // ── Public types ──────────────────────────────────────────────────────────────
@@ -225,52 +226,12 @@ function extractGatewayEvents(msg: Record<string, unknown>): GatewayStructuredEv
     return [buildTurnEndEvent(openclawEvent)];
   }
 
-  if (Array.isArray(contentRaw)) {
-    const events: GatewayStructuredEvent[] = [];
-
-    for (const block of contentRaw as GatewayContentBlock[]) {
-      const bType = block.type ?? block.kind ?? '';
-
-      if (bType === 'text') {
-        const text = block.text ?? (typeof block.content === 'string' ? block.content : '');
-        if (text) {
-          events.push({ event_type: 'text', content: text, event_meta: {} });
-        }
-
-      } else if (bType === 'thinking' || bType === 'thought') {
-        const thinkingText = block.thinking ?? (block.text ?? '');
-        events.push({ event_type: 'thought', content: thinkingText, event_meta: {} });
-
-      } else if (bType === 'tool_use' || bType === 'tool_call') {
-        const toolName = block.name ?? block.tool_name ?? 'unknown';
-        const toolArgs = block.input ?? block.args ?? {};
-        events.push({
-          event_type: 'tool_call',
-          content: toolName,
-          event_meta: { name: toolName, args: toolArgs, id: block.id ?? null },
-        });
-
-      } else if (bType === 'tool_result') {
-        const toolUseId = block.tool_use_id ?? block.tool_call_id ?? block.id ?? '';
-        let outputContent: unknown = block.output ?? block.result ?? block.content ?? block.text ?? '';
-        if (Array.isArray(outputContent)) {
-          outputContent = (outputContent as GatewayContentBlock[])
-            .filter(b => (b.type ?? b.kind ?? '') === 'text')
-            .map(b => b.text ?? '')
-            .join('\n');
-        }
-        const outputStr = typeof outputContent === 'string'
-          ? outputContent
-          : JSON.stringify(outputContent);
-        events.push({
-          event_type: 'tool_result',
-          content: outputStr.slice(0, 4000),
-          event_meta: { tool_use_id: toolUseId, output: outputStr, is_error: Boolean(block.is_error) },
-        });
-      }
-    }
-
-    if (events.length > 0) return events;
+  const structuredEvents = extractGatewayStructuredEvents(msg);
+  const hasStructuredContent = structuredEvents.some(evt =>
+    evt.event_type !== 'text' || evt.content.trim().length > 0,
+  );
+  if (hasStructuredContent) {
+    return structuredEvents;
   }
 
   const topLevelToolCall = msg.tool_call as Record<string, unknown> | undefined;
@@ -303,7 +264,7 @@ function extractGatewayEvents(msg: Record<string, unknown>): GatewayStructuredEv
 
   const plainText = typeof contentRaw === 'string'
     ? contentRaw
-    : (typeof msg.text === 'string' ? msg.text : '');
+    : extractTextFromGatewayMessage(msg);
   if (loweredRole === 'toolresult' || loweredRole === 'tool_result') {
     return [{ event_type: 'tool_result', content: plainText, event_meta: { source_role: rawRole, output: plainText } }];
   }

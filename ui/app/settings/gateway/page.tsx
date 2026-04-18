@@ -96,7 +96,7 @@ function gatewayStatusDetails(status: GatewayStatus | null, isRemoteGateway: boo
 export default function SettingsGatewayPage() {
   const [config, setConfig] = useState<GatewayConfig | null>(null);
   const [status, setStatus] = useState<GatewayStatus | null>(null);
-  const [wsUrl, setWsUrl] = useState('ws://127.0.0.1:18789');
+  const [wsUrl, setWsUrl] = useState('wss://127.0.0.1:18789');
   const [runtimeHint, setRuntimeHint] = useState<GatewayRuntimeHint>(getDefaultLocalRuntimeHint);
   const [lastLocalRuntimeHint, setLastLocalRuntimeHint] = useState<GatewayRuntimeHint>(getDefaultLocalRuntimeHint);
   const [authToken, setAuthToken] = useState('');
@@ -293,7 +293,7 @@ export default function SettingsGatewayPage() {
                 value={wsUrl}
                 onChange={(event) => setWsUrl(event.target.value)}
                 className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-white outline-none transition-colors focus:border-amber-400"
-                placeholder="ws://127.0.0.1:18789"
+                placeholder="wss://127.0.0.1:18789"
               />
             </label>
 

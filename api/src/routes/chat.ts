@@ -12,6 +12,7 @@ import { ATLAS_SESSION_KEY } from '../lib/atlasAgent';
 import { normalizeChatMessageRole } from '../lib/chatMessageRoles';
 import { extractGatewayErrorMessage, summarizeGatewayErrorForUi } from '../lib/chatGatewayErrors';
 import { getConfiguredGatewayAuthToken, getConfiguredGatewayWsUrl } from '../lib/gatewaySettings';
+import { extractGatewayStructuredEvents, extractTextFromGatewayMessage, unwrapGatewayMessage } from '../lib/openclawMessageEvents';
 import { isPairingRequiredClose, isPairingRequiredText } from '../lib/openclawAutoPair';
 import { openClawGatewayWsOptions } from '../lib/openclawGatewayWs';
 import {
@@ -789,23 +790,7 @@ router.get('/sessions/:instanceId/messages', (req: Request, res: Response) => {
 
 /** Extract plain text from a gateway message object */
 function extractText(message: unknown): string {
-  if (!message || typeof message !== 'object') return '';
-  const msg = message as Record<string, unknown>;
-  const content = msg.content;
-  if (typeof content === 'string') return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((c: unknown) => {
-        if (typeof c === 'object' && c !== null) {
-          const block = c as Record<string, unknown>;
-          if (block.type === 'text' && typeof block.text === 'string') return block.text;
-        }
-        return '';
-      })
-      .join('\n');
-  }
-  if (typeof msg.text === 'string') return msg.text;
-  return '';
+  return extractTextFromGatewayMessage(message);
 }
 
 // ─── Structured event extraction ─────────────────────────────────────────────
@@ -846,99 +831,32 @@ function extractStructuredEvents(msg: unknown): StructuredEvent[] {
   if (!msg || typeof msg !== 'object') {
     return [{ event_type: 'text', content: '', event_meta: {} }];
   }
-  const m = msg as Record<string, unknown>;
+  const m = unwrapGatewayMessage(msg) ?? (msg as Record<string, unknown>);
   const contentRaw = m.content;
   const stopReason = typeof m.stopReason === 'string' ? m.stopReason.trim().toLowerCase() : '';
   const errorMessage = extractGatewayErrorMessage(m);
 
-  // Content as structured array — the common assistant turn format from OpenClaw gateway
-  if (Array.isArray(contentRaw)) {
-    const events: StructuredEvent[] = [];
-    for (const block of contentRaw as GatewayContentBlock[]) {
-      const bType = block.type ?? '';
+  const events = extractGatewayStructuredEvents(m);
+  const hasStructuredContent = events.some(evt =>
+    evt.event_type !== 'text' || evt.content.trim().length > 0,
+  );
 
-      if (bType === 'text') {
-        // Plain text block
-        const text = block.text ?? '';
-        if (text) {
-          events.push({ event_type: 'text', content: text, event_meta: {} });
-        }
-
-      } else if (bType === 'thinking' || bType === 'thought') {
-        // Thinking / reasoning block
-        const thinkingText = block.thinking ?? (block.text ?? '');
-        events.push({
-          event_type: 'thought',
-          content: thinkingText,
-          event_meta: {},
-        });
-
-      } else if (bType === 'tool_use' || bType === 'tool_call') {
-        // Tool call block
-        const toolName = block.name ?? 'unknown';
-        const toolArgs = block.input ?? {};
-        events.push({
-          event_type: 'tool_call',
-          content: toolName,
-          event_meta: { name: toolName, args: toolArgs, id: block.id },
-        });
-
-      } else if (bType === 'tool_result') {
-        // Tool result block
-        const toolUseId = block.tool_use_id ?? block.id ?? '';
-        let outputContent = block.content ?? block.text ?? '';
-        // content can be a nested array of text blocks
-        if (Array.isArray(outputContent)) {
-          outputContent = (outputContent as GatewayContentBlock[])
-            .filter(b => b.type === 'text')
-            .map(b => b.text ?? '')
-            .join('\n');
-        }
-        const outputStr = typeof outputContent === 'string'
-          ? outputContent
-          : JSON.stringify(outputContent);
-        events.push({
-          event_type: 'tool_result',
-          content: outputStr.slice(0, 4000),
-          event_meta: { tool_use_id: toolUseId, output: outputStr },
-        });
-      }
-      // Unknown block types are silently skipped
-    }
-
-    if (stopReason === 'error' && errorMessage) {
-      events.push({
+  if (stopReason === 'error' && errorMessage) {
+    return [
+      ...events,
+      {
         event_type: 'error',
         content: summarizeGatewayErrorForUi(m),
         event_meta: { stop_reason: stopReason },
-      });
-    }
+      },
+    ];
+  }
 
-    // If we got no events from the array (e.g. only unknown types), return an empty text row
-    if (events.length === 0) {
-      if (stopReason === 'error' && errorMessage) {
-        return [{
-          event_type: 'error',
-          content: summarizeGatewayErrorForUi(m),
-          event_meta: { stop_reason: stopReason },
-        }];
-      }
-      return [{ event_type: 'text', content: '', event_meta: {} }];
-    }
+  if (hasStructuredContent) {
     return events;
   }
 
-  // Content is a plain string — simple text message
-  const plainText = typeof contentRaw === 'string'
-    ? contentRaw
-    : (typeof m.text === 'string' ? m.text : '');
-  if (!plainText && stopReason === 'error' && errorMessage) {
-    return [{
-      event_type: 'error',
-      content: summarizeGatewayErrorForUi(m),
-      event_meta: { stop_reason: stopReason },
-    }];
-  }
+  const plainText = typeof contentRaw === 'string' ? contentRaw : extractTextFromGatewayMessage(m);
   return [{ event_type: 'text', content: plainText, event_meta: {} }];
 }
 
@@ -955,8 +873,9 @@ function gatewayMsgToUi(msg: unknown, index: number): Record<string, unknown> {
   if (!msg || typeof msg !== 'object') {
     return { id: `hist-${index}`, role: 'assistant', content: '', event_type: 'text', event_meta: {}, timestamp: new Date().toISOString() };
   }
-  const m = msg as Record<string, unknown>;
-  const ts = m.timestamp;
+  const outer = msg as Record<string, unknown>;
+  const m = unwrapGatewayMessage(msg) ?? outer;
+  const ts = m.timestamp ?? outer.timestamp;
   let timestamp: string;
   if (typeof ts === 'number') {
     timestamp = new Date(ts).toISOString();
@@ -972,7 +891,7 @@ function gatewayMsgToUi(msg: unknown, index: number): Record<string, unknown> {
   const role = normalizeChatRole(m.role, primary.event_type);
 
   return {
-    id: typeof m.id === 'string' ? m.id : `hist-${index}`,
+    id: typeof m.id === 'string' ? m.id : typeof outer.id === 'string' ? outer.id : `hist-${index}`,
     role,
     content: primary.content,
     event_type: primary.event_type,
@@ -1034,6 +953,7 @@ function contextRowScope(ctx: SessionContext): string {
 function persistHistoryMessages(ctx: SessionContext, messages: Array<Record<string, unknown>>): void {
   try {
     const db = getDb();
+    const rowScope = contextRowScope(ctx);
     const stmt = db.prepare(`
       INSERT INTO chat_messages (id, agent_id, instance_id, session_key, role, content, timestamp, event_type, event_meta)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1045,8 +965,10 @@ function persistHistoryMessages(ctx: SessionContext, messages: Array<Record<stri
         session_key = excluded.session_key
     `);
 
+    // chat.history returns a full snapshot, so replace prior oc-hist rows for this scope.
+    db.prepare('DELETE FROM chat_messages WHERE id LIKE ?').run(`oc-hist-${rowScope}-%`);
+
     let rowIndex = 0;
-    const rowScope = contextRowScope(ctx);
     for (let i = 0; i < messages.length; i++) {
       const m = messages[i];
       const ts = typeof m.timestamp === 'number' ? new Date(m.timestamp).toISOString()
@@ -1117,6 +1039,40 @@ function persistUserChatMessage(ctx: SessionContext, message: string): void {
       VALUES (?, ?, ?, ?, 'user', ?, ?, 'text', '{}')
     `).run(msgId, ctx.agentId, ctx.instanceId, ctx.sessionKey, message, now);
   } catch { /* non-critical */ }
+}
+
+function findNestedString(value: unknown, keys: string[], seen = new Set<unknown>()): string | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  if (seen.has(value)) {
+    return null;
+  }
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const nested = findNestedString(entry, keys, seen);
+      if (nested) return nested;
+    }
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  for (const key of keys) {
+    const candidate = record[key];
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+
+  for (const nestedValue of Object.values(record)) {
+    const nested = findNestedString(nestedValue, keys, seen);
+    if (nested) return nested;
+  }
+
+  return null;
 }
 
 // ─── WebSocket Proxy ──────────────────────────────────────────────────────────
@@ -1278,6 +1234,31 @@ export function setupChatProxy(wss: WebSocketServer) {
               }));
             }
           }
+          return;
+        }
+
+        const customType = findNestedString(frame, ['customType']);
+        if (pendingAssistantResponse && customType === 'openclaw:prompt-error') {
+          const eventSessionKey = findNestedString(frame, ['sessionKey']);
+          if (eventSessionKey && activeSessionKey && eventSessionKey !== activeSessionKey) {
+            return;
+          }
+
+          // Preserve any streamed partial response before surfacing the provider error.
+          if (sessionCtx && streamText) {
+            persistFinalMessage(sessionCtx, streamText, assistantMsgIndex++);
+            lastStreamFlushLen = 0;
+          }
+          const hadPartialStream = Boolean(streamText);
+          pendingAssistantResponse = false;
+          streamText = '';
+          if (hadPartialStream) {
+            clientWs.send(JSON.stringify({ type: 'chat', role: 'assistant', delta: '', done: true }));
+          }
+          clientWs.send(JSON.stringify({
+            type: 'error',
+            message: summarizeGatewayErrorForUi(frame),
+          }));
           return;
         }
 

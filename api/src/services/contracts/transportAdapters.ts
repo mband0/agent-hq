@@ -20,6 +20,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { getAgentHqBaseUrl } from '../../lib/agentHqBaseUrl';
 import {
   resolveWorkflowLane,
   getEvidenceRequirements,
@@ -79,7 +80,7 @@ function buildLocalTransport(
   ctx: TransportContext,
   workflow: ResolvedWorkflowLane,
 ): string {
-  const baseUrl = ctx.baseUrl ?? process.env.ATLAS_INTERNAL_BASE_URL ?? 'http://localhost:3501';
+  const baseUrl = ctx.baseUrl ?? getAgentHqBaseUrl();
 
   const sections: string[] = [
     buildPreamble(ctx),
@@ -196,7 +197,7 @@ function buildRemoteDirectTransport(
   ctx: TransportContext,
   workflow: ResolvedWorkflowLane,
 ): string {
-  const baseUrl = ctx.baseUrl ?? process.env.AGENT_HQ_URL ?? process.env.ATLAS_HQ_URL ?? process.env.ATLAS_INTERNAL_BASE_URL ?? 'http://localhost:3501';
+  const baseUrl = ctx.baseUrl ?? getAgentHqBaseUrl();
 
   const sections: string[] = [
     buildPreamble(ctx),
@@ -360,7 +361,7 @@ function tryBuildFromFileTemplate(
 ): string | null {
   try {
     if (!fs.existsSync(AGENT_CONTRACT_PATH)) return null;
-    const baseUrl = ctx.baseUrl ?? process.env.ATLAS_INTERNAL_BASE_URL ?? 'http://localhost:3501';
+    const baseUrl = ctx.baseUrl ?? getAgentHqBaseUrl();
     let template = fs.readFileSync(AGENT_CONTRACT_PATH, 'utf-8');
     template = template
       .replace(/\{\{baseUrl\}\}/g, baseUrl)

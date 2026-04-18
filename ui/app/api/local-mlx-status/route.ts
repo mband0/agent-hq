@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
+import { getAgentHqBaseUrl } from '@/lib/agentHqBaseUrl';
 
 export async function GET() {
   try {
-    const res = await fetch(`${process.env.ATLAS_INTERNAL_BASE_URL ?? 'http://127.0.0.1:3551'}/api/v1/agents/local-mlx/status`, {
+    const res = await fetch(`${getAgentHqBaseUrl()}/api/v1/agents/local-mlx/status`, {
       signal: AbortSignal.timeout(8000),
       cache: 'no-store',
     });
