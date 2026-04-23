@@ -1438,7 +1438,7 @@ function dispatchTaskToJob(
     VALUES (?, 'dispatched', datetime('now'), ?, ?, ?)
   `).run(
     job.agent_id,
-    JSON.stringify({ mode: 'hooks-agent', agentSlug }),
+    JSON.stringify({ mode: 'runtime-dispatch', transport: 'ws.send', agentSlug }),
     task.id,
     worktreePath,
   );

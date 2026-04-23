@@ -40,12 +40,23 @@ function readGatewayTokenFromConfig(): string | null {
   }
 }
 
+function readHooksTokenFromConfig(): string | null {
+  try {
+    const raw = fs.readFileSync(OPENCLAW_CONFIG_PATH, 'utf-8');
+    const cfg = JSON.parse(raw) as { hooks?: { token?: string } };
+    const token = cfg.hooks?.token;
+    return typeof token === 'string' && token.trim() ? token.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
 function getGatewayAuthToken(): string {
   return process.env.OPENCLAW_GATEWAY_TOKEN ?? readGatewayTokenFromConfig() ?? '';
 }
 
 function getHooksToken(): string {
-  return process.env.OPENCLAW_HOOKS_TOKEN ?? readGatewayTokenFromConfig() ?? '';
+  return process.env.OPENCLAW_HOOKS_TOKEN ?? readHooksTokenFromConfig() ?? '';
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -918,12 +929,13 @@ export async function gatewayWsSend(params: {
           };
         }
 
+        console.log('[runtime-ws] sending connect rpc');
         const connectResult = await sendRpc('connect', {
           minProtocol: PROTOCOL_VERSION,
           maxProtocol: PROTOCOL_VERSION,
           client: {
             id: 'gateway-client',
-            displayName: 'Atlas HQ Dispatcher',
+            displayName: 'Agent HQ Runtime',
             version: '1.0.0',
             platform: process.platform,
             mode: 'ui',
@@ -936,6 +948,7 @@ export async function gatewayWsSend(params: {
           ...(device ? { device } : {}),
         });
 
+        console.log('[runtime-ws] connect rpc result', connectResult.error ? 'error' : 'ok');
         if (connectResult.error) {
           clearTimeout(timeout);
           ws.close();
@@ -948,6 +961,7 @@ export async function gatewayWsSend(params: {
         // it to ACP bridge clients. chat.send messages bypass the hooks
         // wrapping pipeline entirely so no SECURITY NOTICE is applied
         // regardless of provenance.
+        console.log('[runtime-ws] sending chat.send');
         const sendResult = await sendRpc('chat.send', {
           sessionKey,
           message,
@@ -958,6 +972,7 @@ export async function gatewayWsSend(params: {
         clearTimeout(timeout);
         ws.close();
 
+        console.log('[runtime-ws] chat.send result', sendResult.error ? 'error' : 'ok');
         if (sendResult.error) {
           resolve({ ok: false, error: `chat.send failed: ${JSON.stringify(sendResult.error)}` });
         } else {
@@ -973,66 +988,31 @@ export async function gatewayWsSend(params: {
 
 export class OpenClawRuntime implements AgentRuntime {
   /**
-   * dispatch — fire an isolated agent turn via POST /hooks/agent.
-   *
-   * Isolated Atlas HQ job runs need the hook bootstrap path so OpenClaw loads
-   * the agent workspace, project settings, and MCP configuration for the run.
-   * Direct user chat continues to use the WebSocket proxy path in routes/chat.ts.
+   * dispatch — fire an isolated agent turn via the OpenClaw gateway WebSocket path.
    */
   async dispatch(params: DispatchParams): Promise<{ runId: string }> {
     if (!OPENCLAW_ENABLED) {
       console.log(`[OpenClawRuntime] OPENCLAW_ENABLED=false — skipping dispatch for session ${params.sessionKey}`);
       return { runId: 'openclaw-disabled' };
     }
-    return this.dispatchViaHooks(params);
-  }
 
-  /**
-   * dispatchViaHooks — dispatch via POST /hooks/agent.
-   * This is the correct endpoint for isolated agent turns — it bootstraps the
-   * agent with system prompt, tools, workspace, and model configuration.
-   */
-  private async dispatchViaHooks(params: DispatchParams): Promise<{ runId: string }> {
-    const { message, agentSlug, sessionKey, timeoutSeconds, name, model } = params;
+    const routedSessionKey = params.sessionKey.startsWith('agent:')
+      ? params.sessionKey
+      : `agent:${params.agentSlug}:${params.sessionKey}`;
 
-    const payload: Record<string, unknown> = {
-      message,
-      agentId: agentSlug,
-      sessionKey,
-      timeoutSeconds,
-      name,
-      deliver: false,
-      allowUnsafeExternalContent: true,
-    };
-
-    if (model) {
-      payload.model = model;
-    }
-
-    const resp = await gatewayFetch('/hooks/agent', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${getHooksToken()}`,
-      },
-      body: JSON.stringify(payload),
+    const wsResult = await gatewayWsSend({
+      sessionKey: routedSessionKey,
+      message: params.message,
+      timeoutMs: (params.timeoutSeconds ?? 900) * 1000,
     });
 
-    if (!resp.ok) {
-      const body = await resp.text().catch(() => '');
-      throw new Error(`POST /hooks/agent returned ${resp.status}: ${body.slice(0, 500)}`);
+    if (!wsResult.ok) {
+      throw new Error(wsResult.error ?? 'WebSocket dispatch failed');
     }
 
-    const result = await resp.json().catch(() => ({})) as Record<string, unknown>;
-    const runId = typeof (result as any).payload?.runId === 'string'
-      ? (result as any).payload.runId
-      : typeof result.runId === 'string'
-        ? result.runId
-        : '';
-
     this.persistUserPrompt(params);
-    this.startCapture(params, runId, sessionKey);
-    return { runId };
+    this.startCapture(params, wsResult.runId, routedSessionKey);
+    return { runId: wsResult.runId ?? '' };
   }
 
   /**
