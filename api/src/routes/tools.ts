@@ -55,7 +55,7 @@ function scheduleToolDefinitionSync(toolId: number): void {
 }
 
 // ---------------------------------------------------------------------------
-// GET /api/v1/tools — list all tools (filter by ?tag=..., ?enabled=0|1)
+// GET /api/v1/tools — list tools (default: enabled only, opt into ?enabled=0|1)
 // ---------------------------------------------------------------------------
 router.get('/', (req: Request, res: Response) => {
   try {
@@ -63,10 +63,12 @@ router.get('/', (req: Request, res: Response) => {
     let sql = `SELECT * FROM tools WHERE 1=1`;
     const params: unknown[] = [];
 
-    // Filter by enabled (default: only enabled)
+    // Default view hides soft-deleted / disabled tools unless explicitly requested.
     if (req.query.enabled !== undefined) {
       sql += ` AND enabled = ?`;
       params.push(Number(req.query.enabled));
+    } else {
+      sql += ` AND enabled = 1`;
     }
 
     // Filter by tag (JSON array contains)
@@ -196,7 +198,7 @@ router.put('/:id', (req: Request, res: Response) => {
 });
 
 // ---------------------------------------------------------------------------
-// DELETE /api/v1/tools/:id — soft delete (set enabled=false)
+// DELETE /api/v1/tools/:id — soft delete (disable and hide from default lists)
 // ---------------------------------------------------------------------------
 router.delete('/:id', (req: Request, res: Response) => {
   try {

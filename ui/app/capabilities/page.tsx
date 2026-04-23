@@ -254,7 +254,7 @@ function ToolsSection() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [filterTag, setFilterTag] = useState('');
-  const [filterEnabled, setFilterEnabled] = useState<'all' | '1' | '0'>('all');
+  const [filterEnabled, setFilterEnabled] = useState<'all' | '1' | '0'>('1');
   const [filterPermission, setFilterPermission] = useState('');
   const [activePanel, setActivePanel] = useState<ToolDetailPanel>(null);
 
@@ -349,9 +349,9 @@ function ToolsSection() {
           value={filterEnabled}
           onChange={e => setFilterEnabled(e.target.value as 'all' | '1' | '0')}
         >
-          <option value="all">All status</option>
-          <option value="1">Enabled</option>
-          <option value="0">Disabled</option>
+          <option value="1">Active tools</option>
+          <option value="all">All tools</option>
+          <option value="0">Disabled tools</option>
         </select>
       </div>
 
@@ -370,9 +370,9 @@ function ToolsSection() {
           {filtered.length === 0 ? (
             <Card>
               <div className="text-center py-12 text-slate-500">
-                {search || filterTag || filterPermission || filterEnabled !== 'all'
+                {search || filterTag || filterPermission || filterEnabled !== '1'
                   ? 'No tools match the current filters'
-                  : 'No tools registered yet'}
+                  : 'No active tools registered yet'}
               </div>
             </Card>
           ) : (
@@ -737,9 +737,9 @@ function ToolEditor({ toolId, onClose, onSaved, onDeleted }: ToolEditorProps) {
           {!isNew && (
             confirmDelete ? (
               <>
-                <span className="text-xs text-red-400">Confirm delete?</span>
+                <span className="text-xs text-red-400">Disable this tool?</span>
                 <Button variant="danger" size="sm" onClick={handleDelete} loading={deleting}>
-                  <Trash2 className="w-3.5 h-3.5" /> Yes, delete
+                  <Trash2 className="w-3.5 h-3.5" /> Yes, disable
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(false)}>
                   Cancel
@@ -747,7 +747,7 @@ function ToolEditor({ toolId, onClose, onSaved, onDeleted }: ToolEditorProps) {
               </>
             ) : (
               <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(true)}>
-                <Trash2 className="w-3.5 h-3.5" /> Delete
+                <Trash2 className="w-3.5 h-3.5" /> Disable
               </Button>
             )
           )}
