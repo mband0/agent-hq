@@ -1989,7 +1989,12 @@ router.get('/:id/instances', (req: Request, res: Response) => {
              ia.latest_commit_hash, ia.branch_name, ia.changed_files_json, ia.changed_files_count,
              ia.summary as artifact_summary, ia.blocker_reason, ia.outcome as artifact_outcome,
              ia.stale as run_is_stale, ia.stale_at,
-             ji.task_outcome
+             ji.task_outcome,
+             ji.runtime_ended_at,
+             ji.runtime_end_success,
+             ji.runtime_end_error,
+             ji.runtime_end_source,
+             ji.lifecycle_outcome_posted_at
       FROM job_instances ji
       LEFT JOIN agents a ON a.id = ji.agent_id
       LEFT JOIN instance_artifacts ia ON ia.instance_id = ji.id

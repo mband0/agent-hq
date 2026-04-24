@@ -71,9 +71,12 @@ function resolveJobStatus(template: Agent, instances: JobInstance[]): ResolvedJo
   const queued = sorted.find(i => getRunLifecycle(i).displayStatus === 'queued');
   if (queued) return { template, instance: queued, status: 'queued' };
 
-  const terminal = sorted.find(i => i.status === 'done' || i.status === 'failed');
+  const terminal = sorted.find(i => {
+    const displayStatus = getRunLifecycle(i).displayStatus;
+    return displayStatus === 'done' || displayStatus === 'failed';
+  });
   if (terminal) {
-    return { template, instance: terminal, status: terminal.status as ResolvedStatus };
+    return { template, instance: terminal, status: getRunLifecycle(terminal).displayStatus as ResolvedStatus };
   }
 
   const mostRecent = sorted[0];

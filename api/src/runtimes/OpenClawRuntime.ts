@@ -26,6 +26,18 @@ import { openClawGatewayWsOptions } from '../lib/openclawGatewayWs';
 import { startTranscriptCapture, stopTranscriptCapture } from '../lib/gatewayTranscriptCapture';
 import { recordRunCheckIn } from '../lib/runObservability';
 
+function derivePostRuntimeInstanceStatus(
+  status: string,
+  runtimeEndedAt: string | null | undefined,
+  lifecycleOutcomePostedAt: string | null | undefined,
+  taskOutcome: string | null | undefined,
+): string {
+  if (runtimeEndedAt && !lifecycleOutcomePostedAt && !taskOutcome && (status === 'running' || status === 'dispatched' || status === 'queued')) {
+    return 'failed';
+  }
+  return status;
+}
+
 // ── Config ───────────────────────────────────────────────────────────────────
 
 const GATEWAY_URL = OPENCLAW_GATEWAY_URL;
@@ -1121,9 +1133,26 @@ export class OpenClawRuntime implements AgentRuntime {
       const runtimeEndError = event.error ?? (event.success ? null : (event.reason ?? 'error'));
       const runtimeEndSource = 'instance_complete';
       const nowIso = new Date().toISOString();
+      const existing = db.prepare(`
+        SELECT status, lifecycle_outcome_posted_at, task_outcome
+        FROM job_instances
+        WHERE id = ?
+      `).get(instanceId) as {
+        status: string;
+        lifecycle_outcome_posted_at: string | null;
+        task_outcome: string | null;
+      } | undefined;
+      if (!existing) return;
+      const nextStatus = derivePostRuntimeInstanceStatus(
+        existing.status,
+        nowIso,
+        existing.lifecycle_outcome_posted_at,
+        existing.task_outcome,
+      );
       const claim = db.prepare(`
         UPDATE job_instances
-        SET started_at = COALESCE(started_at, ?),
+        SET status = ?,
+            started_at = COALESCE(started_at, ?),
             completed_at = COALESCE(completed_at, ?),
             runtime_ended_at = COALESCE(runtime_ended_at, ?),
             runtime_end_success = COALESCE(runtime_end_success, ?),
@@ -1133,6 +1162,7 @@ export class OpenClawRuntime implements AgentRuntime {
           AND status IN ('running', 'dispatched')
           AND runtime_ended_at IS NULL
       `).run(
+        nextStatus,
         nowIso,
         nowIso,
         nowIso,
