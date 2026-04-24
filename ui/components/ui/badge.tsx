@@ -1,12 +1,13 @@
 import React from 'react';
 
-type BadgeVariant = 'queued' | 'dispatched' | 'starting' | 'running' | 'done' | 'failed' | 'idle' | 'blocked' | 'info' | 'warn' | 'error' | 'debug' | 'default' | 'workspace' | 'system' | 'stalled' | 'deployed' | 'review';
+type BadgeVariant = 'queued' | 'dispatched' | 'starting' | 'running' | 'awaiting_outcome' | 'done' | 'failed' | 'idle' | 'blocked' | 'info' | 'warn' | 'error' | 'debug' | 'default' | 'workspace' | 'system' | 'stalled' | 'deployed' | 'review';
 
 const variantClasses: Record<BadgeVariant, string> = {
   queued:     'bg-slate-700 text-slate-300',
   dispatched: 'bg-blue-900/60 text-blue-300',
   starting:   'bg-orange-900/60 text-orange-300',
   running:    'bg-amber-900/60 text-amber-300',
+  awaiting_outcome: 'bg-amber-900/60 text-amber-200 border border-amber-500/30',
   done:       'bg-green-900/60 text-green-300',
   failed:     'bg-red-900/60 text-red-300',
   idle:       'bg-green-900/60 text-green-300',

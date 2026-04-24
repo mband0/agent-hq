@@ -33,7 +33,7 @@ function derivePostRuntimeInstanceStatus(
   taskOutcome: string | null | undefined,
 ): string {
   if (runtimeEndedAt && !lifecycleOutcomePostedAt && !taskOutcome && (status === 'running' || status === 'dispatched' || status === 'queued')) {
-    return 'failed';
+    return 'done';
   }
   return status;
 }

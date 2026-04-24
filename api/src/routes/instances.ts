@@ -240,10 +240,10 @@ router.put('/:id/complete', (req: Request, res: Response) => {
 
     const finalStatus = ['done', 'failed'].includes(status) ? status : 'done';
     const runtimeEndedWithoutLifecycleOutcome = finalStatus === 'done' && !instance.lifecycle_outcome_posted_at;
-    const persistedStatus = runtimeEndedWithoutLifecycleOutcome ? 'failed' : finalStatus;
+    const persistedStatus = runtimeEndedWithoutLifecycleOutcome ? 'done' : finalStatus;
     const runtimeEndError = finalStatus === 'failed'
       ? (summary ?? 'Runtime reported failed terminal state')
-      : (runtimeEndedWithoutLifecycleOutcome ? 'Runtime ended before lifecycle outcome handoff was posted' : null);
+      : null;
 
     const tokenUsage = normalizeTokenUsage(
       { input_tokens: token_input, output_tokens: token_output, total_tokens: token_total },
@@ -265,7 +265,7 @@ router.put('/:id/complete', (req: Request, res: Response) => {
           token_total = COALESCE(?, token_total)
       WHERE id = ?
     `).run(
-      runtimeEndedWithoutLifecycleOutcome ? 'failed' : finalStatus,
+      runtimeEndedWithoutLifecycleOutcome ? 'done' : finalStatus,
       finalStatus === 'done' ? 1 : 0,
       runtimeEndError,
       tokenUsage.input,

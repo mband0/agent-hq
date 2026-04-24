@@ -213,10 +213,10 @@ export function runEligibilityPass(db: Database.Database, projectId?: number): E
     if (activeInstanceId) {
       // There's a linked instance — check its health
       const instance = db.prepare(
-        `SELECT id, status FROM job_instances WHERE id = ?`
-      ).get(activeInstanceId) as { id: number; status: string } | undefined;
+        `SELECT id, status, runtime_ended_at FROM job_instances WHERE id = ?`
+      ).get(activeInstanceId) as { id: number; status: string; runtime_ended_at: string | null } | undefined;
 
-      if (instance && (instance.status === 'running' || instance.status === 'dispatched')) {
+      if (instance && (instance.status === 'running' || instance.status === 'dispatched') && !instance.runtime_ended_at) {
         // Instance is healthy — don't stall, even if elapsed time exceeds threshold.
         // The watchdog handles instance-level timeouts.
         continue;
