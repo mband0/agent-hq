@@ -325,7 +325,6 @@ agenthq.example.com {
 | `PORT` | `3501` | API server port |
 | `AGENT_HQ_DB_PATH` | `<repo-root>/agent-hq.db` | Absolute path to the SQLite database file |
 | `AGENT_HQ_DATA_DIR` | `<repo-root>` | Base directory for the database (used when `AGENT_HQ_DB_PATH` is not set) |
-| `OPENCLAW_ENABLED` | `false` | Enable OpenClaw agent dispatch and chat proxy |
 | `OPENCLAW_BIN` | `openclaw` | Path or name of the OpenClaw CLI binary |
 | `OPENCLAW_CONFIG_PATH` | `~/.openclaw/openclaw.json` | Path to the OpenClaw gateway config file |
 | `WORKSPACE_ROOT` | `~/.openclaw/workspace` | Root directory for agent workspaces |
@@ -381,12 +380,11 @@ Automate with a cron job:
 
 ## OpenClaw integration
 
-Agent HQ can dispatch AI agent runs directly through an [OpenClaw](https://github.com/openclaw/openclaw) gateway. This is **optional** — Agent HQ runs fully without it for task management, routing, and manual agent coordination.
+Agent HQ dispatches AI agent runs through an [OpenClaw](https://github.com/openclaw/openclaw) gateway as the normal orchestration path.
 
-### Enable
+### Run with OpenClaw
 
 ```bash
-OPENCLAW_ENABLED=true \
 OPENCLAW_BIN=/usr/local/bin/openclaw \
 OPENCLAW_CONFIG_PATH=/home/user/.openclaw/openclaw.json \
   node dist/index.js
@@ -394,10 +392,10 @@ OPENCLAW_CONFIG_PATH=/home/user/.openclaw/openclaw.json \
 
 ### What it enables
 
-When `OPENCLAW_ENABLED=true`:
-- Agent HQ can dispatch job runs to configured OpenClaw agent sessions
-- The `/api/v1/chat` proxy endpoints become functional
-- The `/api/v1/skills` and `/api/v1/artifacts` endpoints become functional
+When the OpenClaw gateway and config are available:
+- Agent HQ dispatches job runs to configured OpenClaw agent sessions
+- The `/api/v1/chat` proxy endpoints are functional
+- The `/api/v1/skills` and `/api/v1/artifacts` endpoints are functional
 - Live run session keys, heartbeats, and lifecycle signals flow between Agent HQ and OpenClaw
 
 ### OpenClaw config
@@ -406,12 +404,9 @@ Agent HQ reads the OpenClaw config file at `OPENCLAW_CONFIG_PATH` to resolve age
 
 ### Without OpenClaw
 
-Without OpenClaw, Agent HQ operates as a task management and routing system. You can:
-- manage projects, sprints, tasks, jobs, agents, and routing rules
-- track run history and artifacts via manual API calls from your own agent scripts
-- use the full release pipeline (review → QA → deploy → done)
+Without a working OpenClaw gateway/config, Agent HQ cannot launch OpenClaw-backed agent runs. In that state, dispatch should fail with a direct runtime or gateway error instead of succeeding behind a feature flag.
 
-Agents can call back to Agent HQ over HTTP from any runtime — no OpenClaw dependency required on the agent side. Only the Agent HQ API needs `OPENCLAW_ENABLED=true` to trigger dispatch.
+Agents can still call back to Agent HQ over HTTP from any runtime, but OpenClaw-backed orchestration depends on the gateway actually being reachable and configured.
 
 ---
 
@@ -494,8 +489,6 @@ Change the port via the `PORT` environment variable. Make sure `NEXT_PUBLIC_API_
 
 ### OpenClaw dispatch not working
 
-1. Confirm `OPENCLAW_ENABLED=true` is set on the API process.
-2. Confirm `OPENCLAW_BIN` points to the actual `openclaw` binary (`which openclaw`).
-3. Confirm `OPENCLAW_CONFIG_PATH` points to a valid `openclaw.json` with a running gateway.
-points to the actual `openclaw` binary (`which openclaw`).
-3. Confirm `OPENCLAW_CONFIG_PATH` points to a valid `openclaw.json` with a running gateway.
+1. Confirm `OPENCLAW_BIN` points to the actual `openclaw` binary (`which openclaw`).
+2. Confirm `OPENCLAW_CONFIG_PATH` points to a valid `openclaw.json` with a running gateway.
+3. Confirm the configured OpenClaw gateway URL is reachable from the API process.

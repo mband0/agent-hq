@@ -226,7 +226,6 @@ All configuration is via environment variables.
 | `AGENT_HQ_DATA_DIR` | `<repo>` | Base directory for the database (used if `AGENT_HQ_DB_PATH` is not set) |
 | `ATLAS_INTERNAL_BASE_URL` | `http://localhost:3501` | Internal API base URL for local agent callbacks |
 | `AGENT_HQ_URL` | — | External API URL for remote agent callbacks |
-| `OPENCLAW_ENABLED` | `false` | Enable OpenClaw agent dispatch integration |
 | `OPENCLAW_BIN` | `openclaw` | Path to the OpenClaw CLI binary |
 | `OPENCLAW_CONFIG_PATH` | `~/.openclaw/openclaw.json` | OpenClaw config file path |
 | `OPENCLAW_GATEWAY_URL` | `https://127.0.0.1:18789` | OpenClaw gateway HTTPS URL |

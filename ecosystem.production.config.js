@@ -37,7 +37,6 @@ module.exports = {
         NODE_ENV: env.NODE_ENV || 'production',
         PORT: env.PORT || '3501',
         AGENT_HQ_DB_PATH: env.AGENT_HQ_DB_PATH || path.join(repoRoot, 'agent-hq.db'),
-        OPENCLAW_ENABLED: env.OPENCLAW_ENABLED || 'true',
         OPENCLAW_GATEWAY_URL: env.OPENCLAW_GATEWAY_URL || 'https://127.0.0.1:18789',
         OPENCLAW_GATEWAY_TOKEN: env.OPENCLAW_GATEWAY_TOKEN,
         OPENCLAW_HOOKS_TOKEN: env.OPENCLAW_HOOKS_TOKEN || 'ceb97d9751b0726cdc23065c4e9732e0b3d957ddd4f79222',

@@ -16,7 +16,6 @@ import type { AgentRuntime, DispatchParams, RuntimeEndEvent } from './types';
 import {
   OPENCLAW_BIN,
   OPENCLAW_CONFIG_PATH,
-  OPENCLAW_ENABLED,
   OPENCLAW_GATEWAY_URL,
   OPENCLAW_GATEWAY_WS_URL,
   OPENCLAW_PATH,
@@ -1003,11 +1002,6 @@ export class OpenClawRuntime implements AgentRuntime {
    * dispatch — fire an isolated agent turn via the OpenClaw gateway WebSocket path.
    */
   async dispatch(params: DispatchParams): Promise<{ runId: string }> {
-    if (!OPENCLAW_ENABLED) {
-      console.log(`[OpenClawRuntime] OPENCLAW_ENABLED=false — skipping dispatch for session ${params.sessionKey}`);
-      return { runId: 'openclaw-disabled' };
-    }
-
     const routedSessionKey = params.sessionKey.startsWith('agent:')
       ? params.sessionKey
       : `agent:${params.agentSlug}:${params.sessionKey}`;
@@ -1110,10 +1104,6 @@ export class OpenClawRuntime implements AgentRuntime {
    * "Already gone" (session not found) is treated as a success.
    */
   async abort(runId: string, sessionKey: string): Promise<void> {
-    if (!OPENCLAW_ENABLED) {
-      console.log(`[OpenClawRuntime] OPENCLAW_ENABLED=false — skipping abort for session ${sessionKey}`);
-      return;
-    }
     // Stop any active background transcript capture for this session
     stopTranscriptCapture(sessionKey);
     activeTerminalSignalCaptures.get(sessionKey)?.stop();

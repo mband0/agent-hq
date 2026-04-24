@@ -5,7 +5,7 @@ import * as path from 'path';
 import * as http from 'http';
 import * as crypto from 'crypto';
 import { getDb } from '../db/client';
-import { OPENCLAW_BIN, OPENCLAW_CONFIG_PATH, OPENCLAW_ENABLED } from '../config';
+import { OPENCLAW_BIN, OPENCLAW_CONFIG_PATH } from '../config';
 import { ATLAS_AGENT_SLUG } from '../lib/atlasAgent';
 
 const router = Router();
@@ -875,7 +875,6 @@ router.post('/:slug/oauth/exchange', async (req: Request, res: Response) => {
 router.post('/:slug/setup-token', async (req: Request, res: Response) => {
   const { slug } = req.params;
   if (slug !== 'anthropic') { res.status(400).json({ error: `'${slug}' does not support setup-token.` }); return; }
-  if (!OPENCLAW_ENABLED) { res.status(400).json({ error: 'OpenClaw runtime is not enabled.' }); return; }
 
   const { token } = req.body ?? {};
   if (!token || typeof token !== 'string' || !token.trim()) {

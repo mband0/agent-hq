@@ -34,9 +34,6 @@ services:
     #   - /path/to/your/existing/agent-hq.db:/data/agent-hq.db
 
     environment:
-      # ── Enable OpenClaw agent dispatch (optional) ─────────────────────────
-      # OPENCLAW_ENABLED: "true"
-
       # ── Custom secrets / feature flags ────────────────────────────────────
       # MY_SECRET_KEY: "changeme"
       pass: "true"   # placeholder — remove this line when you add real vars

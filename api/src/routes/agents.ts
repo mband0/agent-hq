@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { getDb } from '../db/client';
 import { generateClaudeMd, OPENCLAW_SKILLS_PATH } from '../services/dispatcher';
-import { OPENCLAW_CONFIG_PATH, OPENCLAW_ENABLED } from '../config';
+import { OPENCLAW_CONFIG_PATH } from '../config';
 import { ATLAS_SYSTEM_ROLE } from '../lib/atlasAgent';
 import {
   buildCanonicalAgentMainSessionKey,
@@ -1431,7 +1431,7 @@ router.put('/:id', (req: Request, res: Response) => {
     // in the host openclaw.json so the gateway picks up the change on next session.
     // Bug fix: use resolveSlug(updated) — the agents table has no 'slug' column;
     // the correct slug is derived from openclaw_agent_id or session_key.
-    if ((model !== undefined || preferred_provider !== undefined) && OPENCLAW_ENABLED) {
+    if (model !== undefined || preferred_provider !== undefined) {
       const runtimeType = (updated.runtime_type as string | null) ?? 'openclaw';
       const agentSlug = resolveSlug(updated);
       const provider = (updated.preferred_provider as string | null) ?? 'anthropic';

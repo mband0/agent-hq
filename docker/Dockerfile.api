@@ -20,7 +20,6 @@
 #   AGENT_HQ_DATA_DIR    Directory for the DB if DB_PATH   (default: /data)
 #                        is not set (client.ts fallback)
 #   NODE_ENV             production | development           (default: production)
-#   OPENCLAW_ENABLED     Enable OpenClaw agent dispatch     (default: false)
 ###############################################################################
 
 # ── Stage 1: build ────────────────────────────────────────────────────────────

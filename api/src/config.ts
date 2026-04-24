@@ -35,13 +35,6 @@ function resolveNodeBinDir(): string {
 
 export const NODE_BIN_DIR: string = resolveNodeBinDir();
 
-// ── OpenClaw integration toggle ───────────────────────────────────────────
-// Set OPENCLAW_ENABLED=true to enable agent dispatch and chat proxy features.
-// Defaults to false for open-source / standalone deployments.
-
-export const OPENCLAW_ENABLED: boolean =
-  process.env.OPENCLAW_ENABLED === 'true';
-
 // ── OpenClaw CLI / config ─────────────────────────────────────────────────
 
 export const OPENCLAW_CONFIG_PATH: string =
