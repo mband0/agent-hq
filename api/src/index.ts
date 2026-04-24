@@ -47,6 +47,7 @@ import { shutdownPool as shutdownBrowserPool } from './services/browserPool';
 
 const app = express();
 const PORT = process.env.PORT ?? 3501;
+const HOST = process.env.HOST ?? '0.0.0.0';
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
@@ -173,12 +174,19 @@ setInterval(() => {
 
 const server = http.createServer(app);
 
-// WebSocket proxy for chat (bridges browser → Gateway wss://)
-const wss = new WebSocketServer({ server, path: '/api/v1/chat/ws' });
-setupChatProxy(wss);
+console.log('[boot] http server created', { port: Number(PORT), host: HOST });
 
-server.listen(PORT, () => {
-  console.log(`Atlas HQ API running on http://localhost:${PORT}`);
+// WebSocket proxy for chat (bridges browser → Gateway wss://)
+console.log('[boot] creating chat websocket server', { path: '/api/v1/chat/ws' });
+const wss = new WebSocketServer({ server, path: '/api/v1/chat/ws' });
+console.log('[boot] calling setupChatProxy');
+setupChatProxy(wss);
+console.log('[boot] setupChatProxy returned');
+
+console.log('[boot] about to server.listen', { port: Number(PORT), host: HOST });
+server.listen(Number(PORT), HOST, () => {
+  const displayHost = HOST === '0.0.0.0' ? '127.0.0.1' : HOST;
+  console.log(`Atlas HQ API running on http://${displayHost}:${PORT}`);
 });
 
 // Graceful shutdown: close browser pool

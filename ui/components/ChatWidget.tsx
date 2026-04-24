@@ -35,7 +35,6 @@ function generateId(): string {
 }
 
 const HISTORY_LIMIT = 50;
-const DIRECT_SESSION_STORAGE_PREFIX = 'agent-hq:direct-chat-session:';
 const CHAT_RESPONSE_STALL_MS = 20 * 60 * 1000;
 
 function sessionSlug(sessionKey: string | null | undefined, runtimeSlug?: string | null): string | null {
@@ -55,32 +54,11 @@ function buildDirectSessionKey(baseSessionKey: string, runtimeSlug?: string | nu
 
 function resolveInitialDirectSessionKey(
   baseSessionKey: string,
-  storedSessionKey: string | null,
+  _storedSessionKey: string | null,
   runtimeSlug?: string | null,
   channel = 'web',
 ): string {
-  const slug = sessionSlug(baseSessionKey, runtimeSlug);
-  if (!slug) return storedSessionKey ?? baseSessionKey;
-  if (storedSessionKey && storedSessionKey !== baseSessionKey && storedSessionKey.startsWith(`agent:${slug}:`)) {
-    return storedSessionKey;
-  }
   return buildDirectSessionKey(baseSessionKey, runtimeSlug, channel);
-}
-
-function getStoredDirectSessionKey(agentId: number): string | null {
-  try {
-    return localStorage.getItem(`${DIRECT_SESSION_STORAGE_PREFIX}${agentId}`);
-  } catch {
-    return null;
-  }
-}
-
-function setStoredDirectSessionKey(agentId: number, sessionKey: string): void {
-  try {
-    localStorage.setItem(`${DIRECT_SESSION_STORAGE_PREFIX}${agentId}`, sessionKey);
-  } catch {
-    // ignore storage failures
-  }
 }
 
 function formatTokenCount(value: number | null | undefined): string {
@@ -496,36 +474,34 @@ export default function ChatWidget() {
 
     // Find Atlas main session key
     api.getAgents()
-      .then(agents => {
+      .then(async agents => {
         const atlas = findAtlasAgent(agents);
-        if (atlas?.session_key) {
-          setAtlasMainSessionKey(atlas.session_key);
-          setSessionKey(resolveInitialDirectSessionKey(
-            atlas.session_key,
-            getStoredDirectSessionKey(atlas.id),
-            atlas.openclaw_agent_id,
+        const target = atlas?.session_key ? atlas : (agents.length > 0 && agents[0].session_key ? agents[0] : null);
+        if (!target?.session_key) return;
+
+        setAtlasMainSessionKey(target.session_key);
+        setAgentId(target.id);
+
+        try {
+          const canonical = await api.getCanonicalChatSession(target.id, 'web');
+          setSessionKey(canonical.sessionKey ?? resolveInitialDirectSessionKey(
+            target.session_key,
+            null,
+            target.openclaw_agent_id,
           ));
-          setAgentId(atlas.id);
-          setSendError(null);
-        } else if (agents.length > 0 && agents[0].session_key) {
-          setAtlasMainSessionKey(agents[0].session_key);
+        } catch {
           setSessionKey(resolveInitialDirectSessionKey(
-            agents[0].session_key,
-            getStoredDirectSessionKey(agents[0].id),
-            agents[0].openclaw_agent_id,
+            target.session_key,
+            null,
+            target.openclaw_agent_id,
           ));
-          setAgentId(agents[0].id);
-          setSendError(null);
         }
+
+        setSendError(null);
       })
       .catch(err => console.error('[chat-widget] agents error:', err));
   }, []);
 
-  useEffect(() => {
-    if (agentId && sessionKey) {
-      setStoredDirectSessionKey(agentId, sessionKey);
-    }
-  }, [agentId, sessionKey]);
 
   const loadHeartbeatMonitor = useCallback(async (markUnread: boolean) => {
     if (!atlasMainSessionKey) return;

@@ -6,6 +6,8 @@ import { formatTime, timeAgo } from '@/lib/date';
 import { findAtlasAgent } from '@/lib/atlas';
 import { parseCanonicalMessages, parseGatewayHistoryMessages } from '@/lib/chatMessages';
 
+import { api, Agent, CanonicalSession, ChatMessage, ChatConfig, JobInstance } from '@/lib/api';
+
 // crypto.randomUUID() requires a secure context (HTTPS); fall back for plain HTTP
 function generateId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -16,7 +18,6 @@ function generateId(): string {
     return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
   });
 }
-import { api, Agent, CanonicalSession, ChatMessage, ChatConfig, JobInstance } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import ReactMarkdown from 'react-markdown';
@@ -49,7 +50,7 @@ function sessionSlug(sessionKey: string | null | undefined, runtimeSlug?: string
 function buildDirectSessionKey(baseSessionKey: string, runtimeSlug?: string | null, channel = 'web'): string {
   const slug = sessionSlug(baseSessionKey, runtimeSlug);
   if (!slug) return baseSessionKey;
-  return `agent:${slug}:${channel}:direct:${generateId()}`;
+  return `agent:${slug}:${channel}:direct:shared`;
 }
 
 function resolveInitialDirectSessionKey(
@@ -60,10 +61,11 @@ function resolveInitialDirectSessionKey(
 ): string {
   const slug = sessionSlug(baseSessionKey, runtimeSlug);
   if (!slug) return storedSessionKey ?? baseSessionKey;
-  if (storedSessionKey && storedSessionKey !== baseSessionKey && storedSessionKey.startsWith(`agent:${slug}:`)) {
+  const sharedSessionKey = buildDirectSessionKey(baseSessionKey, runtimeSlug, channel);
+  if (storedSessionKey === sharedSessionKey) {
     return storedSessionKey;
   }
-  return buildDirectSessionKey(baseSessionKey, runtimeSlug, channel);
+  return sharedSessionKey;
 }
 
 function getStoredDirectSessionKey(agentId: number): string | null {

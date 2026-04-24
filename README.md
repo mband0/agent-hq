@@ -335,6 +335,38 @@ docker compose -f docker/docker-compose.agents.yml --env-file .env.agents up -d
 
 ---
 
+## Worktree-backed agent dispatch
+
+Agent HQ can create a task-specific git worktree for a dispatched agent run, but it only does so when the agent record has both of these populated:
+- `workspace_path`
+- `repo_path`
+
+Current implementation gate:
+- `api/src/services/dispatcher.ts`
+- worktree creation only runs inside:
+```ts
+if (job.repo_path && job.workspace_path) {
+  const wtResult = createTaskWorktree({
+    repoPath: job.repo_path,
+    basePath,
+    taskId: task.id,
+    taskTitle: task.title,
+    agentSlug,
+  });
+}
+```
+
+Important:
+- `repo_path` is currently a local filesystem path to a canonical git checkout, not a remote Git URL.
+- The worktree manager uses native `git worktree` operations against that local checkout.
+- If `repo_path` is null, blank, or not a valid local repo path, Agent HQ falls back to the bare agent workspace root and no task repo folder/worktree is created.
+
+Related code/docs:
+- `api/src/services/worktreeManager.ts`
+- `api/src/routes/agents.ts`
+- `docs/architecture/remote-agent-runtime-adapter.md`
+- `docs/task-591-jobs-agents-unification-spec.md`
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for local setup, testing, and PR expectations.

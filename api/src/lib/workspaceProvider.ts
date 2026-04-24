@@ -595,16 +595,16 @@ export function resolveWorkspaceProvider(agentId?: string | number): WorkspacePr
       });
     }
 
+    // Local with explicit workspace_path
+    if (agent.workspace_path) {
+      return new LocalWorkspaceProvider(agent.workspace_path);
+    }
+
     // Local OpenClaw agent
     if (agent.openclaw_agent_id) {
       return new LocalWorkspaceProvider(
         path.join(os.homedir(), `.openclaw/workspace-${agent.openclaw_agent_id}`),
       );
-    }
-
-    // Local with explicit workspace_path
-    if (agent.workspace_path) {
-      return new LocalWorkspaceProvider(agent.workspace_path);
     }
   } catch {
     // fall through

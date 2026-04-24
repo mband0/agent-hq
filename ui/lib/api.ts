@@ -94,6 +94,8 @@ export const api = {
     apiFetch<JobInstance[]>('/api/v1/instances').then(all =>
       all.filter(i => i.agent_id === agentId)
     ),
+  getCanonicalChatSession: (agentId: number, channel = 'web') =>
+    apiFetch<{ sessionKey: string | null; channel: string; agentId: number }>(`/api/v1/chat/canonical-session/${agentId}?channel=${encodeURIComponent(channel)}`),
 
   // Skills
   getSkills: () => apiFetch<SkillEntry[]>('/api/v1/skills'),

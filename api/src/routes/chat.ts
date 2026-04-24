@@ -152,12 +152,50 @@ function resolveAgentRowForSessionKey(sessionKey: string | null | undefined): Re
   return agent ?? null;
 }
 
-function buildDerivedDirectSessionKey(sessionKey: string, channel = 'web', agentId?: number | null): string | null {
+function resolveAgentRowById(agentId: number | null | undefined): Record<string, unknown> | null {
+  if (typeof agentId !== 'number') return null;
   const db = getDb();
+  return (db.prepare('SELECT * FROM agents WHERE id = ?').get(agentId) as Record<string, unknown> | undefined) ?? null;
+}
+
+function getCanonicalChatSessionKey(agentId: number, channel = 'web'): string | null {
+  const db = getDb();
+  const row = db.prepare(`
+    SELECT session_key
+    FROM canonical_chat_sessions
+    WHERE agent_id = ? AND channel = ?
+    LIMIT 1
+  `).get(agentId, channel) as { session_key?: string | null } | undefined;
+  return typeof row?.session_key === 'string' && row.session_key.trim() ? row.session_key.trim() : null;
+}
+
+function setCanonicalChatSessionKey(agentId: number, sessionKey: string, channel = 'web'): string {
+  const db = getDb();
+  db.prepare(`
+    INSERT INTO canonical_chat_sessions (agent_id, channel, session_key, created_at, updated_at)
+    VALUES (?, ?, ?, datetime('now'), datetime('now'))
+    ON CONFLICT(agent_id, channel)
+    DO UPDATE SET session_key = excluded.session_key, updated_at = datetime('now')
+  `).run(agentId, channel, sessionKey);
+  return sessionKey;
+}
+
+function buildDerivedDirectSessionKey(sessionKey: string, channel = 'web', agentId?: number | null, rotate = false): string | null {
   const agent = typeof agentId === 'number'
-    ? (db.prepare('SELECT * FROM agents WHERE id = ?').get(agentId) as Record<string, unknown> | undefined)
+    ? resolveAgentRowById(agentId) ?? undefined
     : resolveAgentRowForSessionKey(sessionKey) ?? undefined;
-  return buildGatewayDirectSessionKey(agent ?? null, channel, randomUUID());
+  if (!agent) return null;
+  const resolvedAgentId = Number(agent.id);
+  if (!Number.isFinite(resolvedAgentId)) return null;
+
+  if (!rotate) {
+    const existing = getCanonicalChatSessionKey(resolvedAgentId, channel);
+    if (existing) return existing;
+  }
+
+  const next = buildGatewayDirectSessionKey(agent, channel, randomUUID());
+  if (!next) return null;
+  return setCanonicalChatSessionKey(resolvedAgentId, next, channel);
 }
 
 /**
@@ -250,9 +288,11 @@ async function gatewayRpc(method: string, params: Record<string, unknown>, gatew
   payload?: unknown;
   error?: string;
 }> {
+  console.log('[chat-proxy] gatewayRpc start', { method, gatewayUrl });
   return new Promise((resolve) => {
     let settled = false;
     const pending = new Map<string, (frame: Record<string, unknown>) => void>();
+    console.log('[chat-proxy] opening gateway websocket', gatewayUrl);
     const ws = new WsClient(gatewayUrl, openClawGatewayWsOptions(gatewayUrl));
 
     const finish = (result: { ok: boolean; payload?: unknown; error?: string }) => {
@@ -282,6 +322,7 @@ async function gatewayRpc(method: string, params: Record<string, unknown>, gatew
     }
 
     ws.on('error', (err) => {
+      console.log('[chat-proxy] gateway websocket error', err.message);
       finish({ ok: false, error: `WebSocket error: ${err.message}` });
     });
 
@@ -308,6 +349,7 @@ async function gatewayRpc(method: string, params: Record<string, unknown>, gatew
 
       if (frame.type !== 'event' || frame.event !== 'connect.challenge') return;
 
+      console.log('[chat-proxy] connect.challenge received');
       const payload = frame.payload as Record<string, unknown> | undefined;
       const nonce = (payload?.nonce as string) ?? '';
       const role = 'operator';
@@ -339,7 +381,9 @@ async function gatewayRpc(method: string, params: Record<string, unknown>, gatew
         };
       };
 
+      console.log('[chat-proxy] sending connect rpc');
       const connectResult = await sendRpc('connect', buildConnectParams());
+      console.log('[chat-proxy] connect rpc result', connectResult.ok === true ? 'ok' : 'error');
 
       if (connectResult.ok !== true) {
         finish({
@@ -601,6 +645,26 @@ router.post('/instances/:id/abort', async (req: Request, res: Response) => {
   } catch (err) {
     res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }
+});
+
+// GET /api/v1/chat/canonical-session/:agentId
+router.get('/canonical-session/:agentId', (req: Request, res: Response) => {
+  const agentId = Number(req.params.agentId);
+  const channel = typeof req.query.channel === 'string' && req.query.channel.trim() ? req.query.channel.trim() : 'web';
+  if (!Number.isFinite(agentId)) {
+    return res.status(400).json({ error: 'Invalid agent id' });
+  }
+
+  const agent = resolveAgentRowById(agentId);
+  if (!agent) {
+    return res.status(404).json({ error: 'Agent not found' });
+  }
+
+  const baseSessionKey = typeof agent.session_key === 'string' ? agent.session_key : '';
+  const sessionKey = getCanonicalChatSessionKey(agentId, channel)
+    ?? buildDerivedDirectSessionKey(baseSessionKey, channel, agentId, false);
+
+  return res.json({ sessionKey, channel, agentId });
 });
 
 // GET /api/v1/chat/config
@@ -1443,7 +1507,7 @@ export function setupChatProxy(wss: WebSocketServer) {
           return;
         }
 
-        const newSessionKey = buildDerivedDirectSessionKey(currentKey, channel, currentCtx.agentId);
+        const newSessionKey = buildDerivedDirectSessionKey(currentKey, channel, currentCtx.agentId, true);
         if (!newSessionKey) {
           clientWs.send(JSON.stringify({ type: 'error', message: 'Session rotation only supports agent direct chats' }));
           return;

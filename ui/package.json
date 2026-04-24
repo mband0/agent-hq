@@ -5,8 +5,8 @@
   "scripts": {
     "dev": "next dev -p 3500",
     "build": "next build && node scripts/ensure-standalone-static.js",
-    "start": "next start -p 3500",
-    "start-dev": "NEXT_PUBLIC_API_URL=http://localhost:3511 next start -p 3510",
+    "start": "next start -H 0.0.0.0 -p 3500",
+    "start-dev": "NEXT_PUBLIC_API_URL=http://localhost:3511 next start -H 0.0.0.0 -p 3510",
     "lint": "next lint"
   },
   "dependencies": {
