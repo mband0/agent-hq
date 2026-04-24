@@ -239,6 +239,11 @@ router.put('/:id/complete', (req: Request, res: Response) => {
     if (!instance) return res.status(404).json({ error: 'Instance not found' });
 
     const finalStatus = ['done', 'failed'].includes(status) ? status : 'done';
+    const runtimeEndedWithoutLifecycleOutcome = finalStatus === 'done' && !instance.lifecycle_outcome_posted_at;
+    const persistedStatus = runtimeEndedWithoutLifecycleOutcome ? 'done' : finalStatus;
+    const runtimeEndError = finalStatus === 'failed'
+      ? (summary ?? 'Runtime reported failed terminal state')
+      : null;
 
     const tokenUsage = normalizeTokenUsage(
       { input_tokens: token_input, output_tokens: token_output, total_tokens: token_total },
@@ -260,9 +265,9 @@ router.put('/:id/complete', (req: Request, res: Response) => {
           token_total = COALESCE(?, token_total)
       WHERE id = ?
     `).run(
-      finalStatus,
+      runtimeEndedWithoutLifecycleOutcome ? 'done' : finalStatus,
       finalStatus === 'done' ? 1 : 0,
-      finalStatus === 'failed' ? (summary ?? 'Runtime reported failed terminal state') : null,
+      runtimeEndError,
       tokenUsage.input,
       tokenUsage.output,
       tokenUsage.total,
@@ -279,10 +284,10 @@ router.put('/:id/complete', (req: Request, res: Response) => {
       changedFilesCount: typeof changed_files_count === 'number' ? changed_files_count : null,
       outcome: outcome ?? finalStatus,
       meaningfulOutput: true,
-      statusLabel: finalStatus,
+      statusLabel: persistedStatus,
       forceNote: true,
       runtimeEndSuccess: finalStatus === 'done',
-      runtimeEndError: finalStatus === 'failed' ? (summary ?? 'Runtime reported failed terminal state') : null,
+      runtimeEndError,
       runtimeEndSource: 'instance_complete',
     });
 

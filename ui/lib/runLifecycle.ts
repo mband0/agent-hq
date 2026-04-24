@@ -1,6 +1,6 @@
 import { parseDbDate, timeAgo } from '@/lib/date';
 
-export type RunDisplayStatus = 'queued' | 'dispatched' | 'starting' | 'running' | 'done' | 'failed';
+export type RunDisplayStatus = 'queued' | 'dispatched' | 'starting' | 'running' | 'awaiting_outcome' | 'done' | 'failed';
 
 /**
  * Task-level workflow outcome — what the agent determined about the task.
@@ -25,6 +25,8 @@ export interface RunLifecycleLike {
   dispatched_at?: string | null;
   started_at?: string | null;
   completed_at?: string | null;
+  runtime_ended_at?: string | null;
+  lifecycle_outcome_posted_at?: string | null;
   /** Explicit task outcome recorded by the outcome API */
   task_outcome?: string | null;
   /** Legacy: artifact outcome from check-in observability */
@@ -76,6 +78,12 @@ const NON_FAILURE_OUTCOMES = new Set([
  */
 function resolveExecStatus(instance: RunLifecycleLike, startedAt: string | null): RunDisplayStatus {
   const taskOutcome = instance.task_outcome ?? instance.artifact_outcome ?? null;
+  const runtimeEnded = Boolean(instance.runtime_ended_at);
+  const lifecycleOutcomePosted = Boolean(instance.lifecycle_outcome_posted_at || taskOutcome);
+
+  if (runtimeEnded && !lifecycleOutcomePosted) {
+    return 'awaiting_outcome';
+  }
 
   switch (instance.status) {
     case 'queued':
@@ -88,13 +96,13 @@ function resolveExecStatus(instance: RunLifecycleLike, startedAt: string | null)
       return 'done';
     case 'failed':
       // If the run has a recognized non-failure task outcome, the execution itself
-      // completed — treat it as 'done' for execution display purposes.
+      // completed and reported a workflow result.
       if (taskOutcome && NON_FAILURE_OUTCOMES.has(taskOutcome)) {
         return 'done';
       }
-      return 'failed';
+      return runtimeEnded ? 'done' : 'failed';
     default:
-      return 'queued';
+      return runtimeEnded ? 'done' : 'queued';
   }
 }
 
@@ -123,6 +131,8 @@ export function getRunLifecycle(instance: RunLifecycleLike): RunLifecycle {
     note = staleMissingStart ? 'Accepted but still missing a confirmed start.' : 'Accepted, waiting for a confirmed start.';
   } else if (instance.status === 'running' && !startedAt) {
     note = staleMissingStart ? 'Work may be ghosted — start is still unconfirmed.' : 'Work is starting, but the start is not yet confirmed.';
+  } else if (displayStatus === 'awaiting_outcome') {
+    note = 'Runtime ended, waiting for lifecycle outcome handoff.';
   } else if ((instance.status === 'done' || instance.status === 'failed') && completedAt && !startedAt) {
     note = 'Completed without a confirmed start timestamp.';
   }
@@ -149,6 +159,8 @@ export function getRunStatusLabel(status: RunDisplayStatus): string {
       return 'Starting';
     case 'running':
       return 'Running';
+    case 'awaiting_outcome':
+      return 'Awaiting Outcome';
     case 'done':
       return 'Done';
     case 'failed':

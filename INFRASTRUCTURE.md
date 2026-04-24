@@ -53,7 +53,7 @@ It provides:
                 │                       │
                 ▼                       ▼
         SQLite database         Agent Runtimes
-         atlas-hq.db              │
+         agent-hq.db              │
                                   ├─ OpenClaw Gateway (localhost:18789)
                                   │    └─ local agents via hooks protocol
                                   ├─ Claude Code (local subprocess)
@@ -85,7 +85,7 @@ It provides:
 | Purpose | Path |
 |--------|------|
 | Agent HQ repo | `~/agent-hq` |
-| SQLite DB | `~/agent-hq/atlas-hq.db` |
+| SQLite DB | `~/agent-hq/agent-hq.db` |
 | OpenClaw root | `~/.openclaw/` |
 | Agent sessions | `~/.openclaw/agents/*/sessions/` |
 | Agent workspaces | `~/.openclaw/workspace-*` |

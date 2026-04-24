@@ -8,10 +8,11 @@ import { getRunLifecycle, getRunTimelineSummary, RunDisplayStatus, getTaskOutcom
 
 type ResolvedStatus = RunDisplayStatus | 'idle';
 
-const STATUS_COLS: ResolvedStatus[] = ['running', 'starting', 'dispatched', 'queued', 'done', 'failed', 'idle'];
+const STATUS_COLS: ResolvedStatus[] = ['running', 'awaiting_outcome', 'starting', 'dispatched', 'queued', 'done', 'failed', 'idle'];
 
 const STATUS_LABELS: Record<ResolvedStatus, string> = {
   running: 'Running',
+  awaiting_outcome: 'Awaiting Outcome',
   starting: 'Starting',
   queued: 'Queued',
   dispatched: 'Dispatched',
@@ -22,6 +23,7 @@ const STATUS_LABELS: Record<ResolvedStatus, string> = {
 
 const COL_COLORS: Record<ResolvedStatus, string> = {
   running: 'border-amber-600',
+  awaiting_outcome: 'border-yellow-500',
   starting: 'border-orange-600',
   queued: 'border-slate-600',
   dispatched: 'border-blue-700',
@@ -57,6 +59,9 @@ function resolveJobStatus(template: Agent, instances: JobInstance[]): ResolvedJo
   const running = sorted.find(i => getRunLifecycle(i).displayStatus === 'running');
   if (running) return { template, instance: running, status: 'running' };
 
+  const awaitingOutcome = sorted.find(i => getRunLifecycle(i).displayStatus === 'awaiting_outcome');
+  if (awaitingOutcome) return { template, instance: awaitingOutcome, status: 'awaiting_outcome' };
+
   const starting = sorted.find(i => getRunLifecycle(i).displayStatus === 'starting');
   if (starting) return { template, instance: starting, status: 'starting' };
 
@@ -66,9 +71,12 @@ function resolveJobStatus(template: Agent, instances: JobInstance[]): ResolvedJo
   const queued = sorted.find(i => getRunLifecycle(i).displayStatus === 'queued');
   if (queued) return { template, instance: queued, status: 'queued' };
 
-  const terminal = sorted.find(i => i.status === 'done' || i.status === 'failed');
+  const terminal = sorted.find(i => {
+    const displayStatus = getRunLifecycle(i).displayStatus;
+    return displayStatus === 'done' || displayStatus === 'failed';
+  });
   if (terminal) {
-    return { template, instance: terminal, status: terminal.status as ResolvedStatus };
+    return { template, instance: terminal, status: getRunLifecycle(terminal).displayStatus as ResolvedStatus };
   }
 
   const mostRecent = sorted[0];

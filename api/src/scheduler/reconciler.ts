@@ -618,10 +618,6 @@ function reconcileMissingLifecycleOutcomeAfterRuntimeEnd(db: Database.Database):
   }>;
 
   for (const task of candidates) {
-    if (task.instance_status === 'running') {
-      continue;
-    }
-
     const normalized = task.runtime_ended_at.includes('T')
       ? task.runtime_ended_at
       : task.runtime_ended_at.replace(' ', 'T');

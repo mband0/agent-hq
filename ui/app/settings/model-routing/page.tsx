@@ -150,7 +150,7 @@ function AddRuleForm({
           <option value="anthropic">Anthropic</option>
           <option value="openai">OpenAI</option>
           <option value="google">Google</option>
-          <option value="veri">Veri</option>
+          <option value="veri">Custom</option>
           <option value="local">Local (MLX)</option>
         </select>
       </td>
@@ -319,7 +319,7 @@ function RuleRow({
             <option value="anthropic">Anthropic</option>
             <option value="openai">OpenAI</option>
             <option value="google">Google</option>
-            <option value="veri">Veri</option>
+            <option value="veri">Custom</option>
             <option value="local">Local (MLX)</option>
           </select>
         ) : (

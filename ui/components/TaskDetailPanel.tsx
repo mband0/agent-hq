@@ -538,6 +538,7 @@ const RUN_STATUS_BADGE: Record<string, string> = {
   dispatched: 'bg-blue-900/60 text-blue-300',
   starting: 'bg-cyan-900/60 text-cyan-300',
   running: 'bg-green-900/60 text-green-300',
+  awaiting_outcome: 'bg-amber-900/60 text-amber-200 border border-amber-500/30',
   done: 'bg-emerald-900/60 text-emerald-300',
   failed: 'bg-red-900/60 text-red-300',
 };
@@ -1061,9 +1062,18 @@ export function TaskDetailPanel({ task, statuses, onClose, onSave, onDelete, onC
     ? task.branch_url.replace(/.*\/tree\//, '')
     : null;
   const observedBranch = task.branch_name ?? branchName;
-  const activeRunStatus = task.active_instance_status === 'running' && !task.active_instance_started_at
-    ? 'starting'
-    : task.active_instance_status;
+  const activeRunLifecycle = task.active_instance_id ? getRunLifecycle({
+    status: task.active_instance_status ?? 'queued',
+    created_at: task.active_instance_created_at,
+    dispatched_at: task.active_instance_dispatched_at,
+    started_at: task.active_instance_started_at,
+    completed_at: task.active_instance_completed_at,
+    runtime_ended_at: task.active_instance_runtime_ended_at,
+    lifecycle_outcome_posted_at: task.active_instance_lifecycle_outcome_posted_at,
+    task_outcome: task.active_instance_task_outcome,
+    artifact_outcome: task.latest_run_outcome,
+  }) : null;
+  const activeRunStatus = activeRunLifecycle?.displayStatus ?? null;
 
   return (
     <>
@@ -1386,8 +1396,8 @@ export function TaskDetailPanel({ task, statuses, onClose, onSave, onDelete, onC
                         <span className="text-xs text-slate-400 font-mono">instance #{task.active_instance_id}</span>
                       )}
                       {activeRunStatus && (
-                        <span className={`text-xs px-2 py-1 rounded-full font-medium ${STATUS_BADGE[activeRunStatus] ?? STATUS_BADGE.todo}`}>
-                          {STATUS_LABELS[activeRunStatus] ?? activeRunStatus}
+                        <span className={`text-xs px-2 py-1 rounded-full font-medium ${RUN_STATUS_BADGE[activeRunStatus] ?? 'bg-slate-700 text-slate-300'}`}>
+                          {activeRunStatus === 'awaiting_outcome' ? 'Awaiting Outcome' : activeRunStatus}
                         </span>
                       )}
                       {task.run_is_stale ? (

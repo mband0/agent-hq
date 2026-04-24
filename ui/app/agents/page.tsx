@@ -27,7 +27,7 @@ const RUNTIME_TYPE_OPTIONS = [
   { value: 'openclaw', label: 'OpenClaw' },
   { value: 'claude-code', label: 'Claude Code' },
   { value: 'webhook', label: 'Webhook' },
-  { value: 'veri', label: 'Veri (Agent Runtime)' },
+  { value: 'veri', label: 'Custom (Agent Runtime)' },
 ] as const;
 
 interface FormState {
@@ -103,7 +103,7 @@ function runtimeBadge(agent: Agent) {
     case 'veri':
       return (
         <span className="inline-flex items-center text-xs font-medium text-blue-300 bg-blue-900/30 border border-blue-500/30 px-1.5 py-0.5 rounded-full whitespace-nowrap">
-          Veri
+          Custom
         </span>
       );
     case 'webhook':

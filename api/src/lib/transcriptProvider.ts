@@ -332,7 +332,7 @@ export class OpenClawTranscriptProvider implements TranscriptProvider {
 
     // For running instances, return what we have with in_progress flag.
     // The WebSocket proxy will push live deltas; no need to poll the gateway.
-    if (instance.status === 'running') {
+    if (instance.status === 'running' && !instance.runtime_ended_at) {
       const messages: TranscriptMessage[] = chatMessages.map(m => ({
         id: m.id,
         role: m.role as TranscriptMessage['role'],
@@ -704,7 +704,7 @@ export class RemoteTranscriptProvider implements TranscriptProvider {
     }
 
     // For running instances of remote agents, return empty with in_progress flag
-    if (instance.status === 'running') {
+    if (instance.status === 'running' && !instance.runtime_ended_at) {
       return {
         sessionKey,
         source: 'chat_messages',

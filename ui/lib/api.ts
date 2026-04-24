@@ -1064,6 +1064,8 @@ export interface Task {
   active_instance_id?: number | null;
   active_instance_status?: string | null;
   active_instance_session_key?: string | null;
+  active_instance_created_at?: string | null;
+  active_instance_dispatched_at?: string | null;
   active_instance_started_at?: string | null;
   active_instance_completed_at?: string | null;
   active_instance_runtime_ended_at?: string | null;

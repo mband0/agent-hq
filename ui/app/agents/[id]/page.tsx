@@ -35,7 +35,7 @@ const RUNTIME_TYPE_OPTIONS = [
   { value: 'openclaw', label: 'OpenClaw' },
   { value: 'claude-code', label: 'Claude Code' },
   { value: 'webhook', label: 'Webhook' },
-  { value: 'veri', label: 'Veri (Agent Runtime)' },
+  { value: 'veri', label: 'Custom (Agent Runtime)' },
 ] as const;
 
 interface EditFormState {

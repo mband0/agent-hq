@@ -1,8 +1,8 @@
-# Atlas HQ — Backup & Restore Runbook
+# Agent HQ — Backup & Restore Runbook
 
 ## Overview
 
-The Atlas HQ production database (`agent-hq.db`) is backed up automatically every hour via cron. Each backup is stored in two locations:
+The Agent HQ production database (`agent-hq.db`) should be backed up automatically on a schedule. Backups are intended to be stored locally and optionally off-machine.
 
 | Location | Path | Retention |
 |---|---|---|
@@ -47,7 +47,7 @@ tail -40 ~/agent-hq/logs/backup-cron.log
 ls -lht ~/agent-hq/backups/
 ```
 
-Pick the most recent file before the incident (format: `atlas-hq_YYYY-MM-DD_HH-MM.db`).
+Pick the most recent file before the incident (format: `agent-hq_YYYY-MM-DD_HH-MM.db`).
 
 **From GitHub (if local backups are gone):**
 ```bash
@@ -59,8 +59,8 @@ ls -la YYYY-MM-DD/      # replace with the date you want
 Download the `.db.gz` file you want:
 ```bash
 # Copy to restore working area
-cp YYYY-MM-DD/atlas-hq_YYYY-MM-DD_HH-MM.db.gz /tmp/
-cd /tmp && gunzip atlas-hq_YYYY-MM-DD_HH-MM.db.gz
+cp YYYY-MM-DD/agent-hq_YYYY-MM-DD_HH-MM.db.gz /tmp/
+cd /tmp && gunzip agent-hq_YYYY-MM-DD_HH-MM.db.gz
 ```
 
 ---
@@ -92,13 +92,13 @@ mv ~/agent-hq/agent-hq.db ~/agent-hq/agent-hq.db.broken-$(date +%Y%m%d%H%M)
 
 **From local backup:**
 ```bash
-cp ~/agent-hq/backups/atlas-hq_YYYY-MM-DD_HH-MM.db \
+cp ~/agent-hq/backups/agent-hq_YYYY-MM-DD_HH-MM.db \
    ~/agent-hq/agent-hq.db
 ```
 
 **From GitHub (decompressed in Step 0):**
 ```bash
-cp /tmp/atlas-hq_YYYY-MM-DD_HH-MM.db \
+cp /tmp/agent-hq_YYYY-MM-DD_HH-MM.db \
    ~/agent-hq/agent-hq.db
 ```
 
@@ -167,8 +167,8 @@ tail -30 ~/agent-hq/logs/backup-cron.log
 
 A successful backup entry looks like:
 ```
-[2026-04-04 19:09:24] [INFO] === Atlas HQ Backup COMPLETE ===
-[2026-04-04 19:09:24] [INFO] Backup: atlas-hq_2026-04-04_19-09.db | Size: 26M | Retained locally for 30d | Off-machine: GitHub
+[2026-04-04 19:09:24] [INFO] === Agent HQ Backup COMPLETE ===
+[2026-04-04 19:09:24] [INFO] Backup: agent-hq_2026-04-04_19-09.db | Size: 26M | Retained locally for 30d | Off-machine: GitHub
 ```
 
 If the log is stale (last entry is hours/days old), the cron may not be running. Check:

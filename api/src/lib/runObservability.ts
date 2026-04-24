@@ -395,9 +395,27 @@ export function recordRunCheckIn(db: Database.Database, input: RunCheckInInput):
   if (input.stage === 'completion') {
     const runtimeEndSuccess = input.runtimeEndSuccess ?? (input.statusLabel ? input.statusLabel !== 'failed' : input.outcome !== 'failed');
     const runtimeEndError = input.runtimeEndError ?? (runtimeEndSuccess ? null : (input.summary ?? input.blockerReason ?? null));
+    const existingInstance = db.prepare(`
+      SELECT status, lifecycle_outcome_posted_at, task_outcome
+      FROM job_instances
+      WHERE id = ?
+    `).get(input.instanceId) as {
+      status: string;
+      lifecycle_outcome_posted_at: string | null;
+      task_outcome: string | null;
+    } | undefined;
+    const runtimeEndedWithoutLifecycleOutcome = Boolean(
+      existingInstance &&
+      !existingInstance.lifecycle_outcome_posted_at &&
+      !existingInstance.task_outcome
+    );
+    const nextStatus = runtimeEndedWithoutLifecycleOutcome && ['queued', 'dispatched', 'running'].includes(existingInstance?.status ?? '')
+      ? 'done'
+      : (input.statusLabel ?? existingInstance?.status ?? 'done');
     db.prepare(`
       UPDATE job_instances
-      SET started_at = COALESCE(started_at, ?),
+      SET status = ?,
+          started_at = COALESCE(started_at, ?),
           completed_at = COALESCE(completed_at, ?),
           runtime_ended_at = COALESCE(runtime_ended_at, ?),
           runtime_end_success = COALESCE(runtime_end_success, ?),
@@ -405,6 +423,7 @@ export function recordRunCheckIn(db: Database.Database, input: RunCheckInInput):
           runtime_end_source = COALESCE(?, runtime_end_source)
       WHERE id = ?
     `).run(
+      nextStatus,
       nowIso,
       nowIso,
       nowIso,
