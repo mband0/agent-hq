@@ -30,5 +30,6 @@ cli/.npmrc
 .claude/
 *.log
 logs/
+backups/
 
-api/src/runtimes/VeriAgentRuntime.ts
+api/src/runtimes/CustomAgentRuntime.ts

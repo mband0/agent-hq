@@ -15,7 +15,7 @@
  *
  * Lifecycle proxy mode (task #470):
  *   When lifecycleProxy is enabled, the runtime handles the full Atlas lifecycle
- *   on behalf of the remote agent — same as VeriAgentRuntime. The remote agent
+ *   on behalf of the remote agent, same as CustomAgentRuntime. The remote agent
  *   emits a structured atlas_lifecycle JSON block in its response body, and the
  *   runtime parses it to record evidence, post outcomes, and close instances.
  *

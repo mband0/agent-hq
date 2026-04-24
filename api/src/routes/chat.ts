@@ -236,7 +236,7 @@ function resolveGatewayUrl(sessionKey: string | null | undefined): string {
         name: agent?.name as string | null | undefined,
       });
       if (agentSlug) {
-        // Try openclaw_agent_id first (canonical for remote agents like Veri),
+        // Try openclaw_agent_id first (canonical for remote agents like Custom),
         // then session_key pattern match, as there is no slug column.
         const row = db.prepare(`
           SELECT hooks_url FROM agents

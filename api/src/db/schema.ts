@@ -344,7 +344,7 @@ export function initSchema(): void {
   } catch (_) { /* column already exists */ }
 
   // Safe migration: expand chat_messages.role CHECK to support structured transcript rows.
-  // OpenClaw/Veri transcript capture can emit tool/system events, and older DBs with
+  // OpenClaw/Custom transcript capture can emit tool/system events, and older DBs with
   // role IN ('user','assistant') reject those rows during history import/live capture.
   // IMPORTANT: live DBs have drifted over time (for example an older session_key column).
   // Rebuild from the current sqlite_master DDL so we preserve every existing column
@@ -1964,7 +1964,7 @@ PM-family tasks ('pm', 'pm_analysis', 'pm_operational') intentionally skip QA ev
 - Merge reviewed work into main, deploy to production, record deploy evidence, then perform live verification.
 
 ## Release workflow
-1. Verify the ticket is truly ready_to_merge.
+1. Customfy the ticket is truly ready_to_merge.
 2. Merge the reviewed branch into main.
 3. Deploy to production.
 4. Record deploy evidence with PUT /api/v1/tasks/:id/deploy-evidence including merged commit, deployed commit, deploy target, and deployed timestamp.
@@ -3308,7 +3308,7 @@ function ensureFailureClassColumns(): void {
  *      the referenced job_template still exists (18 rows).
  *   2. Assign orphaned routing rules for defunct/deleted job_templates to the
  *      project's primary backend agent. These rows have no valid job_template
- *      to derive agent_id from (16 orphan rows, project 14 / Veri Agent).
+ *      to derive agent_id from (16 orphan rows, project 14 / Custom Agent).
  *   3. Backfill legacy task ownership columns so old job-owned rows populate
  *      tasks.agent_id and tasks.review_owner_agent_id from job_templates.agent_id
  *      before any runtime authority check relies on agent ownership.

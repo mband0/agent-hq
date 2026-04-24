@@ -1109,12 +1109,12 @@ async function fireAgentRun(
   //   3. agent.model
   //   4. gateway default (null → omit from payload)
   //
-  // Veri agents manage their own model selection — skip resolution so
-  // VeriAgentRuntime falls through to its DEFAULT_VERI_MODEL.
-  const isVeriRuntime = job.runtime_type === 'veri';
+  // Custom agents manage their own model selection — skip resolution so
+  // CustomAgentRuntime falls through to its DEFAULT_VERI_MODEL.
+  const isCustomRuntime = job.runtime_type === 'veri';
   const preferredProvider = job.preferred_provider ?? null;
-  const spModel = isVeriRuntime ? null : resolveModelFromStoryPoints(db, storyPoints ?? null, preferredProvider);
-  const model = isVeriRuntime ? null : (spModel?.model || job.model || job.agent_model || null);
+  const spModel = isCustomRuntime ? null : resolveModelFromStoryPoints(db, storyPoints ?? null, preferredProvider);
+  const model = isCustomRuntime ? null : (spModel?.model || job.model || job.agent_model || null);
   if (spModel) {
     console.log(
       `[dispatcher] Story points=${storyPoints} preferred_provider=${preferredProvider ?? 'null'} → model=${spModel.model} (rule: ${spModel.label ?? 'unnamed'})`
@@ -1144,7 +1144,7 @@ async function fireAgentRun(
   //
   // Replaces the previous claude-code-only `generateClaudeMd` + `syncSkillDirs`
   // block. All runtime types now go through the adapter factory so OpenClaw,
-  // Veri, Webhook agents each receive the correct materialization behavior
+  // Custom, Webhook agents each receive the correct materialization behavior
   // without requiring runtime-specific conditionals here.
   {
     // Resolve the working directory (same logic as before, now shared across runtimes)
@@ -1483,7 +1483,7 @@ function dispatchTaskToJob(
     });
   }
 
-  // Remote agents (Veri) need the external Tailscale URL; local agents use localhost.
+  // Remote agents (Custom) need the external Tailscale URL; local agents use localhost.
   const callbackBaseUrl = job.runtime_type === 'veri'
     ? getAgentHqBaseUrl()
     : undefined; // undefined → default Agent HQ base URL / localhost

@@ -144,9 +144,9 @@ export const WORKSPACE_ROOT: string =
   process.env.WORKSPACE_ROOT ??
   path.join(HOME, '.openclaw', 'workspace');
 
-// ── Veri LLM fleet integration ────────────────────────────────────────────
-// Credentials are supplied via environment or other Agent HQ-managed secret/config surfaces,
-// Used by VeriAgentRuntime (Mode 2) and available for model routing (Mode 1).
+// ── Custom runtime LLM fleet integration ──────────────────────────────────
+// Credentials are supplied via environment or other Agent HQ-managed secret/config surfaces.
+// Used by CustomAgentRuntime (Mode 2) and available for model routing (Mode 1).
 
 export const VERI_BASE_URL: string =
   process.env.VERI_BASE_URL ?? '';

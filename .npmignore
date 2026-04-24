@@ -15,7 +15,6 @@ uploads/
 api/dist/
 api/dist.bak*/
 api/src_backup*/
-api/tmp-tools-fixture/
 api/*.db
 api/*.db-shm
 api/*.db-wal
@@ -45,17 +44,8 @@ bin/agent-hq.test.js
 .env
 .env.local
 .env.agents
-.atlas-run-context.json
 
 # ── Non-essential root files ───────────────────────────────────────────────
-CLAUDE.md
-INFRASTRUCTURE.md
-SOUL.md
-IDENTITY.md
-AGENTS.md
-TOOLS.md
-USER.md
-MEMORY.md
 start.sh
 ecosystem.dev.config.js
 docker-compose.override.yml.example

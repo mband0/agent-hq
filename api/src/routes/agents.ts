@@ -1472,7 +1472,7 @@ router.put('/:id', (req: Request, res: Response) => {
 });
 
 // GET /api/v1/agents/:id/docs
-// Task #469: Uses WorkspaceProvider so remote agents (Veri etc.) serve docs
+// Task #469: Uses WorkspaceProvider so remote agents (Custom etc.) serve docs
 // through the same endpoint without special-case logic.
 router.get('/:id/docs', async (req: Request, res: Response) => {
   try {

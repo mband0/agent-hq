@@ -1,7 +1,7 @@
 /**
  * runtimes/lifecycleProxy.ts — Shared lifecycle proxy for remote agent runtimes.
  *
- * Remote agent runtimes (Veri, Webhook with proxy mode, future runtimes) cannot
+ * Remote agent runtimes (Custom, Webhook with proxy mode, future runtimes) cannot
  * always make HTTP callbacks to Atlas HQ during execution. This module provides
  * a standard lifecycle proxy that Atlas calls on behalf of those agents.
  *
@@ -16,7 +16,7 @@
  * of their response. The proxy parses this block for outcome, branch, commit,
  * summary, etc. and drives the Atlas lifecycle on their behalf.
  *
- * Task #470: Extracted from VeriAgentRuntime (task #464) to enable parity
+ * Task #470: Extracted from CustomAgentRuntime (task #464) to enable parity
  * across all remote runtimes.
  */
 

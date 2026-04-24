@@ -132,7 +132,7 @@ export async function stopInstanceExecution(
       await runtime.abort(runId, sessionKey ?? '');
     } catch (veriAbortErr) {
       console.warn(
-        `[instances] Veri runtime abort failed for instance ${id} (non-fatal):`,
+        `[instances] Custom runtime abort failed for instance ${id} (non-fatal):`,
         veriAbortErr instanceof Error ? veriAbortErr.message : String(veriAbortErr),
       );
     }

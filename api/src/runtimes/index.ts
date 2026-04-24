@@ -28,8 +28,8 @@ export { ClaudeCodeRuntime } from './ClaudeCodeRuntime';
 export type { ClaudeCodeRuntimeConfig } from './ClaudeCodeRuntime';
 export { WebhookRuntime } from './WebhookRuntime';
 export type { WebhookRuntimeConfig } from './WebhookRuntime';
-export { VeriAgentRuntime } from './VeriAgentRuntime';
-export type { VeriAgentRuntimeConfig } from './VeriAgentRuntime';
+export { CustomAgentRuntime } from './CustomAgentRuntime';
+export type { CustomAgentRuntimeConfig } from './CustomAgentRuntime';
 
 // Lifecycle proxy — shared lifecycle contract for remote agent runtimes (task #470)
 export {
@@ -61,7 +61,7 @@ import type { AgentRuntime } from './types';
 import { OpenClawRuntime } from './OpenClawRuntime';
 import { ClaudeCodeRuntime } from './ClaudeCodeRuntime';
 import { WebhookRuntime, type WebhookRuntimeConfig } from './WebhookRuntime';
-import { VeriAgentRuntime, type VeriAgentRuntimeConfig } from './VeriAgentRuntime';
+import { CustomAgentRuntime, type CustomAgentRuntimeConfig } from './CustomAgentRuntime';
 
 /**
  * resolveRuntime — factory that maps runtime_type → AgentRuntime implementation.
@@ -102,7 +102,7 @@ export function resolveRuntime(agent: {
       return new WebhookRuntime(config as unknown as WebhookRuntimeConfig);
     }
     case 'veri':
-      return new VeriAgentRuntime(config as unknown as VeriAgentRuntimeConfig);
+      return new CustomAgentRuntime(config as unknown as CustomAgentRuntimeConfig);
     case 'openclaw':
     default:
       return new OpenClawRuntime();

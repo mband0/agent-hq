@@ -377,7 +377,7 @@ export class ClaudeCodeSkillAdapter extends FilesystemSkillAdapter {
 /**
  * PromptInjectionSkillAdapter — non-filesystem adapter for remote runtimes.
  *
- * Remote runtimes (Veri, Webhook) do not share a local filesystem with Atlas.
+ * Remote runtimes (Custom, Webhook) do not share a local filesystem with Atlas.
  * Skills are not symlinked — instead the adapter records which skills are
  * assigned on the context for the dispatcher to embed in the system prompt.
  *

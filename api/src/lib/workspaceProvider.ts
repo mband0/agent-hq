@@ -3,7 +3,7 @@
  *
  * Task #469: Introduces a provider model so docs/tree/file-read/write operations
  * work identically for local filesystem agents and remote API-backed agents
- * (e.g. Veri) without inline branching in route handlers.
+ * (e.g. Custom) without inline branching in route handlers.
  *
  * Provider interface:
  *   - readDocs(filenames)  → identity doc contents
@@ -406,7 +406,7 @@ export class RemoteWorkspaceProvider implements WorkspaceProvider {
 
 // ── Remote tree normalization ─────────────────────────────────────────────────
 
-interface VeriFileEntry {
+interface CustomFileEntry {
   path?: string;
   name?: string;
   type?: string;
@@ -415,15 +415,15 @@ interface VeriFileEntry {
   mtime?: string;
 }
 
-interface VeriTreeResponse {
+interface CustomTreeResponse {
   workspace_root?: string;
   root?: string;
-  files?: VeriFileEntry[];
+  files?: CustomFileEntry[];
   children?: unknown;
 }
 
 function normalizeRemoteTreeResponse(data: unknown): { root: string; children: TreeNode[] } {
-  const payload = (data && typeof data === 'object' ? data : {}) as VeriTreeResponse;
+  const payload = (data && typeof data === 'object' ? data : {}) as CustomTreeResponse;
   const root = typeof payload.workspace_root === 'string'
     ? payload.workspace_root
     : typeof payload.root === 'string'
@@ -586,7 +586,7 @@ export function resolveWorkspaceProvider(agentId?: string | number): WorkspacePr
       return new LocalWorkspaceProvider(resolveAtlasWorkspaceRoot() || DEFAULT_WORKSPACE_ROOT);
     }
 
-    // Remote agent (e.g. Veri)
+    // Remote agent (e.g. Custom)
     if (agent.runtime_type === 'veri') {
       const config = parseRuntimeConfig(agent);
       return new RemoteWorkspaceProvider({

@@ -271,7 +271,7 @@ function buildRemoteDirectTransport(
 
 /**
  * buildProxyManagedTransport — instructions for agents whose lifecycle is
- * managed by the runtime proxy (e.g. Veri, webhook with lifecycleProxy=true).
+ * managed by the runtime proxy (e.g. Custom, webhook with lifecycleProxy=true).
  *
  * These agents:
  * - CANNOT make HTTP calls to Atlas HQ
@@ -427,7 +427,7 @@ export function resolveTransportMode(params: {
 }): TransportMode {
   const type = params.runtimeType ?? 'openclaw';
 
-  // Veri agents are always proxy-managed
+  // Custom agents are always proxy-managed
   if (type === 'veri') return 'proxy-managed';
 
   // Parse runtime config

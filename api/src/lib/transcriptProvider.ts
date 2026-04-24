@@ -5,7 +5,7 @@
  * and chat visibility work identically for:
  *   - Local OpenClaw agents (chat via gateway WebSocket, history in OpenClaw sessions)
  *   - Claude Code agents (transcript from .claude/projects JSONL files)
- *   - Veri / remote agents (transcript from chat_messages table, populated by runtime)
+ *   - Custom / remote agents (transcript from chat_messages table, populated by runtime)
  *   - Future remote agents with their own transcript APIs
  *
  * Provider interface:
@@ -630,7 +630,7 @@ export class ClaudeCodeTranscriptProvider implements TranscriptProvider {
 }
 
 // ── Remote Agent Provider ─────────────────────────────────────────────────────
-// For agents that run on remote infrastructure (e.g. Veri).
+// For agents that run on remote infrastructure (e.g. Custom).
 // Transcripts come from chat_messages table (populated by the runtime during/after runs)
 // or optionally from a remote transcript API.
 
@@ -678,7 +678,7 @@ export class RemoteTranscriptProvider implements TranscriptProvider {
       }
     }
 
-    // Fall back to chat_messages table (populated by VeriAgentRuntime or similar)
+    // Fall back to chat_messages table (populated by CustomAgentRuntime or similar)
     const db = getDb();
     const chatMessages = db.prepare(`
       SELECT id, role, content, timestamp, event_type, event_meta

@@ -14,7 +14,7 @@ TypeScript types; migration paths are incremental.
 
 Atlas HQ dispatches tasks to agents that run on different execution backends:
 local OpenClaw instances, headless Claude Code sessions, HTTP webhook endpoints,
-and remote AI platforms (e.g. Veri). The **runtime adapter model** provides a
+and remote AI platforms (e.g. Custom). The **runtime adapter model** provides a
 uniform contract so the dispatcher, lifecycle system, workspace layer, and UI
 treat all agents identically regardless of where they execute.
 
@@ -26,7 +26,7 @@ treat all agents identically regardless of where they execute.
    lifecycle events (start, heartbeat, outcome) driven by the runtime adapter.
 3. **Workspace abstraction** — file operations route through `WorkspaceProvider`
    so local and remote filesystems share one API surface.
-4. **Zero Veri-specific hacks** — Veri is the first remote adapter but the
+4. **Zero Custom-specific hacks** — Custom is the first remote adapter but the
    contracts are provider-agnostic. Any platform that speaks HTTP + SSE (or
    webhook callbacks) plugs in via the same boundaries.
 
@@ -95,7 +95,7 @@ interface CallbackUrls {
 
 The `WebhookRuntime` already provides these. For self-callback-capable runtimes
 (OpenClaw, webhook targets with Atlas SDK), callback URLs are passed in the
-dispatch payload. For proxy-managed runtimes (Veri, future inference-only
+dispatch payload. For proxy-managed runtimes (Custom, future inference-only
 backends), the adapter handles callbacks internally and does not forward URLs.
 
 ---
@@ -115,7 +115,7 @@ The existing factory function maps `runtime_type` → concrete class:
 | `openclaw`     | `OpenClawRuntime`    | Self-callback       | Local FS        |
 | `claude-code`  | `ClaudeCodeRuntime`  | SDK events + env    | Local FS        |
 | `webhook`      | `WebhookRuntime`     | Self-callback (URLs)| Varies          |
-| `veri`         | `VeriAgentRuntime`   | Runtime-proxied     | Remote API      |
+| `veri`         | `CustomAgentRuntime`   | Runtime-proxied     | Remote API      |
 | *(future)*     | *(new class)*        | *(either model)*    | *(either model)*|
 
 Adding a new runtime requires:
@@ -144,7 +144,7 @@ The agent cannot (or should not) make outbound HTTP calls. The runtime adapter
 consumes the agent's output (typically an SSE stream) and drives all lifecycle
 callbacks on the agent's behalf.
 
-- **Veri agents** — the adapter streams the response, sends periodic heartbeats,
+- **Custom agents** — the adapter streams the response, sends periodic heartbeats,
   parses a structured `atlas_lifecycle` JSON block from the output, and posts
   outcome/evidence/completion to Atlas HQ.
 - **Future inference-only agents** — same pattern: consume output, proxy
@@ -263,7 +263,7 @@ interface WebhookRuntimeConfig {
 }
 ```
 
-**Veri (and future remote agents):**
+**Custom (and future remote agents):**
 ```typescript
 interface RemoteAgentRuntimeConfig {
   baseUrl?: string;         // API base URL
@@ -330,9 +330,9 @@ Story-point routing rule (provider-aware)
             └─ gateway/runtime default (null → omit)
 ```
 
-Remote agents (e.g. Veri) may bypass model resolution entirely if the remote
+Remote agents (e.g. Custom) may bypass model resolution entirely if the remote
 platform manages its own model selection. This is a per-adapter decision:
-`VeriAgentRuntime` skips story-point routing and uses its own `DEFAULT_VERI_MODEL`.
+`CustomAgentRuntime` skips story-point routing and uses its own `DEFAULT_VERI_MODEL`.
 
 ---
 
@@ -428,7 +428,7 @@ resolveWorkspaceProvider(agentId?) → WorkspaceProvider
 | OpenClaw (local)      | `LocalWorkspaceProvider`  | `~/.openclaw/workspace-<id>` |
 | Claude Code (local)   | `LocalWorkspaceProvider`  | `runtime_config.workingDirectory` |
 | Webhook (varies)      | `LocalWorkspaceProvider`  | `agent.workspace_path` |
-| Remote (Veri, etc.)   | `RemoteWorkspaceProvider` | HTTP API on remote host|
+| Remote (Custom, etc.)   | `RemoteWorkspaceProvider` | HTTP API on remote host|
 
 ### 7.3 Remote Workspace Protocol
 
@@ -480,11 +480,11 @@ All runtime adapters persist transcripts to `chat_messages`:
 | OpenClaw    | After run completes (via OpenClaw session store)  | OpenClaw's internal IDs     |
 | Claude Code | Via SDK session persistence + init session_id     | `claude-code:<sessionId>`   |
 | Webhook     | Depends on remote (may not persist transcripts)   | N/A                         |
-| Veri        | Streamed live + final upsert                      | `veri-user-<inst>`, `veri-asst-<inst>`, `veri-evt-<inst>-<n>` |
+| Custom        | Streamed live + final upsert                      | `veri-user-<inst>`, `veri-asst-<inst>`, `veri-evt-<inst>-<n>` |
 
 ### 8.3 Structured Event Types
 
-For runtimes that support streaming (currently Veri), individual events are
+For runtimes that support streaming (currently Custom), individual events are
 persisted as separate rows with typed `event_type`:
 
 | Event Type    | Content                    | Meta Fields                |
@@ -632,7 +632,7 @@ Terminal outcomes auto-close the instance and terminate the session.
                     │ │ Runtimes │   │  Runtimes     │   │
                     │ ├──────────┤   ├──────────────┤   │
                     │ │ OpenClaw │   │ Webhook      │   │
-                    │ │ Claude   │   │ Veri         │   │
+                    │ │ Claude   │   │ Custom         │   │
                     │ │ Code     │   │ (future...)  │   │
                     │ └────┬─────┘   └──────┬───────┘   │
                     │      │                │           │
@@ -671,7 +671,7 @@ backward-compatible:
 4. **`max_concurrent` column** — nullable INT, defaults to 1 (current behavior).
 
 5. **Existing runtimes** — `OpenClawRuntime`, `ClaudeCodeRuntime`,
-   `WebhookRuntime`, `VeriAgentRuntime` continue working unchanged.
+   `WebhookRuntime`, `CustomAgentRuntime` continue working unchanged.
 
 Recommended implementation order:
 1. Add `capability_flags`, `health_check_url`, `max_concurrent` columns (migration)
@@ -708,7 +708,7 @@ Recommended implementation order:
 | OpenClaw      | `OpenClawRuntime.ts`        | ~180  | Self-callback| Local FS       |
 | Claude Code   | `ClaudeCodeRuntime.ts`      | ~200  | SDK + env    | Local FS       |
 | Webhook       | `WebhookRuntime.ts`         | ~120  | Self-callback| Provider-dependent |
-| Veri          | `VeriAgentRuntime.ts`       | ~600  | Proxied      | Remote API     |
+| Custom          | `CustomAgentRuntime.ts`       | ~600  | Proxied      | Remote API     |
 
 ## Appendix B: Database Schema (runtime-relevant columns)
 
