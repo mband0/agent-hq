@@ -1,34 +1,33 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Atlas HQ Database Backup Script
+# Agent HQ Database Backup Script
 # =============================================================================
-# Backs up the Atlas HQ production SQLite database to:
+# Backs up the Agent HQ production SQLite database to:
 #   1. Local backup directory (with 30-day retention)
-#   2. Private GitHub repo (nord-initiatives/atlas-hq-backups) — off-machine
+#   2. Private Git repo (if configured) for off-machine storage
 #
 # Usage:
 #   ./scripts/backup-db.sh              # normal backup
 #   ./scripts/backup-db.sh --verify     # backup + verify restore to temp DB
 #
 # Logs: /Users/nordini/agent-hq/logs/backup.log
-# Cron: runs daily at 2 AM via launchd (com.atlas-hq.backup.plist)
-#       also runs hourly via launchd (com.atlas-hq.backup-hourly.plist)
+# Note: launchd/cron must point at this script's real path.
 # =============================================================================
 
 set -euo pipefail
 
 # ── Config ──────────────────────────────────────────────────────────────────
 REPO_DIR="/Users/nordini/agent-hq"
-DB_PATH="${AGENT_HQ_DB_PATH:-$REPO_DIR/atlas-hq.db}"
+DB_PATH="${AGENT_HQ_DB_PATH:-$REPO_DIR/agent-hq.db}"
 BACKUP_DIR="$REPO_DIR/backups"
 LOG_DIR="$REPO_DIR/logs"
 LOG_FILE="$LOG_DIR/backup.log"
-BACKUP_REPO_DIR="/Users/nordini/agent-hq-backups"
+BACKUP_REPO_DIR="${BACKUP_REPO_DIR:-/Users/nordini/agent-hq-backups}"
 RETAIN_DAYS=30
 VERIFY="${1:-}"
 TIMESTAMP=$(date +%Y-%m-%d_%H-%M)
 DATE=$(date +%Y-%m-%d)
-BACKUP_FILENAME="atlas-hq_${TIMESTAMP}.db"
+BACKUP_FILENAME="agent-hq_${TIMESTAMP}.db"
 BACKUP_PATH="$BACKUP_DIR/$BACKUP_FILENAME"
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -47,9 +46,13 @@ die() {
 mkdir -p "$BACKUP_DIR" "$LOG_DIR"
 
 [[ -f "$DB_PATH" ]] || die "Source database not found: $DB_PATH"
-[[ -d "$BACKUP_REPO_DIR" ]] || die "Backup repo not found: $BACKUP_REPO_DIR (run setup-backup-repo.sh)"
 
-log INFO "=== Atlas HQ Backup START ==="
+REMOTE_ENABLED=true
+if [[ ! -d "$BACKUP_REPO_DIR" ]]; then
+  REMOTE_ENABLED=false
+fi
+
+log INFO "=== Agent HQ Backup START ==="
 log INFO "Source DB: $DB_PATH ($(du -sh "$DB_PATH" | cut -f1))"
 log INFO "Backup target: $BACKUP_PATH"
 
@@ -75,21 +78,26 @@ COMPRESSED_SIZE=$(du -sh "$COMPRESSED_PATH" | cut -f1)
 log INFO "Compressed: $COMPRESSED_PATH ($COMPRESSED_SIZE)"
 
 # ── 3. Push to GitHub backup repo ────────────────────────────────────────────
-REMOTE_FILENAME="${DATE}/atlas-hq_${TIMESTAMP}.db.gz"
-REMOTE_DIR="$BACKUP_REPO_DIR/$DATE"
+REMOTE_STATUS="not configured"
+if [[ "$REMOTE_ENABLED" == true ]]; then
+  REMOTE_FILENAME="${DATE}/agent-hq_${TIMESTAMP}.db.gz"
+  REMOTE_DIR="$BACKUP_REPO_DIR/$DATE"
 
-mkdir -p "$REMOTE_DIR"
-cp "$COMPRESSED_PATH" "$BACKUP_REPO_DIR/$REMOTE_FILENAME"
+  mkdir -p "$REMOTE_DIR"
+  cp "$COMPRESSED_PATH" "$BACKUP_REPO_DIR/$REMOTE_FILENAME"
 
-# Commit and push
-cd "$BACKUP_REPO_DIR"
-git add "$REMOTE_FILENAME"
-git commit -m "backup: atlas-hq_${TIMESTAMP} (${BACKUP_SIZE} raw, ${COMPRESSED_SIZE} gz)" \
-  || { log WARN "git commit failed — nothing to commit or git error"; }
-git push origin main 2>&1 | tee -a "$LOG_FILE" \
-  || die "git push to backup repo failed"
+  cd "$BACKUP_REPO_DIR"
+  git add "$REMOTE_FILENAME"
+  git commit -m "backup: agent-hq_${TIMESTAMP} (${BACKUP_SIZE} raw, ${COMPRESSED_SIZE} gz)" \
+    || { log WARN "git commit failed — nothing to commit or git error"; }
+  git push origin main 2>&1 | tee -a "$LOG_FILE" \
+    || die "git push to backup repo failed"
 
-log INFO "Remote backup pushed: github.com/nord-initiatives/atlas-hq-backups/$REMOTE_FILENAME"
+  log INFO "Remote backup pushed: $BACKUP_REPO_DIR/$REMOTE_FILENAME"
+  REMOTE_STATUS="configured"
+else
+  log WARN "Remote backup repo not found: $BACKUP_REPO_DIR (skipping off-machine push)"
+fi
 
 # Clean compressed file from backup dir (keep only uncompressed locally)
 rm -f "$COMPRESSED_PATH"
@@ -107,7 +115,7 @@ log INFO "Retention: pruned $PRUNED file(s) older than ${RETAIN_DAYS} days"
 # ── 5. Optional: verify restore ──────────────────────────────────────────────
 if [[ "$VERIFY" == "--verify" ]]; then
   log INFO "Running restore verification..."
-  TEMP_DB=$(mktemp /tmp/atlas-hq-verify-XXXXXX.db)
+  TEMP_DB=$(mktemp /tmp/agent-hq-verify-XXXXXX.db)
   cp "$BACKUP_PATH" "$TEMP_DB"
 
   TASK_COUNT=$(sqlite3 "$TEMP_DB" "SELECT COUNT(*) FROM tasks;" 2>/dev/null || echo "error")
@@ -121,5 +129,5 @@ if [[ "$VERIFY" == "--verify" ]]; then
 fi
 
 # ── 6. Summary ────────────────────────────────────────────────────────────────
-log INFO "=== Atlas HQ Backup COMPLETE ==="
-log INFO "Backup: $BACKUP_FILENAME | Size: $BACKUP_SIZE | Retained locally for ${RETAIN_DAYS}d | Off-machine: GitHub"
+log INFO "=== Agent HQ Backup COMPLETE ==="
+log INFO "Backup: $BACKUP_FILENAME | Size: $BACKUP_SIZE | Retained locally for ${RETAIN_DAYS}d | Off-machine: $REMOTE_STATUS"

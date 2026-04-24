@@ -1,10 +1,4 @@
 import 'dotenv/config';
-// Load supplementary secrets (e.g. Veri API key) from ~/.openclaw/secrets/
-import { config as dotenvConfig } from 'dotenv';
-import os from 'os';
-import path from 'path';
-const SECRETS_DIR = path.join(process.env.HOME ?? os.homedir(), '.openclaw', 'secrets');
-dotenvConfig({ path: path.join(SECRETS_DIR, 'veri.env'), override: false });
 
 // Must be set after dotenv loads but before any fetch/TLS calls.
 // dotenv/config is synchronous, so process.env is populated by now.
