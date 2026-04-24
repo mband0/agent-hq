@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback, Suspense, memo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { formatTime, timeAgo } from '@/lib/date';
+import { getRunLifecycle } from '@/lib/runLifecycle';
 import { findAtlasAgent } from '@/lib/atlas';
 import { parseCanonicalMessages, parseGatewayHistoryMessages } from '@/lib/chatMessages';
 
@@ -440,8 +441,9 @@ function ChatPageInner() {
   }, [selectedInstanceId]);
 
   // ── Derived instance state ──
-  const instanceIsFinished = selectedInstance ? ['done', 'failed'].includes(selectedInstance.status) : false;
-  const instanceIsRunning = selectedInstance?.status === 'running';
+  const selectedInstanceLifecycle = selectedInstance ? getRunLifecycle(selectedInstance) : null;
+  const instanceIsFinished = selectedInstanceLifecycle ? ['done', 'failed'].includes(selectedInstanceLifecycle.displayStatus) : false;
+  const instanceIsRunning = selectedInstanceLifecycle ? ['running', 'starting'].includes(selectedInstanceLifecycle.displayStatus) : false;
   // Use canonical sessions API for all job-run instances
   const useCanonical = !!selectedInstanceId;
 
