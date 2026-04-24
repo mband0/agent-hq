@@ -1095,7 +1095,7 @@ function McpEditor({ serverId, onClose, onSaved, onDeleted }: McpEditorProps) {
           value={env}
           onChange={e => setEnv(e.target.value)}
           spellCheck={false}
-          placeholder='{"AGENT_HQ_API_URL":"http://127.0.0.1:3551"}'
+          placeholder='{"AGENT_HQ_API_URL":"http://127.0.0.1:3501"}'
         />
       </Card>
 

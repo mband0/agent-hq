@@ -241,7 +241,7 @@ function buildRemoteDirectTransport(
     if (workflow.lane === 'implementation') {
       sections.push(
         `PUT ${baseUrl}/api/v1/tasks/${ctx.taskId}/review-evidence`,
-        `Body: {"branch":"<branch>","commit":"<sha>","dev_url":"<url>","notes":"<optional>"}`,
+        `Body: {"branch":"<branch>","commit":"<sha>","review_url":"<pr-or-branch-url>","dev_url":"<url>","notes":"<optional>"}`,
       );
     } else if (workflow.lane === 'review') {
       sections.push(
@@ -328,10 +328,10 @@ function buildProxyManagedTransport(
     `## Field reference:`,
     `- \`outcome\` (required): one of the valid outcomes above`,
     `- \`summary\` (required): one-sentence description of what was done or why blocked/failed`,
-    `- \`branch\` (optional): git branch name for review`,
-    `- \`commit\` (optional): git commit SHA`,
-    `- \`dev_url\` (optional): URL in the dev environment to verify the work`,
-    `- \`review_url\` (optional): review/PR URL if applicable`,
+    `- \`branch\` (required for \`completed_for_review\`): git branch name for review`,
+    `- \`commit\` (required for \`completed_for_review\`): git commit SHA`,
+    `- \`review_url\` (required for \`completed_for_review\`): non-production review artifact URL, such as a PR URL or branch URL on GitHub`,
+    `- \`dev_url\` (recommended): URL in the dev environment to verify the work`,
     `- \`blocker_reason\` (optional): specific reason for blocker outcome`,
     `- \`notes\` (optional): additional context for the reviewer`,
     '',

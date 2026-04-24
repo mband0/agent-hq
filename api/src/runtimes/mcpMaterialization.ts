@@ -4,7 +4,7 @@ import type Database from 'better-sqlite3';
 import { getDbPath } from '../db/client';
 import { fetchAgentTools } from './toolInjection';
 
-const MANAGED_KEYS_FIELD = 'atlasHqManagedMcpServers';
+const MANAGED_KEYS_FIELD = 'agentHqManagedMcpServers';
 const AGENT_LOCAL_TOOL_SERVER_SLUG = 'agent-local-tool-mcp';
 const BUILTIN_OPENCLAW_TOOL_NAMES = new Set([
   'exec',

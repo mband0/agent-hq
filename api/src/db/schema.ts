@@ -304,6 +304,23 @@ export function initSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_chat_messages_timestamp ON chat_messages(timestamp);
   `);
 
+  // Canonical current direct-chat session per agent/channel so all UI clients
+  // converge on the same conversation and New Chat can rotate one shared key.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS canonical_chat_sessions (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      agent_id    INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+      channel     TEXT NOT NULL,
+      session_key TEXT NOT NULL,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(agent_id, channel)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_canonical_chat_sessions_agent_channel
+      ON canonical_chat_sessions(agent_id, channel);
+  `);
+
   // Safe migration: add event_type column to chat_messages (task #532)
   // Valid event_type values: 'text' | 'thought' | 'tool_call' | 'tool_result' | 'turn_start' | 'system' | 'error'
   try {
@@ -1852,13 +1869,13 @@ The dispatcher has already attached the specific task context above these instru
 Do not scan the task queue — the dispatcher handles task selection.
 
 ## Atlas HQ environment discipline
-- Atlas HQ production is the live system on UI/API ports 3500/3501. Production is only for deployed or live-verified work.
-- Atlas HQ Dev is the implementation and QA/review environment on UI/API ports 3510/3511 for Atlas HQ internal tasks.
+- Atlas HQ Dev is the default development, implementation, and QA/review environment on UI/API ports 3510/3511 for Atlas HQ internal tasks.
+- Atlas HQ production is the live system on UI/API ports 3500/3501. Production is only for deployed or live-verified work, never normal feature development.
 - The separate Atlas HQ QA environment on UI/API ports 3520/3521 is deprecated for Atlas HQ internal tasks.
 - Before starting an Atlas HQ task, pull latest origin and create or switch to a feature branch/worktree. Do normal feature work on that branch/worktree, not directly on main.
 - For Atlas HQ tasks, work in ${OPENCLAW_DIR}/workspace-agency-frontend/atlas-hq.
 - Start by running: git -C ${OPENCLAW_DIR}/workspace-agency-frontend/atlas-hq fetch origin --prune && git -C ${OPENCLAW_DIR}/workspace-agency-frontend/atlas-hq pull --ff-only origin main
-- Record review evidence with branch name, commit SHA, and a non-production Dev URL. Do not use main or a production URL as normal feature-review proof.
+- Validate and record review evidence against Dev with branch name, commit SHA, and a non-production Dev URL. Do not use main or a production URL as normal feature-review proof.
 
 ## Completion workflow
 When implementation is ready for QA:
@@ -1875,13 +1892,13 @@ The dispatcher has already attached the specific task context above these instru
 Do not scan the task queue — the dispatcher handles task selection.
 
 ## Atlas HQ environment discipline
-- Atlas HQ production is the live system on UI/API ports 3500/3501. Production is only for deployed or live-verified work.
-- Atlas HQ Dev is the implementation and QA/review environment on UI/API ports 3510/3511 for Atlas HQ internal tasks.
+- Atlas HQ Dev is the default development, implementation, and QA/review environment on UI/API ports 3510/3511 for Atlas HQ internal tasks.
+- Atlas HQ production is the live system on UI/API ports 3500/3501. Production is only for deployed or live-verified work, never normal feature development.
 - The separate Atlas HQ QA environment on UI/API ports 3520/3521 is deprecated for Atlas HQ internal tasks.
 - Before starting an Atlas HQ task, pull latest origin and create or switch to a feature branch/worktree. Do normal feature work on that branch/worktree, not directly on main.
 - For Atlas HQ tasks, work in ${OPENCLAW_DIR}/workspace-agency-backend/atlas-hq.
 - Start by running: git -C ${OPENCLAW_DIR}/workspace-agency-backend/atlas-hq fetch origin --prune && git -C ${OPENCLAW_DIR}/workspace-agency-backend/atlas-hq pull --ff-only origin main
-- Implement and validate against the Dev environment. Record review evidence with branch name, commit SHA, and a non-production Dev URL. Do not use main or a production URL as normal feature-review proof.
+- Implement, validate, and record review evidence against Dev with branch name, commit SHA, and a non-production Dev URL. Do not use main or a production URL as normal feature-review proof.
 
 ## Completion workflow
 When implementation is ready for QA:
@@ -2512,7 +2529,7 @@ function ensureMcpRegistryTables(): void {
     'Local stdio MCP server exposing Agent HQ projects, sprints, tasks, and agents.',
     nodeExecutable,
     JSON.stringify([serverEntryScript]),
-    JSON.stringify({ AGENT_HQ_API_URL: 'http://127.0.0.1:3551' }),
+    JSON.stringify({ AGENT_HQ_API_URL: 'http://127.0.0.1:3501' }),
     path.resolve(__dirname, '../..'),
   );
 

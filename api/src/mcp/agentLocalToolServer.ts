@@ -107,11 +107,15 @@ function buildDescription(toolRecord: AgentToolRecord): string {
   return `${toolRecord.description}${schemaDescription}`.trim();
 }
 
+function loadAssignedTools(agentId: number, db = getDb()): AgentToolRecord[] {
+  return fetchAgentTools(db, agentId).filter((tool) => !BUILTIN_OPENCLAW_TOOL_NAMES.has(tool.slug.toLowerCase()));
+}
+
 async function main() {
   const agentId = requireAgentId();
   const workspacePath = process.cwd();
   const db = getDb();
-  const assignedTools = fetchAgentTools(db, agentId).filter((tool) => !BUILTIN_OPENCLAW_TOOL_NAMES.has(tool.slug.toLowerCase()));
+  const assignedTools = loadAssignedTools(agentId, db);
 
   const server = new McpServer({
     name: 'agent-local-tool-mcp',
@@ -129,7 +133,22 @@ async function main() {
         const safeArgs = args && typeof args === 'object' && !Array.isArray(args)
           ? args as Record<string, unknown>
           : {};
-        const result = executeToolImplementation(toolRecord, safeArgs, workspacePath);
+        const liveToolRecord = loadAssignedTools(agentId, db).find((tool) => tool.id === toolRecord.id || tool.slug === toolRecord.slug);
+        if (!liveToolRecord) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  ok: false,
+                  error: `Tool ${toolRecord.slug} is no longer assigned to agent #${agentId}`,
+                }),
+              },
+            ],
+            isError: true,
+          };
+        }
+        const result = executeToolImplementation(liveToolRecord, safeArgs, workspacePath);
         return result;
       },
     );
@@ -138,7 +157,7 @@ async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error(
-    `[agent-local-tool-mcp] connected for agent #${agentId} with ${assignedTools.length} tool(s) in ${workspacePath}`,
+    `[agent-local-tool-mcp] connected for agent #${agentId} with ${assignedTools.length} tool(s) in ${workspacePath}; assignments loaded at connection time`,
   );
 
   const shutdown = async (signal: string) => {
