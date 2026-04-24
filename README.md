@@ -35,6 +35,7 @@ This is the recommended install path.
 - Use `agent-hq start --docker` only if you explicitly want the Docker Compose stack.
 - `agent-hq start --no-docker` is still accepted as a compatibility alias.
 - In local mode, the managed OpenClaw runtime/config live under `~/.openclaw`.
+- For Agent HQ-assigned OpenClaw tools, local startup automatically configures OpenClaw to load and allow the Agent HQ capability tools plugin. Manual installs must also allow the plugin id in OpenClaw tool policy. See [plugins/openclaw-capability-tools/README.md](plugins/openclaw-capability-tools/README.md).
 
 Open [http://localhost:3500](http://localhost:3500) to access the UI by default.
 

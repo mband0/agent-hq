@@ -2231,17 +2231,26 @@ function ensureAppSettingsTable(): void {
  * ensureToolRegistryTables — Task #557: tools + agent_tool_assignments tables
  * and seed example tools.
  */
-function ensureToolRegistryTables(): void {
+export function ensureToolRegistryTables(): void {
   const db = getDb();
 
-  // tools table
-  db.exec(`
+  const tableExists = (name: string): boolean => {
+    const row = db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`).get(name);
+    return Boolean(row);
+  };
+  const getTableSql = (name: string): string => {
+    return (db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?`).get(name) as { sql?: string } | undefined)?.sql ?? '';
+  };
+  const getColumns = (name: string): string[] => {
+    return (db.prepare(`PRAGMA table_info(${name})`).all() as Array<{ name: string }>).map((col) => col.name);
+  };
+  const createToolsTableSql = `
     CREATE TABLE IF NOT EXISTS tools (
       id                   INTEGER PRIMARY KEY AUTOINCREMENT,
       name                 TEXT NOT NULL,
       slug                 TEXT NOT NULL UNIQUE,
       description          TEXT NOT NULL DEFAULT '',
-      implementation_type  TEXT NOT NULL DEFAULT 'bash' CHECK(implementation_type IN ('bash','mcp','function','http')),
+      implementation_type  TEXT NOT NULL DEFAULT 'bash' CHECK(implementation_type IN ('bash','shell','script','mcp','function','http')),
       implementation_body  TEXT NOT NULL DEFAULT '',
       input_schema         TEXT NOT NULL DEFAULT '{}',
       permissions          TEXT NOT NULL DEFAULT 'read_only' CHECK(permissions IN ('read_only','read_write','exec','network')),
@@ -2252,10 +2261,141 @@ function ensureToolRegistryTables(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_tools_slug ON tools(slug);
     CREATE INDEX IF NOT EXISTS idx_tools_enabled ON tools(enabled);
-  `);
+  `;
+
+  const rebuildToolsTable = (): void => {
+    const sourceColumns = new Set(getColumns('tools'));
+    const tempTable = `tools_rebuild_${Date.now()}`;
+    const targetColumns = [
+      'id',
+      'name',
+      'slug',
+      'description',
+      'implementation_type',
+      'implementation_body',
+      'input_schema',
+      'permissions',
+      'tags',
+      'enabled',
+      'created_at',
+      'updated_at',
+    ];
+    const selectExpressionByColumn: Record<string, string> = {
+      id: sourceColumns.has('id') ? 'id' : 'NULL AS id',
+      name: sourceColumns.has('name') && sourceColumns.has('slug')
+        ? 'COALESCE(name, slug, \'Tool \' || id) AS name'
+        : sourceColumns.has('name')
+          ? 'COALESCE(name, \'Tool \' || id) AS name'
+          : sourceColumns.has('slug')
+            ? 'slug AS name'
+            : "'Tool ' || id AS name",
+      slug: sourceColumns.has('slug')
+        ? 'COALESCE(slug, \'tool-\' || id) AS slug'
+        : "'tool-' || id AS slug",
+      description: sourceColumns.has('description') ? 'COALESCE(description, \'\') AS description' : "'' AS description",
+      implementation_type: sourceColumns.has('implementation_type')
+        ? `
+          CASE implementation_type
+            WHEN 'bash' THEN 'bash'
+            WHEN 'shell' THEN 'shell'
+            WHEN 'script' THEN 'script'
+            WHEN 'mcp' THEN 'mcp'
+            WHEN 'function' THEN 'function'
+            WHEN 'http' THEN 'http'
+            ELSE 'bash'
+          END AS implementation_type
+        `
+        : "'bash' AS implementation_type",
+      implementation_body: sourceColumns.has('implementation_body') ? 'COALESCE(implementation_body, \'\') AS implementation_body' : "'' AS implementation_body",
+      input_schema: sourceColumns.has('input_schema') ? 'COALESCE(input_schema, \'{}\') AS input_schema' : "'{}' AS input_schema",
+      permissions: sourceColumns.has('permissions')
+        ? `
+          CASE permissions
+            WHEN 'read_only' THEN 'read_only'
+            WHEN 'read_write' THEN 'read_write'
+            WHEN 'exec' THEN 'exec'
+            WHEN 'network' THEN 'network'
+            ELSE 'read_only'
+          END AS permissions
+        `
+        : "'read_only' AS permissions",
+      tags: sourceColumns.has('tags') ? 'COALESCE(tags, \'[]\') AS tags' : "'[]' AS tags",
+      enabled: sourceColumns.has('enabled') ? 'COALESCE(enabled, 1) AS enabled' : '1 AS enabled',
+      created_at: sourceColumns.has('created_at') ? 'COALESCE(created_at, datetime(\'now\')) AS created_at' : "datetime('now') AS created_at",
+      updated_at: sourceColumns.has('updated_at') ? 'COALESCE(updated_at, datetime(\'now\')) AS updated_at' : "datetime('now') AS updated_at",
+    };
+
+    db.pragma('foreign_keys = OFF');
+    const rebuild = db.transaction(() => {
+      db.prepare(`ALTER TABLE tools RENAME TO ${tempTable}`).run();
+      db.exec(`
+      CREATE TABLE tools (
+        id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+        name                 TEXT NOT NULL,
+        slug                 TEXT NOT NULL UNIQUE,
+        description          TEXT NOT NULL DEFAULT '',
+        implementation_type  TEXT NOT NULL DEFAULT 'bash' CHECK(implementation_type IN ('bash','shell','script','mcp','function','http')),
+        implementation_body  TEXT NOT NULL DEFAULT '',
+        input_schema         TEXT NOT NULL DEFAULT '{}',
+        permissions          TEXT NOT NULL DEFAULT 'read_only' CHECK(permissions IN ('read_only','read_write','exec','network')),
+        tags                 TEXT NOT NULL DEFAULT '[]',
+        enabled              INTEGER NOT NULL DEFAULT 1,
+        created_at           TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at           TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      `);
+      db.prepare(`
+        INSERT INTO tools (id, name, slug, description, implementation_type, implementation_body, input_schema, permissions, tags, enabled, created_at, updated_at)
+        SELECT ${targetColumns.map((column) => selectExpressionByColumn[column]).join(', ')}
+        FROM ${tempTable}
+      `).run();
+      db.prepare(`DROP TABLE ${tempTable}`).run();
+    });
+    try {
+      rebuild();
+    } finally {
+      db.pragma('foreign_keys = ON');
+    }
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_tools_slug ON tools(slug);
+      CREATE INDEX IF NOT EXISTS idx_tools_enabled ON tools(enabled);
+    `);
+    console.log('[schema] Migrated: rebuilt tools table for current capability execution types');
+  };
+
+  if (!tableExists('tools')) {
+    db.exec(createToolsTableSql);
+  } else {
+    const toolsTableSql = getTableSql('tools');
+    const toolColumns = new Set(getColumns('tools'));
+    const requiredColumns = [
+      'id',
+      'name',
+      'slug',
+      'description',
+      'implementation_type',
+      'implementation_body',
+      'input_schema',
+      'permissions',
+      'tags',
+      'enabled',
+      'created_at',
+      'updated_at',
+    ];
+    const missingRequiredColumn = requiredColumns.some((column) => !toolColumns.has(column));
+    const legacyImplementationCheck = Boolean(toolsTableSql) && (!toolsTableSql.includes("'shell'") || !toolsTableSql.includes("'script'"));
+    if (missingRequiredColumn || legacyImplementationCheck) {
+      rebuildToolsTable();
+    } else {
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_tools_slug ON tools(slug);
+        CREATE INDEX IF NOT EXISTS idx_tools_enabled ON tools(enabled);
+      `);
+    }
+  }
 
   // agent_tool_assignments table
-  db.exec(`
+  const createAgentToolAssignmentsSql = `
     CREATE TABLE IF NOT EXISTS agent_tool_assignments (
       id        INTEGER PRIMARY KEY AUTOINCREMENT,
       agent_id  INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
@@ -2266,7 +2406,69 @@ function ensureToolRegistryTables(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_ata_agent ON agent_tool_assignments(agent_id);
     CREATE INDEX IF NOT EXISTS idx_ata_tool ON agent_tool_assignments(tool_id);
-  `);
+  `;
+  const rebuildAgentToolAssignmentsTable = (): void => {
+    const sourceColumns = new Set(getColumns('agent_tool_assignments'));
+    const tempTable = `agent_tool_assignments_rebuild_${Date.now()}`;
+    const targetColumns = ['id', 'agent_id', 'tool_id', 'overrides', 'enabled'];
+    const selectExpressionByColumn: Record<string, string> = {
+      id: sourceColumns.has('id') ? 'id' : 'NULL AS id',
+      agent_id: sourceColumns.has('agent_id') ? 'agent_id' : 'NULL AS agent_id',
+      tool_id: sourceColumns.has('tool_id') ? 'tool_id' : 'NULL AS tool_id',
+      overrides: sourceColumns.has('overrides') ? 'COALESCE(overrides, \'{}\') AS overrides' : "'{}' AS overrides",
+      enabled: sourceColumns.has('enabled') ? 'COALESCE(enabled, 1) AS enabled' : '1 AS enabled',
+    };
+
+    db.pragma('foreign_keys = OFF');
+    const rebuild = db.transaction(() => {
+      db.prepare(`ALTER TABLE agent_tool_assignments RENAME TO ${tempTable}`).run();
+      db.exec(`
+        CREATE TABLE agent_tool_assignments (
+          id        INTEGER PRIMARY KEY AUTOINCREMENT,
+          agent_id  INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+          tool_id   INTEGER NOT NULL REFERENCES tools(id) ON DELETE CASCADE,
+          overrides TEXT NOT NULL DEFAULT '{}',
+          enabled   INTEGER NOT NULL DEFAULT 1,
+          UNIQUE(agent_id, tool_id)
+        );
+      `);
+      if (sourceColumns.has('agent_id') && sourceColumns.has('tool_id')) {
+        db.prepare(`
+          INSERT OR IGNORE INTO agent_tool_assignments (id, agent_id, tool_id, overrides, enabled)
+          SELECT ${targetColumns.map((column) => selectExpressionByColumn[column]).join(', ')}
+          FROM ${tempTable}
+          WHERE agent_id IS NOT NULL AND tool_id IS NOT NULL
+        `).run();
+      }
+      db.prepare(`DROP TABLE ${tempTable}`).run();
+    });
+    try {
+      rebuild();
+    } finally {
+      db.pragma('foreign_keys = ON');
+    }
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_ata_agent ON agent_tool_assignments(agent_id);
+      CREATE INDEX IF NOT EXISTS idx_ata_tool ON agent_tool_assignments(tool_id);
+    `);
+    console.log('[schema] Migrated: rebuilt agent_tool_assignments with current tools foreign key');
+  };
+
+  if (!tableExists('agent_tool_assignments')) {
+    db.exec(createAgentToolAssignmentsSql);
+  } else {
+    const assignmentSql = getTableSql('agent_tool_assignments');
+    const assignmentColumns = new Set(getColumns('agent_tool_assignments'));
+    const missingAssignmentColumn = ['id', 'agent_id', 'tool_id', 'overrides', 'enabled'].some((column) => !assignmentColumns.has(column));
+    if (missingAssignmentColumn || assignmentSql.includes('tools_legacy_capability_exec')) {
+      rebuildAgentToolAssignmentsTable();
+    } else {
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_ata_agent ON agent_tool_assignments(agent_id);
+        CREATE INDEX IF NOT EXISTS idx_ata_tool ON agent_tool_assignments(tool_id);
+      `);
+    }
+  }
 
   // Seed tool registry defaults and keep them up to date for existing DBs.
   const upsertTool = db.prepare(`

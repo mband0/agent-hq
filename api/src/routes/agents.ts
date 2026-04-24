@@ -838,6 +838,7 @@ router.post('/provision-full', (req: Request, res: Response) => {
         skillNames: normalizeJsonArray(body.skill_names),
         skillsBasePath: OPENCLAW_SKILLS_PATH,
         hooksUrl: body.hooks_url ?? null,
+        db,
       });
 
       syncAssignedMcpForAgent({
@@ -1381,6 +1382,7 @@ router.put('/:id', (req: Request, res: Response) => {
             skillNames: syncSkillNames,
             skillsBasePath: OPENCLAW_SKILLS_PATH,
             hooksUrl: (updated.hooks_url as string | null) ?? null,
+            db,
           });
           for (const warn of result.warnings) console.warn(`[agents.put] ${warn}`);
           if (result.count > 0 || result.details.length > 0) {
@@ -1911,6 +1913,7 @@ router.post('/:id/skills/sync', (req: Request, res: Response) => {
       skillNames,
       skillsBasePath: OPENCLAW_SKILLS_PATH,
       hooksUrl: (agent.hooks_url as string | null) ?? null,
+      db,
     });
 
     return res.json({

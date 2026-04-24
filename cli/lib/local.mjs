@@ -36,6 +36,8 @@ const OPENCLAW_DIST_ENTRY = join(OPENCLAW_INSTALL_DIR, 'node_modules', 'openclaw
 const OPENCLAW_GATEWAY_CMD = join(OPENCLAW_HOME, 'gateway.cmd');
 const OPENCLAW_CONFIG_FILE = join(OPENCLAW_HOME, 'openclaw.json');
 const MODULE_DIR = fileURLToPath(new URL('.', import.meta.url));
+const AGENT_HQ_OPENCLAW_PLUGIN_ID = 'agent-hq-capability-tools';
+const AGENT_HQ_OPENCLAW_PLUGIN_RELATIVE_PATH = join('plugins', 'openclaw-capability-tools');
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -267,6 +269,108 @@ function isAgentHqSourceDir(dir) {
     existsSync(join(dir, 'api', 'package.json')) &&
     existsSync(join(dir, 'ui', 'package.json'))
   );
+}
+
+function readJsonObjectFile(filePath) {
+  if (!existsSync(filePath)) return {};
+  const parsed = JSON.parse(readFileSync(filePath, 'utf8'));
+  if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
+    throw new Error(`${filePath} does not contain a JSON object`);
+  }
+  return parsed;
+}
+
+function appendUnique(values, value) {
+  const current = Array.isArray(values) ? values : [];
+  return current.includes(value) ? current : [...current, value];
+}
+
+function readPluginVersion(pluginDir) {
+  try {
+    const pkg = JSON.parse(readFileSync(join(pluginDir, 'package.json'), 'utf8'));
+    return typeof pkg.version === 'string' ? pkg.version : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function ensureAgentHqOpenClawPluginConfig(sourceDir) {
+  const pluginDir = join(sourceDir, AGENT_HQ_OPENCLAW_PLUGIN_RELATIVE_PATH);
+  if (!existsSync(join(pluginDir, 'openclaw.plugin.json'))) {
+    warn(`Agent HQ OpenClaw capability tools plugin was not found at ${pluginDir}.`);
+    return false;
+  }
+
+  let config;
+  try {
+    config = readJsonObjectFile(OPENCLAW_CONFIG_FILE);
+  } catch (error) {
+    warn(`OpenClaw config could not be parsed. Skipping Agent HQ tool plugin config.\n  ${error instanceof Error ? error.message : String(error)}`);
+    return false;
+  }
+
+  const before = JSON.stringify(config);
+  const plugins = config.plugins && typeof config.plugins === 'object' && !Array.isArray(config.plugins)
+    ? config.plugins
+    : {};
+  const entries = plugins.entries && typeof plugins.entries === 'object' && !Array.isArray(plugins.entries)
+    ? plugins.entries
+    : {};
+  const existingEntry = entries[AGENT_HQ_OPENCLAW_PLUGIN_ID];
+  entries[AGENT_HQ_OPENCLAW_PLUGIN_ID] = {
+    ...(existingEntry && typeof existingEntry === 'object' && !Array.isArray(existingEntry) ? existingEntry : {}),
+    enabled: true,
+  };
+
+  const load = plugins.load && typeof plugins.load === 'object' && !Array.isArray(plugins.load)
+    ? plugins.load
+    : {};
+  load.paths = appendUnique(load.paths, pluginDir);
+
+  const installs = plugins.installs && typeof plugins.installs === 'object' && !Array.isArray(plugins.installs)
+    ? plugins.installs
+    : {};
+  const existingInstall = installs[AGENT_HQ_OPENCLAW_PLUGIN_ID];
+  const existingInstallObject = existingInstall && typeof existingInstall === 'object' && !Array.isArray(existingInstall)
+    ? existingInstall
+    : {};
+  const pluginVersion = readPluginVersion(pluginDir);
+  installs[AGENT_HQ_OPENCLAW_PLUGIN_ID] = {
+    ...existingInstallObject,
+    source: 'path',
+    sourcePath: pluginDir,
+    installPath: pluginDir,
+    ...(pluginVersion ? { version: pluginVersion } : {}),
+    installedAt: existingInstallObject.installedAt ?? new Date().toISOString(),
+  };
+
+  config.plugins = {
+    ...plugins,
+    entries,
+    load,
+    installs,
+  };
+
+  const tools = config.tools && typeof config.tools === 'object' && !Array.isArray(config.tools)
+    ? config.tools
+    : {};
+  if (Array.isArray(tools.allow) && tools.allow.length > 0) {
+    tools.allow = appendUnique(tools.allow, AGENT_HQ_OPENCLAW_PLUGIN_ID);
+  } else {
+    tools.alsoAllow = appendUnique(tools.alsoAllow, AGENT_HQ_OPENCLAW_PLUGIN_ID);
+  }
+  config.tools = tools;
+
+  if (JSON.stringify(config) === before) return false;
+
+  mkdirSync(OPENCLAW_HOME, { recursive: true });
+  writeFileSync(OPENCLAW_CONFIG_FILE, `${JSON.stringify(config, null, 2)}\n`);
+  info('Configured OpenClaw to load and allow Agent HQ-assigned tools.');
+  return true;
+}
+
+function resolveAvailableSourceForOpenClawConfig() {
+  return resolveLocalWorkspaceSource() ?? (isAgentHqSourceDir(SOURCE_DIR) ? SOURCE_DIR : null);
 }
 
 function isGitWorktree(dir) {
@@ -656,6 +760,10 @@ export function localStart(flags) {
     const apiAlive = existing.apiPid && isRunning(existing.apiPid);
     const uiAlive = existing.uiPid && isRunning(existing.uiPid);
     if (apiAlive && uiAlive) {
+      const sourceForConfig = resolveAvailableSourceForOpenClawConfig();
+      if (sourceForConfig) {
+        ensureAgentHqOpenClawPluginConfig(sourceForConfig);
+      }
       info('Agent HQ is already running (local mode).');
       console.log(`  UI:  http://localhost:${existing.uiPort}`);
       console.log(`  API: http://localhost:${existing.apiPort}`);
@@ -667,6 +775,7 @@ export function localStart(flags) {
 
   // 1. Fetch / update source
   const sourceDir = ensureSource();
+  ensureAgentHqOpenClawPluginConfig(sourceDir);
 
   // 2. Build API
   buildPackage(sourceDir, 'api');

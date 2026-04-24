@@ -1,58 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { getDb } from '../db/client';
-import { executeToolImplementation } from '../runtimes/toolInjection';
-import { syncAssignedMcpForAgent } from '../runtimes/mcpMaterialization';
+import { materializeAssignedToolForOpenClaw } from '../capability-tools/materialize';
+import { executeToolImplementation, fetchAgentTools } from '../runtimes/toolInjection';
 
 const router = Router();
-
-function scheduleAgentToolMcpSync(agentId: number): void {
-  setImmediate(() => {
-    try {
-      const result = syncAssignedMcpForAgent({
-        db: getDb(),
-        agentId,
-      });
-      for (const warn of result.warnings) {
-        console.warn(`[tools] ${warn}`);
-      }
-      if (result.skipped === 'unsupported_runtime') return;
-      if (result.skipped === 'missing_workspace') {
-        console.warn(`[tools] tool MCP sync skipped for agent #${agentId}: no workspace_path`);
-        return;
-      }
-      if (!result.ok && result.error) {
-        console.warn(`[tools] tool MCP sync failed for agent #${agentId}: ${result.error}`);
-      }
-    } catch (err) {
-      console.warn(
-        `[tools] tool MCP sync failed for agent #${agentId}:`,
-        err instanceof Error ? err.message : String(err),
-      );
-    }
-  });
-}
-
-function scheduleToolDefinitionSync(toolId: number): void {
-  setImmediate(() => {
-    try {
-      const db = getDb();
-      const agentRows = db.prepare(`
-        SELECT DISTINCT agent_id
-        FROM agent_tool_assignments
-        WHERE tool_id = ?
-        ORDER BY agent_id ASC
-      `).all(toolId) as Array<{ agent_id: number }>;
-      for (const row of agentRows) {
-        scheduleAgentToolMcpSync(row.agent_id);
-      }
-    } catch (err) {
-      console.warn(
-        `[tools] tool definition sync failed for tool #${toolId}:`,
-        err instanceof Error ? err.message : String(err),
-      );
-    }
-  });
-}
 
 // ---------------------------------------------------------------------------
 // GET /api/v1/tools — list all tools (filter by ?tag=..., ?enabled=0|1)
@@ -85,6 +36,46 @@ router.get('/', (req: Request, res: Response) => {
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: String(err) });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/tools/materialized/agents/:openclawAgentId
+// Canonical OpenClaw plugin lookup. The plugin resolves the active OpenClaw
+// agent id from runtime context; Agent HQ maps that to the canonical agent row.
+// ---------------------------------------------------------------------------
+router.get('/materialized/agents/:openclawAgentId', (req: Request, res: Response) => {
+  try {
+    const db = getDb();
+    const openclawAgentId = String(req.params.openclawAgentId ?? '').trim();
+    if (!openclawAgentId) return res.status(400).json({ error: 'openclawAgentId is required' });
+
+    const agent = db.prepare(`SELECT id, openclaw_agent_id FROM agents WHERE openclaw_agent_id = ?`).get(openclawAgentId) as { id: number; openclaw_agent_id: string | null } | undefined;
+    if (!agent) return res.status(404).json({ error: 'Agent not found' });
+
+    const tools = fetchAgentTools(db, agent.id)
+      .flatMap((tool) => {
+        if (!['bash', 'shell', 'script', 'http'].includes(tool.implementation_type)) return [];
+        try {
+          return [materializeAssignedToolForOpenClaw(tool)];
+        } catch (err) {
+          console.warn(
+            `[tools] skipped malformed assigned tool "${tool.slug}" for agent #${agent.id}:`,
+            err instanceof Error ? err.message : String(err),
+          );
+          return [];
+        }
+      });
+
+    return res.json({
+      agent: {
+        id: agent.id,
+        openclaw_agent_id: agent.openclaw_agent_id,
+      },
+      tools,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: String(err) });
   }
 });
 
@@ -185,7 +176,6 @@ router.put('/:id', (req: Request, res: Response) => {
     );
 
     const updated = db.prepare(`SELECT * FROM tools WHERE id = ?`).get(req.params.id);
-    scheduleToolDefinitionSync(Number(req.params.id));
     return res.json(updated);
   } catch (err: any) {
     if (err?.code === 'SQLITE_CONSTRAINT_UNIQUE' || String(err).includes('UNIQUE constraint failed')) {
@@ -205,7 +195,6 @@ router.delete('/:id', (req: Request, res: Response) => {
     if (!existing) return res.status(404).json({ error: 'Tool not found' });
 
     db.prepare(`UPDATE tools SET enabled = 0, updated_at = datetime('now') WHERE id = ?`).run(req.params.id);
-    scheduleToolDefinitionSync(Number(req.params.id));
     return res.json({ ok: true, id: Number(req.params.id) });
   } catch (err) {
     return res.status(500).json({ error: String(err) });
@@ -291,6 +280,51 @@ router.post('/:id/test', (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 export const agentToolsRouter = Router({ mergeParams: true });
 
+agentToolsRouter.get('/materialized', (req: Request, res: Response) => {
+  try {
+    const db = getDb();
+    const openclawAgentId = String(req.query.openclaw_agent_id ?? '').trim();
+
+    let agentId = req.params.agentId ?? req.params.id;
+    if (!agentId && openclawAgentId) {
+      const agent = db.prepare(`SELECT id FROM agents WHERE openclaw_agent_id = ?`).get(openclawAgentId) as { id: number } | undefined;
+      if (!agent) return res.status(404).json({ error: 'Agent not found' });
+      agentId = String(agent.id);
+    }
+
+    if (!agentId) {
+      return res.status(400).json({ error: 'agent id or openclaw_agent_id is required' });
+    }
+
+    const agent = db.prepare(`SELECT id, openclaw_agent_id FROM agents WHERE id = ?`).get(agentId) as { id: number; openclaw_agent_id: string | null } | undefined;
+    if (!agent) return res.status(404).json({ error: 'Agent not found' });
+
+    const tools = fetchAgentTools(db, agent.id)
+      .flatMap((tool) => {
+        if (!['bash', 'shell', 'script', 'http'].includes(tool.implementation_type)) return [];
+        try {
+          return [materializeAssignedToolForOpenClaw(tool)];
+        } catch (err) {
+          console.warn(
+            `[tools] skipped malformed assigned tool "${tool.slug}" for agent #${agent.id}:`,
+            err instanceof Error ? err.message : String(err),
+          );
+          return [];
+        }
+      });
+
+    return res.json({
+      agent: {
+        id: agent.id,
+        openclaw_agent_id: agent.openclaw_agent_id,
+      },
+      tools,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: String(err) });
+  }
+});
+
 agentToolsRouter.get('/', (req: Request, res: Response) => {
   try {
     const db = getDb();
@@ -360,8 +394,6 @@ agentToolsRouter.post('/', (req: Request, res: Response) => {
       WHERE ata.id = ?
     `).get(result.lastInsertRowid);
 
-    scheduleAgentToolMcpSync(Number(agentId));
-
     return res.status(201).json(created);
   } catch (err: any) {
     if (err?.code === 'SQLITE_CONSTRAINT_UNIQUE' || String(err).includes('UNIQUE constraint failed')) {
@@ -383,7 +415,6 @@ agentToolsRouter.delete('/:toolId', (req: Request, res: Response) => {
     if (!existing) return res.status(404).json({ error: 'Assignment not found' });
 
     db.prepare(`DELETE FROM agent_tool_assignments WHERE agent_id = ? AND tool_id = ?`).run(agentId, toolId);
-    scheduleAgentToolMcpSync(Number(agentId));
     return res.json({ ok: true });
   } catch (err) {
     return res.status(500).json({ error: String(err) });

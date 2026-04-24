@@ -24,7 +24,7 @@ export interface AgentToolRecord {
   name: string;
   slug: string;
   description: string;
-  implementation_type: 'bash' | 'mcp' | 'function' | 'http';
+  implementation_type: 'bash' | 'shell' | 'script' | 'mcp' | 'function' | 'http';
   implementation_body: string;
   input_schema: string; // JSON string
   permissions: 'read_only' | 'read_write' | 'exec' | 'network';

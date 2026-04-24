@@ -1,43 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import type Database from 'better-sqlite3';
-import { getDbPath } from '../db/client';
-import { fetchAgentTools } from './toolInjection';
 
 const MANAGED_KEYS_FIELD = 'agentHqManagedMcpServers';
-const AGENT_LOCAL_TOOL_SERVER_SLUG = 'agent-local-tool-mcp';
-const BUILTIN_OPENCLAW_TOOL_NAMES = new Set([
-  'exec',
-  'process',
-  'bash',
-  'code_execution',
-  'browser',
-  'web_search',
-  'x_search',
-  'web_fetch',
-  'read',
-  'write',
-  'edit',
-  'apply_patch',
-  'message',
-  'canvas',
-  'nodes',
-  'cron',
-  'gateway',
-  'image',
-  'image_generate',
-  'music_generate',
-  'video_generate',
-  'tts',
-  'sessions_list',
-  'sessions_history',
-  'sessions_send',
-  'sessions_spawn',
-  'sessions_yield',
-  'subagents',
-  'agents_list',
-  'session_status',
-]);
 
 interface AgentMcpRow {
   slug: string;
@@ -52,11 +17,6 @@ interface AgentWorkspaceRow {
   id: number;
   runtime_type: string | null;
   workspace_path: string | null;
-}
-
-interface ToolServerLaunchConfig {
-  command: string;
-  args: string[];
 }
 
 export interface McpMaterializationResult {
@@ -168,46 +128,6 @@ function buildDesiredServerConfig(row: AgentMcpRow): Record<string, unknown> | n
   return merged;
 }
 
-function resolveApiProjectRoot(): string {
-  return path.resolve(__dirname, '..', '..');
-}
-
-function resolveToolServerLaunchConfig(): ToolServerLaunchConfig {
-  const projectRoot = resolveApiProjectRoot();
-  const builtScript = path.join(projectRoot, 'dist', 'mcp', 'agentLocalToolServer.js');
-  if (fs.existsSync(builtScript)) {
-    return {
-      command: process.execPath,
-      args: [builtScript],
-    };
-  }
-
-  const tsxBin = path.join(projectRoot, 'node_modules', '.bin', 'tsx');
-  const sourceScript = path.join(projectRoot, 'src', 'mcp', 'agentLocalToolServer.ts');
-  return {
-    command: tsxBin,
-    args: [sourceScript],
-  };
-}
-
-function buildLocalToolServerConfig(params: {
-  agentId: number;
-  workingDirectory: string;
-}): Record<string, unknown> | null {
-  const launch = resolveToolServerLaunchConfig();
-  if (!launch.command.trim()) return null;
-
-  return {
-    command: launch.command,
-    args: launch.args,
-    cwd: params.workingDirectory,
-    env: {
-      AGENT_HQ_DB_PATH: getDbPath(),
-      AGENT_HQ_AGENT_ID: String(params.agentId),
-    },
-  };
-}
-
 export function fetchAssignedMcpServers(
   db: Database.Database,
   agentId: number,
@@ -229,24 +149,6 @@ export function fetchAssignedMcpServers(
   );
 }
 
-export function fetchAssignedToolMcpServer(
-  db: Database.Database,
-  agentId: number,
-  workingDirectory: string,
-): Record<string, Record<string, unknown>> {
-  const assignedTools = fetchAgentTools(db, agentId).filter(
-    (tool) => !BUILTIN_OPENCLAW_TOOL_NAMES.has(tool.slug.toLowerCase()),
-  );
-  if (assignedTools.length === 0) return {};
-
-  const config = buildLocalToolServerConfig({ agentId, workingDirectory });
-  if (!config) return {};
-
-  return {
-    [AGENT_LOCAL_TOOL_SERVER_SLUG]: config,
-  };
-}
-
 export function materializeAgentMcpConfig(params: {
   db: Database.Database;
   agentId: number;
@@ -259,10 +161,7 @@ export function materializeAgentMcpConfig(params: {
     warnings: [],
   };
 
-  const desiredServers = {
-    ...fetchAssignedMcpServers(params.db, params.agentId),
-    ...fetchAssignedToolMcpServer(params.db, params.agentId, params.workingDirectory),
-  };
+  const desiredServers = fetchAssignedMcpServers(params.db, params.agentId);
   const desiredKeys = Object.keys(desiredServers);
 
   let existingRaw: unknown = {};

@@ -10,7 +10,7 @@
  *
  * Atlas owns the canonical skill records (the `skills` table) and the
  * assignment relationship (`agents.skill_names` / `job_templates.skill_names`).
- * Runtime artifacts — symlinks, CLAUDE.md sections, prompt injections — are
+ * Runtime artifacts — copied skill dirs, symlinks, runtime orientation files, prompt injections — are
  * **derived** and must be regenerated whenever the assignment changes.
  *
  * Each runtime implements a `SkillMaterializationAdapter`:
@@ -22,9 +22,9 @@
  *
  * # Current adapters
  *
- *   openclaw     → OpenClawSkillAdapter   — symlinks into workspace `.claude/skills/`
- *                                            + CLAUDE.md skill section (via generateClaudeMd)
- *   claude-code  → ClaudeCodeSkillAdapter — same filesystem layout as OpenClaw
+ *   openclaw     → OpenClawSkillAdapter   — copies into workspace `skills/`
+ *   claude-code  → ClaudeCodeSkillAdapter — symlinks into workspace `.claude/skills/`
+ *                                            + CLAUDE.md skill section
  *   veri         → PromptInjectionSkillAdapter — embeds skill names in prompt metadata
  *   webhook      → PromptInjectionSkillAdapter — same
  *   (default)    → NoopSkillAdapter       — no-op for unknown/future runtimes
@@ -32,7 +32,7 @@
  * # Source-of-truth guarantee
  *
  * Runtime artifacts are always regenerated from the DB-owned skill list at
- * dispatch time. Stale symlinks, extra skill dirs, or modified CLAUDE.md sections
+ * dispatch time. Stale copied dirs/symlinks, extra skill dirs, or modified runtime guidance
  * are replaced on every materialize() call — runtime files are never "promoted"
  * back to the DB.
  */
@@ -40,6 +40,10 @@
 import fs from 'fs';
 import path from 'path';
 import type Database from 'better-sqlite3';
+
+function resolveInternalSkillsDir(): string {
+  return process.env.AGENT_HQ_SKILLS_PATH ?? path.resolve(__dirname, '../../..', 'skills');
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -58,7 +62,7 @@ export interface MaterializationContext {
 
   /**
    * Path to the OpenClaw global skills directory.
-   * Adapters that symlink from this directory use it to locate source skill dirs.
+   * Filesystem adapters use it to locate source skill dirs.
    * Optional: only relevant for filesystem-based adapters.
    */
   skillsBasePath?: string;
@@ -120,6 +124,8 @@ function emptyResult(): MaterializationResult {
   return { ok: true, count: 0, details: [], warnings: [] };
 }
 
+const MANAGED_SKILLS_MANIFEST = '.agent-hq-managed-skills.json';
+
 // ── NoopSkillAdapter ──────────────────────────────────────────────────────────
 
 /**
@@ -143,31 +149,88 @@ export class NoopSkillAdapter implements SkillMaterializationAdapter {
 // ── FilesystemSkillAdapter ───────────────────────────────────────────────────
 
 /**
- * FilesystemSkillAdapter — base for runtimes that materialize skills as
- * symlinks under `{workingDirectory}/.claude/skills/<name>`.
+ * FilesystemSkillAdapter — base for runtimes that materialize skills under a
+ * runtime-specific skills directory in the workspace.
  *
- * Used by both the OpenClaw and ClaudeCode adapters — they share the same
- * filesystem layout and differ only in how CLAUDE.md is generated.
+ * OpenClaw and Claude Code both consume filesystem skills, but the workspace
+ * contract differs by runtime:
+ *   - OpenClaw    → `{workingDirectory}/skills/<name>`
+ *   - Claude Code → `{workingDirectory}/.claude/skills/<name>`
  *
  * The adapter:
- *   1. Ensures `.claude/skills/` exists in workingDirectory.
- *   2. Creates/updates symlinks for each skill in skillNames.
- *   3. Removes symlinks for skills NOT in skillNames (reconcile step).
+ *   1. Ensures the runtime-specific skills directory exists in workingDirectory.
+ *   2. Creates/updates runtime artifacts for each skill in skillNames.
+ *   3. Removes stale symlinks for skills NOT in skillNames (reconcile step).
  *   4. Skips skills whose source dir cannot be found in skillsBasePath or the DB.
  *
  * Workspace skill resolution order:
  *   1. `skillsBasePath/<name>/` — system/OpenClaw skills
  *   2. DB `fs_path` for workspace/atlas skills (when `context.db` is provided)
+ *   3. Agent HQ repo `skills/<name>/` — built-in Atlas skills served by the UI
  */
 export abstract class FilesystemSkillAdapter implements SkillMaterializationAdapter {
   abstract readonly adapterName: string;
+
+  protected abstract getSkillsDir(workingDirectory: string): string;
+
+  protected shouldCopySkillDirectories(): boolean {
+    return false;
+  }
+
+  private readManagedSkillNames(skillsDir: string): string[] {
+    if (!this.shouldCopySkillDirectories()) return [];
+    try {
+      const raw = fs.readFileSync(path.join(skillsDir, MANAGED_SKILLS_MANIFEST), 'utf-8');
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed?.skills)
+        ? parsed.skills.filter((entry: unknown): entry is string => typeof entry === 'string')
+        : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private writeManagedSkillNames(skillsDir: string, skillNames: string[]): void {
+    if (!this.shouldCopySkillDirectories()) return;
+    fs.writeFileSync(
+      path.join(skillsDir, MANAGED_SKILLS_MANIFEST),
+      `${JSON.stringify({ skills: skillNames }, null, 2)}\n`,
+      'utf-8',
+    );
+  }
+
+  protected writeSkillArtifact(source: string, target: string): 'created' | 'updated' | 'skipped' {
+    let lstat: ReturnType<typeof fs.lstatSync> | null = null;
+    try { lstat = fs.lstatSync(target); } catch { /* not present */ }
+
+    if (this.shouldCopySkillDirectories()) {
+      const action = lstat ? 'updated' : 'created';
+      if (lstat) fs.rmSync(target, { recursive: true, force: true });
+      fs.cpSync(source, target, { recursive: true });
+      return action;
+    }
+
+    if (lstat) {
+      if (lstat.isSymbolicLink()) {
+        const existing = fs.readlinkSync(target);
+        if (existing === source) return 'skipped';
+      }
+      fs.rmSync(target, { recursive: true, force: true });
+      fs.symlinkSync(source, target);
+      return 'updated';
+    }
+
+    fs.symlinkSync(source, target);
+    return 'created';
+  }
 
   /**
    * Resolve the filesystem directory for a skill by name.
    *
    * Checks `skillsBasePath` first (system skills). If not found there, falls
    * back to the `fs_path` recorded in the skills DB table for workspace/atlas
-   * skills. Returns null if the skill cannot be resolved to a valid directory.
+   * skills, then to the repo-local skills directory exposed by /api/v1/skills.
+   * Returns null if the skill cannot be resolved to a valid directory.
    */
   protected resolveSkillDir(
     name: string,
@@ -201,6 +264,14 @@ export abstract class FilesystemSkillAdapter implements SkillMaterializationAdap
       } catch { /* DB not available */ }
     }
 
+    // 3. Agent HQ repo-local skills exposed by the skills API.
+    try {
+      const candidate = path.join(resolveInternalSkillsDir(), name);
+      if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory()) {
+        return candidate;
+      }
+    } catch { /* continue */ }
+
     return null;
   }
 
@@ -211,12 +282,12 @@ export abstract class FilesystemSkillAdapter implements SkillMaterializationAdap
     // Allow proceeding without skillsBasePath when db is provided (workspace skills only)
     if (!skillsBasePath && !db) {
       if (skillNames.length > 0) {
-        result.warnings.push(`[${this.adapterName}] skillsBasePath is not set and no DB provided — skipping symlink creation`);
+        result.warnings.push(`[${this.adapterName}] skillsBasePath is not set and no DB provided — skipping skill materialization`);
       }
       return result;
     }
 
-    const skillsDir = path.join(workingDirectory, '.claude', 'skills');
+    const skillsDir = this.getSkillsDir(workingDirectory);
     try {
       fs.mkdirSync(skillsDir, { recursive: true });
     } catch (err) {
@@ -225,8 +296,9 @@ export abstract class FilesystemSkillAdapter implements SkillMaterializationAdap
       return result;
     }
 
-    // ── Create / update symlinks for assigned skills ──
+    // ── Create / update artifacts for assigned skills ──
     const desiredSet = new Set(skillNames);
+    const previouslyManagedSkillNames = this.readManagedSkillNames(skillsDir);
 
     for (const name of skillNames) {
       const source = this.resolveSkillDir(name, skillsBasePath, db);
@@ -240,50 +312,47 @@ export abstract class FilesystemSkillAdapter implements SkillMaterializationAdap
           continue;
         }
 
-        const link = path.join(skillsDir, name);
-        let lstat: ReturnType<typeof fs.lstatSync> | null = null;
-        try { lstat = fs.lstatSync(link); } catch { /* not present */ }
-
-        if (lstat) {
-          if (lstat.isSymbolicLink()) {
-            const existing = fs.readlinkSync(link);
-            if (existing === source) {
-              result.details.push({ skill: name, action: 'skipped', reason: 'already correct' });
-              result.count++;
-              continue;
-            }
-          }
-          // Stale or unexpected — remove and replace
-          fs.unlinkSync(link);
-          fs.symlinkSync(source, link);
-          result.details.push({ skill: name, action: 'updated' });
+        const target = path.join(skillsDir, name);
+        const action = this.writeSkillArtifact(source, target);
+        if (action === 'skipped') {
+          result.details.push({ skill: name, action: 'skipped', reason: 'already correct' });
         } else {
-          fs.symlinkSync(source, link);
-          result.details.push({ skill: name, action: 'created' });
+          result.details.push({ skill: name, action });
         }
         result.count++;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        result.warnings.push(`[${this.adapterName}] skill "${name}" link error: ${msg}`);
+        result.warnings.push(`[${this.adapterName}] skill "${name}" materialization error: ${msg}`);
         result.details.push({ skill: name, action: 'error', reason: msg });
       }
     }
 
-    // ── Reconcile: remove symlinks for skills no longer assigned ──
-    try {
-      const existingLinks = fs.readdirSync(skillsDir);
-      for (const entry of existingLinks) {
+    if (this.shouldCopySkillDirectories()) {
+      for (const entry of previouslyManagedSkillNames) {
         if (desiredSet.has(entry)) continue;
-        const linkPath = path.join(skillsDir, entry);
         try {
-          const st = fs.lstatSync(linkPath);
-          if (st.isSymbolicLink()) {
-            fs.unlinkSync(linkPath);
-            result.details.push({ skill: entry, action: 'removed', reason: 'no longer assigned' });
-          }
+          fs.rmSync(path.join(skillsDir, entry), { recursive: true, force: true });
+          result.details.push({ skill: entry, action: 'removed', reason: 'no longer assigned' });
         } catch { /* ignore */ }
       }
-    } catch { /* skillsDir may not exist — that's fine */ }
+      this.writeManagedSkillNames(skillsDir, skillNames);
+    } else {
+      // ── Reconcile: remove stale symlinks for skills no longer assigned ──
+      try {
+        const existingLinks = fs.readdirSync(skillsDir);
+        for (const entry of existingLinks) {
+          if (desiredSet.has(entry)) continue;
+          const linkPath = path.join(skillsDir, entry);
+          try {
+            const st = fs.lstatSync(linkPath);
+            if (st.isSymbolicLink()) {
+              fs.unlinkSync(linkPath);
+              result.details.push({ skill: entry, action: 'removed', reason: 'no longer assigned' });
+            }
+          } catch { /* ignore */ }
+        }
+      } catch { /* skillsDir may not exist — that's fine */ }
+    }
 
     return result;
   }
@@ -292,17 +361,21 @@ export abstract class FilesystemSkillAdapter implements SkillMaterializationAdap
     const { workingDirectory, skillNames } = context;
     const result: MaterializationResult = { ok: true, count: 0, details: [], warnings: [] };
 
-    const skillsDir = path.join(workingDirectory, '.claude', 'skills');
+    const skillsDir = this.getSkillsDir(workingDirectory);
     for (const name of skillNames) {
       const linkPath = path.join(skillsDir, name);
       try {
         const st = fs.lstatSync(linkPath);
-        if (st.isSymbolicLink()) {
-          fs.unlinkSync(linkPath);
+        if (st.isSymbolicLink() || (this.shouldCopySkillDirectories() && st.isDirectory())) {
+          fs.rmSync(linkPath, { recursive: true, force: true });
           result.details.push({ skill: name, action: 'removed' });
           result.count++;
         }
       } catch { /* not present — already clean */ }
+    }
+    if (this.shouldCopySkillDirectories()) {
+      const remainingManaged = this.readManagedSkillNames(skillsDir).filter((name) => !skillNames.includes(name));
+      this.writeManagedSkillNames(skillsDir, remainingManaged);
     }
 
     return result;
@@ -314,32 +387,19 @@ export abstract class FilesystemSkillAdapter implements SkillMaterializationAdap
 /**
  * OpenClawSkillAdapter — filesystem-based adapter for OpenClaw agents.
  *
- * Creates symlinks under `.claude/skills/` and regenerates the CLAUDE.md
- * orientation file (which references the available skills).
- *
- * This adapter is intentionally the same as ClaudeCodeSkillAdapter in structure
- * but separated so OpenClaw-specific customization (e.g. different CLAUDE.md
- * sections, different agent workspace conventions) can diverge independently.
+ * OpenClaw workspaces consume assigned skills from `WORKSPACE/skills/`.
+ * Unlike Claude Code, OpenClaw should not project assigned skills into
+ * `.claude/skills/` or mutate `CLAUDE.md` as part of skill materialization.
  */
 export class OpenClawSkillAdapter extends FilesystemSkillAdapter {
   readonly adapterName = 'openclaw';
 
-  override materialize(context: MaterializationContext): MaterializationResult {
-    // Delegate filesystem work to parent
-    const result = super.materialize(context);
+  protected override getSkillsDir(workingDirectory: string): string {
+    return path.join(workingDirectory, 'skills');
+  }
 
-    // Generate CLAUDE.md skill section (OpenClaw uses this as the agent orientation file)
-    if (context.workingDirectory) {
-      try {
-        writeOpenClawSkillSection(context);
-      } catch (err) {
-        result.warnings.push(
-          `[openclaw] failed to write CLAUDE.md skill section: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
-    }
-
-    return result;
+  protected override shouldCopySkillDirectories(): boolean {
+    return true;
   }
 }
 
@@ -355,12 +415,16 @@ export class OpenClawSkillAdapter extends FilesystemSkillAdapter {
 export class ClaudeCodeSkillAdapter extends FilesystemSkillAdapter {
   readonly adapterName = 'claude-code';
 
+  protected override getSkillsDir(workingDirectory: string): string {
+    return path.join(workingDirectory, '.claude', 'skills');
+  }
+
   override materialize(context: MaterializationContext): MaterializationResult {
     const result = super.materialize(context);
 
     if (context.workingDirectory) {
       try {
-        writeOpenClawSkillSection(context);
+        writeClaudeCodeSkillSection(context);
       } catch (err) {
         result.warnings.push(
           `[claude-code] failed to write CLAUDE.md skill section: ${err instanceof Error ? err.message : String(err)}`,
@@ -413,10 +477,10 @@ export class PromptInjectionSkillAdapter implements SkillMaterializationAdapter 
   }
 }
 
-// ── CLAUDE.md skill section writer ────────────────────────────────────────────
+// ── Claude Code skill section writer ─────────────────────────────────────────
 
 /**
- * writeOpenClawSkillSection — write or update the "## Available Skills" section
+ * writeClaudeCodeSkillSection — write or update the "## Available Skills" section
  * in `{workingDirectory}/CLAUDE.md`.
  *
  * If CLAUDE.md does not exist, it is created with only the skills section.
@@ -430,7 +494,7 @@ export class PromptInjectionSkillAdapter implements SkillMaterializationAdapter 
  *
  * If neither marker exists in an existing file, the section is appended.
  */
-function writeOpenClawSkillSection(context: MaterializationContext): void {
+function writeClaudeCodeSkillSection(context: MaterializationContext): void {
   const { workingDirectory, skillNames } = context;
   const claudeMdPath = path.join(workingDirectory, 'CLAUDE.md');
 

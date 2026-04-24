@@ -32,6 +32,7 @@ Local mode:
 - Clones the Agent HQ source from GitHub on first run (~/.agent-hq/source/)
 - Installs OpenClaw automatically under `~/.openclaw` if it is not already available
 - Starts or repairs the local OpenClaw gateway service automatically
+- Configures the Agent HQ OpenClaw capability tools plugin and tool allow policy
 - Installs dependencies and builds the API and UI
 - Runs both as background Node processes
 - Stores data in ~/.agent-hq/agent-hq.db (persists between restarts)

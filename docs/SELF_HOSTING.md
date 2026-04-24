@@ -402,6 +402,29 @@ When the OpenClaw gateway and config are available:
 
 Agent HQ reads the OpenClaw config file at `OPENCLAW_CONFIG_PATH` to resolve agent session endpoints, hooks tokens, and gateway auth. Configure OpenClaw separately per its documentation.
 
+Assigned OpenClaw tools use the Agent HQ capability tools plugin. Agent HQ local startup configures this automatically. For manual installs, loading the plugin is not enough by itself: the OpenClaw tool policy must also allow the plugin id, for example:
+
+```json
+{
+  "plugins": {
+    "entries": {
+      "agent-hq-capability-tools": {
+        "enabled": true
+      }
+    },
+    "load": {
+      "paths": ["/path/to/agent-hq/plugins/openclaw-capability-tools"]
+    }
+  },
+  "tools": {
+    "profile": "coding",
+    "alsoAllow": ["agent-hq-capability-tools"]
+  }
+}
+```
+
+See [../plugins/openclaw-capability-tools/README.md](../plugins/openclaw-capability-tools/README.md) for the full plugin configuration.
+
 ### Without OpenClaw
 
 Without a working OpenClaw gateway/config, Agent HQ cannot launch OpenClaw-backed agent runs. In that state, dispatch should fail with a direct runtime or gateway error instead of succeeding behind a feature flag.
