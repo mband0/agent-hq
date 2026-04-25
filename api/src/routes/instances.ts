@@ -9,7 +9,6 @@ import { writeTaskRuntimeEndHistory, writeTaskStatusChange } from '../lib/taskHi
 import { notifyTaskStatusChange } from '../lib/taskNotifications';
 import { normalizeTokenUsage } from '../lib/tokenUsage';
 import { isNeedsAttentionEligibleStatus } from '../lib/reconcilerConfig';
-import { removeTaskWorktree } from '../services/worktreeManager';
 import { createAgentContext, destroyAgentContext } from '../services/browserPool';
 import { stopInstanceExecution } from '../lib/stopInstanceExecution';
 
@@ -342,36 +341,6 @@ router.put('/:id/complete', (req: Request, res: Response) => {
     }
 
     console.log(`[instances] Instance ${id} marked ${finalStatus}${summary ? ` — ${summary}` : ''}`);
-
-    // Worktree cleanup (task #365) — remove the isolated worktree after completion.
-    // Non-blocking: errors are logged but don't fail the completion response.
-    const worktreePath = instance.worktree_path as string | null;
-    if (worktreePath) {
-      setImmediate(() => {
-        try {
-          // Look up repo_path from the agent directly
-          const agentRow = db.prepare(`
-            SELECT a.repo_path
-            FROM agents a
-            WHERE a.id = ?
-          `).get(instance.agent_id) as { repo_path: string | null } | undefined;
-
-          if (agentRow?.repo_path) {
-            const result = removeTaskWorktree({
-              repoPath: agentRow.repo_path,
-              worktreePath,
-            });
-            if (result.removed) {
-              console.log(`[instances] Cleaned up worktree: ${worktreePath}`);
-            } else {
-              console.warn(`[instances] Failed to clean up worktree ${worktreePath}: ${result.error}`);
-            }
-          }
-        } catch (wtErr) {
-          console.warn(`[instances] Worktree cleanup error for instance ${id}:`, wtErr);
-        }
-      });
-    }
 
     upsertCanonicalSessionForInstance(db, id, instance.session_key as string | null);
 

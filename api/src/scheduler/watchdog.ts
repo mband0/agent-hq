@@ -3,7 +3,7 @@ import { getDb } from '../db/client';
 import { notifyTelegram } from '../integrations/telegram';
 import { HEARTBEAT_STALE_MS, START_CHECKIN_GRACE_MS } from '../lib/runObservability';
 import { writeTaskHistory } from '../lib/taskHistory';
-import { pruneOrphanedWorktrees, removeTaskWorktree, resolveWorktreeBasePath } from '../services/worktreeManager';
+import { pruneOrphanedWorktrees, resolveWorktreeBasePath } from '../services/worktreeManager';
 
 const DEFAULT_TIMEOUT_MINUTES = 20;
 const DEFAULT_TIMEOUT_MS = DEFAULT_TIMEOUT_MINUTES * 60_000;
@@ -193,14 +193,6 @@ export function runWatchdogPass(db: Database.Database, now = new Date()): void {
       inst.agent_id,
       `Watchdog: instance #${inst.id} was auto-failed from "${inst.status}" after ${elapsedMin}m — ${decision.reason} (task_id=${inst.task_id ?? 'none'})`
     );
-
-    if (inst.worktree_path && inst.repo_path) {
-      try {
-        removeTaskWorktree({ repoPath: inst.repo_path, worktreePath: inst.worktree_path });
-      } catch (wtErr) {
-        console.warn(`[watchdog] Worktree cleanup failed for instance #${inst.id}:`, wtErr);
-      }
-    }
 
     const actorLabel = formatActorLabel(inst);
     console.log(`[watchdog] Auto-failed instance #${inst.id} (${elapsedMin}m elapsed, task=${inst.task_id ?? 'none'}) — ${decision.reason}`);

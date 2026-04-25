@@ -3,7 +3,6 @@ import type Database from 'better-sqlite3';
 import { abortChatRunBySessionKey } from '../runtimes/OpenClawRuntime';
 import { applyStopBehavior, type StopBehavior } from './instanceStop';
 import { writeTaskRuntimeEndHistory } from './taskHistory';
-import { removeTaskWorktree } from '../services/worktreeManager';
 import { resolveRuntime } from '../runtimes';
 import { OPENCLAW_BIN, OPENCLAW_PATH } from '../config';
 function resolveInstanceSessionKey(instance: Record<string, unknown>): string | null {
@@ -203,24 +202,6 @@ export async function stopInstanceExecution(
       source: 'manual_stop',
       error: stopRuntimeMessage,
       lifecycleHandoff: 'missing_after_runtime_end',
-    });
-  }
-
-  const wtPath = instance.worktree_path as string | null;
-  if (wtPath) {
-    setImmediate(() => {
-      try {
-        const agentRow = db.prepare(`
-          SELECT a.repo_path
-          FROM agents a
-          WHERE a.id = ?
-        `).get(instance.agent_id) as { repo_path: string | null } | undefined;
-        if (agentRow?.repo_path) {
-          removeTaskWorktree({ repoPath: agentRow.repo_path, worktreePath: wtPath });
-        }
-      } catch (wtErr) {
-        console.warn(`[instances] Worktree cleanup on stop failed for instance ${id}:`, wtErr);
-      }
     });
   }
 

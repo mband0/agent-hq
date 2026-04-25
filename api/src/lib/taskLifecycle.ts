@@ -3,6 +3,7 @@ import fs from 'fs';
 import type Database from 'better-sqlite3';
 import { OPENCLAW_BIN, OPENCLAW_CONFIG_PATH, OPENCLAW_PATH } from '../config';
 import { buildGatewayRunSessionKey } from './sessionKeys';
+import { removeTaskWorktree } from '../services/worktreeManager';
 
 const LIVE_TASK_STATUSES = ['dispatched', 'in_progress', 'stalled'] as const;
 const LIVE_INSTANCE_STATUSES = ['queued', 'dispatched', 'running'] as const;
@@ -74,6 +75,49 @@ function taskAllowsReleaseExecution(db: Database.Database, task: { agent_id?: nu
 
 export function taskAllowsActiveExecution(status: string | null | undefined): boolean {
   return Boolean(status && LIVE_TASK_STATUSES.includes(status as typeof LIVE_TASK_STATUSES[number]));
+}
+
+export function cleanupDoneTaskWorktrees(db: Database.Database, taskId: number): number {
+  const rows = db.prepare(`
+    SELECT DISTINCT ji.worktree_path, a.repo_path
+    FROM job_instances ji
+    LEFT JOIN agents a ON a.id = ji.agent_id
+    WHERE (
+        ji.task_id = ?
+        OR ji.worktree_path = ?
+        OR ji.worktree_path LIKE ?
+        OR ji.worktree_path = ?
+        OR ji.worktree_path LIKE ?
+      )
+      AND ji.worktree_path IS NOT NULL
+      AND ji.worktree_path != ''
+      AND a.repo_path IS NOT NULL
+      AND a.repo_path != ''
+  `).all(
+    taskId,
+    `task-${taskId}`,
+    `%/task-${taskId}`,
+    `atlas-hq-task-${taskId}`,
+    `%/atlas-hq-task-${taskId}`,
+  ) as Array<{ worktree_path: string; repo_path: string }>;
+
+  let removed = 0;
+  for (const row of rows) {
+    try {
+      const result = removeTaskWorktree({
+        repoPath: row.repo_path,
+        worktreePath: row.worktree_path,
+      });
+      if (result.removed) removed++;
+      else if (result.error) {
+        console.warn(`[taskLifecycle] Worktree cleanup failed for done task #${taskId} at ${row.worktree_path}: ${result.error}`);
+      }
+    } catch (err) {
+      console.warn(`[taskLifecycle] Worktree cleanup error for done task #${taskId} at ${row.worktree_path}:`, err);
+    }
+  }
+
+  return removed;
 }
 
 // ── Async abort for orphaned instances ───────────────────────────────────────
@@ -432,9 +476,15 @@ export function cleanupTaskExecutionLinkageForStatus(
     WHERE id = ?
   `).get(taskId) as { id: number; status: string; agent_id: number | null; active_instance_id: number | null } | undefined;
 
-  if (!task?.active_instance_id) return false;
+  if (!task) return false;
 
   const effectiveStatus = nextStatus ?? task.status;
+  if (effectiveStatus === 'done') {
+    cleanupDoneTaskWorktrees(db, taskId);
+  }
+
+  if (!task.active_instance_id) return false;
+
   if (taskAllowsActiveExecution(effectiveStatus)) return false;
   if (effectiveStatus === 'review' && taskAllowsReviewExecution(db, task)) return false;
   // Deployment-stage exception: the active instance must remain authoritative

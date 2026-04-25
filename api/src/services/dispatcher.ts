@@ -19,7 +19,7 @@ import path from 'path';
 import { notifyTaskStatusChange } from '../lib/taskNotifications';
 import { writeTaskStatusChange } from '../lib/taskHistory';
 import { resolveRuntime } from '../runtimes';
-import { createTaskWorktree, removeTaskWorktree } from './worktreeManager';
+import { createTaskWorktree } from './worktreeManager';
 import {
   OPENCLAW_CONFIG_PATH as OPENCLAW_CONFIG_PATH_DISPATCHER,
   OPENCLAW_GATEWAY_URL,
@@ -1272,15 +1272,6 @@ async function fireAgentRun(
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     console.error(`[dispatcher] Instance #${instanceId} dispatch failed — ${errorMsg}`);
-
-    // Clean up worktree on dispatch failure (task #365)
-    if (worktreePath && job.repo_path) {
-      try {
-        removeTaskWorktree({ repoPath: job.repo_path, worktreePath });
-      } catch (wtErr) {
-        console.warn(`[dispatcher] Worktree cleanup failed after dispatch error for instance #${instanceId}:`, wtErr);
-      }
-    }
 
     // Clean up run context file on dispatch failure (task #466)
     if (effectiveWorkDir) {

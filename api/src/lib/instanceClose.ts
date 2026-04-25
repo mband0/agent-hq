@@ -10,7 +10,6 @@ import type Database from 'better-sqlite3';
 import { abortChatRunBySessionKey } from '../runtimes/OpenClawRuntime';
 import { destroyAgentContext } from '../services/browserPool';
 import { recordRunCheckIn } from './runObservability';
-import { removeTaskWorktree } from '../services/worktreeManager';
 
 /**
  * Terminal outcomes that should automatically close the instance and terminate
@@ -175,24 +174,6 @@ export async function closeInstance(opts: CloseInstanceOptions): Promise<CloseIn
         }
       } catch (err) {
         console.warn(`[instanceClose] Session abort threw for instance ${instanceId} (non-fatal):`, err instanceof Error ? err.message : err);
-      }
-    });
-  }
-
-  // ── 5. Worktree cleanup (non-blocking) ────────────────────────────────────
-  const worktreePath = instance.worktree_path as string | null;
-  const agentRepoPath = instance.agent_repo_path as string | null;
-  if (worktreePath && agentRepoPath) {
-    setImmediate(() => {
-      try {
-        const result = removeTaskWorktree({ repoPath: agentRepoPath, worktreePath });
-        if (result.removed) {
-          console.log(`[instanceClose] Cleaned up worktree: ${worktreePath}`);
-        } else if (result.error) {
-          console.warn(`[instanceClose] Failed to clean up worktree ${worktreePath}: ${result.error}`);
-        }
-      } catch (wtErr) {
-        console.warn(`[instanceClose] Worktree cleanup error for instance ${instanceId}:`, wtErr);
       }
     });
   }

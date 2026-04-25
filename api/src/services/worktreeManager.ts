@@ -2,12 +2,12 @@
  * worktreeManager.ts — Git worktree isolation for dispatched tasks.
  *
  * Ensures agents never operate in the main/production git checkout.
- * Each dispatched task gets an isolated worktree that is cleaned up
- * after the instance completes (or by the watchdog for orphans).
+ * Each dispatched task gets an isolated worktree that is cleaned up when
+ * the task reaches done (or by the watchdog for orphans).
  *
  * Worktree lifecycle:
  *   1. createTaskWorktree()  — called by dispatcher before dispatch
- *   2. removeTaskWorktree()  — called on instance completion/failure
+ *   2. removeTaskWorktree()  — called when the task reaches done
  *   3. pruneOrphanedWorktrees() — watchdog cleanup for stale worktrees
  */
 
@@ -88,7 +88,7 @@ export function resolveWorktreeBasePath(params: {
  * createTaskWorktree — creates a git worktree for a dispatched task.
  *
  * 1. Fetches latest from origin in the canonical repo.
- * 2. Creates a new branch and worktree at `{basePath}/atlas-hq-task-{taskId}`.
+ * 2. Creates a new branch and worktree at `{basePath}/task-{taskId}`.
  * 3. If a worktree already exists at that path, reuses it (idempotent).
  *
  * @param repoPath  — canonical git checkout (e.g. /home/user/atlas-hq)
@@ -109,7 +109,7 @@ export function createTaskWorktree(params: {
   const { repoPath, basePath, taskId, taskTitle, agentSlug, baseBranch = 'main' } = params;
   const slug = slugify(taskTitle);
   const branch = `${agentSlug}/task-${taskId}-${slug}`;
-  const worktreePath = path.join(basePath, `atlas-hq-task-${taskId}`);
+  const worktreePath = path.join(basePath, `task-${taskId}`);
 
   try {
     // If worktree path already exists and is valid, reuse it
@@ -169,7 +169,7 @@ export function createTaskWorktree(params: {
 }
 
 /**
- * removeTaskWorktree — removes a worktree after task completion.
+ * removeTaskWorktree — removes a worktree after task reaches done.
  *
  * Uses `git worktree remove --force` from the canonical repo.
  * Non-fatal if the worktree is already gone.
@@ -217,7 +217,7 @@ export function removeTaskWorktree(params: {
  * pruneOrphanedWorktrees — scans for stale task worktrees and removes them.
  *
  * A worktree is considered orphaned if:
- *   1. Its directory name matches `atlas-hq-task-{id}`
+ *   1. Its directory name matches `task-{id}` or legacy `atlas-hq-task-{id}`
  *   2. It was last modified more than `maxAgeHours` ago
  *   3. It has no active instance in the database (checked via callback)
  *
@@ -241,7 +241,7 @@ export function pruneOrphanedWorktrees(params: {
     const entries = fs.readdirSync(basePath, { withFileTypes: true });
     const now = Date.now();
     const maxAgeMs = maxAgeHours * 60 * 60 * 1000;
-    const worktreePattern = /^atlas-hq-task-(\d+)$/;
+    const worktreePattern = /^(?:task|atlas-hq-task)-(\d+)$/;
 
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
