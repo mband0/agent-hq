@@ -65,10 +65,11 @@ ensure_deps() {
 }
 
 capture_pm2() {
-  pm2 jlist | python3 - "$1" <<'PY2'
+  pm2_json="$(pm2 jlist)"
+  python3 - "$1" "$pm2_json" <<'PY2'
 import json, sys
 name = sys.argv[1]
-items = json.load(sys.stdin)
+items = json.loads(sys.argv[2] or '[]')
 for item in items:
     env = item.get('pm2_env', {})
     if env.get('name') == name or item.get('name') == name:
