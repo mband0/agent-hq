@@ -81,6 +81,14 @@ app.get('/api/v1/workflow-templates/:templateId', (req, res, next) => {
   req.url = `/workflow-templates/${encodeURIComponent(req.params.templateId)}${req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''}`;
   sprintsRouter(req, res, next);
 });
+app.get('/api/v1/sprints/workflow-templates', (req, res, next) => {
+  req.url = `/workflow-templates${req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''}`;
+  sprintsRouter(req, res, next);
+});
+app.get('/api/v1/sprints/workflow-templates/:templateId', (req, res, next) => {
+  req.url = `/workflow-templates/${encodeURIComponent(req.params.templateId)}${req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''}`;
+  sprintsRouter(req, res, next);
+});
 app.get('/api/v1/sprint-types', (_req, res) => {
   res.redirect(307, '/api/v1/sprints/types/list');
 });

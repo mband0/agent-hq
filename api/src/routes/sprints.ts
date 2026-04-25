@@ -17,7 +17,7 @@ interface Sprint {
   goal: string;
   sprint_type: string;
   workflow_template_key: string | null;
-  status: 'planning' | 'active' | 'paused' | 'complete' | 'closed';
+  status: 'planning' | 'planned' | 'active' | 'paused' | 'complete' | 'closed';
   length_kind: 'time' | 'runs';
   length_value: string;
   started_at: string | null;
@@ -465,6 +465,16 @@ function resolveWorkflowTemplateKey(sprintType: string, requestedKey: unknown): 
 
   const defaultTemplate = templates.find((template) => template.is_default === 1) ?? templates[0];
   return { key: defaultTemplate?.key ?? null, error: null };
+}
+
+function normalizeSprintStatus(raw: unknown): Sprint['status'] {
+  const status = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+  if (!status) return 'planning';
+  if (status === 'planned') return 'planning';
+  if (status === 'planning' || status === 'active' || status === 'paused' || status === 'complete' || status === 'closed') {
+    return status;
+  }
+  throw new Error(`Invalid sprint status "${raw}". Valid values: planning, planned, active, paused, complete, closed`);
 }
 
 router.get('/types/list', (_req: Request, res: Response) => {
@@ -1378,10 +1388,12 @@ router.post('/', (req: Request, res: Response) => {
     const resolvedWorkflowTemplate = resolveWorkflowTemplateKey(resolvedSprintType, workflow_template_key);
     if (resolvedWorkflowTemplate.error) return res.status(400).json({ error: resolvedWorkflowTemplate.error });
 
+    const normalizedStatus = normalizeSprintStatus(status);
+
     const result = db.prepare(`
       INSERT INTO sprints (project_id, name, goal, sprint_type, workflow_template_key, status, length_kind, length_value, started_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(project_id, name, goal, resolvedSprintType, resolvedWorkflowTemplate.key, status, length_kind, length_value, started_at ?? null);
+    `).run(project_id, name, goal, resolvedSprintType, resolvedWorkflowTemplate.key, normalizedStatus, length_kind, length_value, started_at ?? null);
 
     const newId = Number(result.lastInsertRowid);
     seedSprintTaskPolicy(db, newId);
@@ -1392,7 +1404,7 @@ router.post('/', (req: Request, res: Response) => {
       goal,
       sprint_type: resolvedSprintType,
       workflow_template_key: resolvedWorkflowTemplate.key,
-      status,
+      status: normalizedStatus,
       length_kind,
       length_value,
     });
@@ -1492,7 +1504,7 @@ router.put('/:id', (req: Request, res: Response) => {
       goal: goal !== undefined ? goal : existing.goal,
       sprint_type: resolvedSprintType,
       workflow_template_key: resolvedWorkflowTemplate.key,
-      status: status ?? existing.status,
+      status: status !== undefined ? normalizeSprintStatus(status) : existing.status,
       length_kind: length_kind ?? existing.length_kind,
       length_value: length_value !== undefined ? length_value : existing.length_value,
       started_at: started_at !== undefined ? started_at : existing.started_at,
