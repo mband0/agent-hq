@@ -173,9 +173,24 @@ app.put('/api/v1/task-definitions/sprint-types/:key/workflow-templates/:template
 app.delete('/api/v1/task-definitions/sprint-types/:key/workflow-templates/:templateId', (req, res) => {
   res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(req.params.key)}/workflow-templates/${encodeURIComponent(req.params.templateId)}`);
 });
-app.use(['/api/v1/routing-rules', '/api/v1/routing-rules/:id'], (req, res, next) => {
-  const suffix = req.path === '/' ? '' : req.path;
-  req.url = `/rules${suffix}${req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''}`;
+app.get('/api/v1/routing-rules', (req, res, next) => {
+  req.url = `/rules${req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''}`;
+  routingRouter(req, res, next);
+});
+app.post('/api/v1/routing-rules', (req, res, next) => {
+  req.url = `/rules${req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''}`;
+  routingRouter(req, res, next);
+});
+app.get('/api/v1/routing-rules/:id', (req, res, next) => {
+  req.url = `/rules/${encodeURIComponent(req.params.id)}${req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''}`;
+  routingRouter(req, res, next);
+});
+app.put('/api/v1/routing-rules/:id', (req, res, next) => {
+  req.url = `/rules/${encodeURIComponent(req.params.id)}${req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''}`;
+  routingRouter(req, res, next);
+});
+app.delete('/api/v1/routing-rules/:id', (req, res, next) => {
+  req.url = `/rules/${encodeURIComponent(req.params.id)}${req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''}`;
   routingRouter(req, res, next);
 });
 app.use('/api/v1/projects/:id/files', projectFilesRouter);
