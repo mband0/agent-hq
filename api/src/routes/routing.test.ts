@@ -144,7 +144,23 @@ describe('routing rules API', () => {
     }
   });
 
-  it('creates and reads sprint-scoped routing rules only', async () => {
+  it('rejects creating a routing rule for an unknown sprint agent', async () => {
+    const { server, baseUrl } = await startTestServer();
+    try {
+      const response = await fetch(`${baseUrl}/api/v1/routing/rules`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sprint_id: 10, task_type: 'backend', status: 'ready', agent_id: 999, priority: 5 }),
+      });
+
+      expect(response.status).toBe(404);
+      await expect(response.json()).resolves.toEqual({ error: 'Agent 999 not found' });
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  it('creates, reads, and resolves sprint-scoped routing rules only', async () => {
     const { server, baseUrl } = await startTestServer();
     try {
       const createResponse = await fetch(`${baseUrl}/api/v1/routing/rules`, {
@@ -166,6 +182,14 @@ describe('routing rules API', () => {
       expect(body.rules).toEqual([
         expect.objectContaining({ sprint_id: 10, agent_id: 7 }),
       ]);
+
+      const resolveResponse = await fetch(`${baseUrl}/api/v1/routing/rules/resolve?sprint_id=10&task_type=backend&status=ready`);
+      expect(resolveResponse.status).toBe(200);
+      const resolveBody = await resolveResponse.json() as { matched: boolean; rule: { sprint_id: number; agent_id: number } };
+      expect(resolveBody).toEqual({
+        matched: true,
+        rule: expect.objectContaining({ sprint_id: 10, agent_id: 7 }),
+      });
     } finally {
       await stopTestServer(server);
     }

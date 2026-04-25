@@ -826,18 +826,28 @@ function resolveRoutingRuleTarget(
   // agent_id is the canonical field
   if (agentId != null && Number.isFinite(agentId)) {
     const agent = db.prepare('SELECT id FROM agents WHERE id = ?').get(agentId);
-    if (!agent) throw new Error(`Agent ${agentId} not found`);
+    if (!agent) {
+      const err = new Error(`Agent ${agentId} not found`);
+      (err as Error & { status?: number }).status = 404;
+      throw err;
+    }
     return { agent_id: agentId };
   }
 
   // Legacy compat: if only job_id provided, treat it as agent_id
   if (jobId != null && Number.isFinite(jobId)) {
     const agent = db.prepare('SELECT id FROM agents WHERE id = ?').get(jobId);
-    if (!agent) throw new Error(`Agent ${jobId} not found`);
+    if (!agent) {
+      const err = new Error(`Agent ${jobId} not found`);
+      (err as Error & { status?: number }).status = 404;
+      throw err;
+    }
     return { agent_id: jobId };
   }
 
-  throw new Error('agent_id is required');
+  const err = new Error('agent_id is required');
+  (err as Error & { status?: number }).status = 400;
+  throw err;
 }
 
 // GET /rules?sprint_id=X — all routing rules for a sprint
@@ -887,7 +897,9 @@ router.post('/rules', (req: Request, res: Response) => {
     const rule = db.prepare(`${selectSprintRoutingRuleRowSql()} WHERE trr.id = ?`).get(result.lastInsertRowid);
     res.status(201).json(rule);
   } catch (err) {
-    res.status(500).json({ error: String(err) });
+    const status = typeof (err as { status?: unknown })?.status === 'number' ? Number((err as { status?: number }).status) : 500;
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(status).json({ error: message });
   }
 });
 
@@ -921,7 +933,9 @@ router.put('/rules/:id', (req: Request, res: Response) => {
     const rule = db.prepare(`${selectSprintRoutingRuleRowSql()} WHERE trr.id = ?`).get(id);
     res.json(rule);
   } catch (err) {
-    res.status(500).json({ error: String(err) });
+    const status = typeof (err as { status?: unknown })?.status === 'number' ? Number((err as { status?: number }).status) : 500;
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(status).json({ error: message });
   }
 });
 
