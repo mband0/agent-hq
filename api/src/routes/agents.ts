@@ -35,6 +35,46 @@ const DEFAULT_AGENT_MODEL_BY_PROVIDER: Record<string, string> = {
   'openai-codex': 'openai-codex/gpt-5.4',
 };
 
+function makeStableSkillId(name: string): number {
+  let hash = 0;
+  for (const ch of name) hash = ((hash * 31) + ch.charCodeAt(0)) | 0;
+  return Math.abs(hash) || 1;
+}
+
+function resolveSkillNameInput(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function resolveSkillNameFromRelationInput(payload: Record<string, unknown>): string {
+  const directName = resolveSkillNameInput(payload.skill_name);
+  if (directName) return directName;
+
+  const relationId = typeof payload.skill_id === 'number' && Number.isFinite(payload.skill_id)
+    ? payload.skill_id
+    : typeof payload.skill_id === 'string' && payload.skill_id.trim() !== '' && !Number.isNaN(Number(payload.skill_id))
+      ? Number(payload.skill_id)
+      : null;
+
+  if (relationId === null) return '';
+
+  const atlasSkillsDir = path.resolve(process.cwd(), '..', 'skills');
+  try {
+    const entries = fs.readdirSync(atlasSkillsDir, { withFileTypes: true });
+    for (const entry of entries) {
+      const name = entry.isDirectory()
+        ? entry.name
+        : entry.isFile() && (entry.name.endsWith('.skill') || entry.name.endsWith('.md'))
+          ? entry.name.replace(/\.(skill|md)$/i, '')
+          : '';
+      if (name && makeStableSkillId(name) === relationId) return name;
+    }
+  } catch {
+    // ignore and fall through to empty string
+  }
+
+  return '';
+}
+
 function getConnectedProviderSlugs(): string[] {
   const db = getDb();
   const rows = db.prepare(`SELECT slug FROM provider_config WHERE status = 'connected'`).all() as Array<{ slug: string }>;
@@ -1852,12 +1892,6 @@ router.post('/:id/claude-md/regen', (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 // Agent skill assignment relations
 // ---------------------------------------------------------------------------
-const toStableSkillId = (name: string): number => {
-  let hash = 0;
-  for (const ch of name) hash = ((hash * 31) + ch.charCodeAt(0)) | 0;
-  return Math.abs(hash) || 1;
-};
-
 const resolveAgentSkillNames = (raw: unknown): string[] => {
   try {
     return typeof raw === 'string' ? normalizeJsonArray(JSON.parse(raw)) : [];
@@ -1865,8 +1899,6 @@ const resolveAgentSkillNames = (raw: unknown): string[] => {
     return [];
   }
 };
-
-const resolveSkillNameInput = (input: unknown): string => (typeof input === 'string' ? input.trim() : '');
 
 const findSkillNameByIdentifier = (skillIdentifier: string, availableSkillNames: string[]): string | null => {
   if (!skillIdentifier) return null;
@@ -1876,7 +1908,7 @@ const findSkillNameByIdentifier = (skillIdentifier: string, availableSkillNames:
 
   const numericId = Number(skillIdentifier);
   if (Number.isInteger(numericId) && numericId > 0) {
-    const byId = availableSkillNames.find((name) => toStableSkillId(name) === numericId);
+    const byId = availableSkillNames.find((name) => makeStableSkillId(name) === numericId);
     if (byId) return byId;
   }
 
@@ -1893,7 +1925,7 @@ const resolveExistingSkillName = (db: ReturnType<typeof getDb>, skillId: number)
       .map((entry) => entry.name),
   ]));
 
-  return filesystemSkills.find((name) => toStableSkillId(name) === skillId) ?? null;
+  return filesystemSkills.find((name) => makeStableSkillId(name) === skillId) ?? null;
 };
 
 const materializeAgentSkills = (
@@ -1935,7 +1967,7 @@ router.get('/:id/skills', (req: Request, res: Response) => {
     return res.json({
       agent_id: agent.id,
       skills: skillNames.map((name) => ({
-        id: toStableSkillId(name),
+        id: makeStableSkillId(name),
         name,
       })),
       skill_names: skillNames,
@@ -1984,11 +2016,11 @@ router.post('/:id/skills', (req: Request, res: Response) => {
       ok: true,
       agent_id: Number(req.params.id),
       skill: {
-        id: toStableSkillId(skillName),
+        id: makeStableSkillId(skillName),
         name: skillName,
       },
       skills: nextSkillNames.map((name) => ({
-        id: toStableSkillId(name),
+        id: makeStableSkillId(name),
         name,
       })),
       skill_names: nextSkillNames,
@@ -2006,10 +2038,15 @@ router.delete('/:id/skills/:skillName', (req: Request, res: Response) => {
     if (!agent) return res.status(404).json({ error: 'Agent not found' });
 
     const skillNames = resolveAgentSkillNames(agent.skill_names);
-    const skillIdentifier = resolveSkillNameInput(req.params.skillName);
+    const skillIdentifier = resolveSkillNameInput(req.params.skillName) || resolveSkillNameInput(req.body?.skill_name) || resolveSkillNameInput(req.body?.skill_id);
     const skillName = findSkillNameByIdentifier(skillIdentifier, skillNames);
 
-    if (!skillIdentifier) return res.status(400).json({ error: 'skillName is required' });
+    if (!skillIdentifier) {
+      return res.status(400).json({
+        error: 'skillName path param or skill_name/skill_id body field is required',
+        supported_fields: ['skillName', 'skill_name', 'skill_id'],
+      });
+    }
     if (!skillName) {
       return res.status(404).json({ error: `Skill '${skillIdentifier}' is not assigned to this agent` });
     }
@@ -2021,12 +2058,12 @@ router.delete('/:id/skills/:skillName', (req: Request, res: Response) => {
       ok: true,
       agent_id: Number(req.params.id),
       removed_skill: {
-        id: toStableSkillId(skillName),
+        id: makeStableSkillId(skillName),
         name: skillName,
       },
       removed_skill_name: skillName,
       skills: nextSkillNames.map((name) => ({
-        id: toStableSkillId(name),
+        id: makeStableSkillId(name),
         name,
       })),
       skill_names: nextSkillNames,

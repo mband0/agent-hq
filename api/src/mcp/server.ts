@@ -1116,7 +1116,7 @@ registerTool(
     skill_id: z.number().int().positive().optional().describe('Skill ID'),
     skill_name: z.string().min(1).optional().describe('Skill name'),
   },
-  ({ agent_id, skill_id, skill_name }) => wrap(() => api.removeSkillFromAgent(agent_id, skill_id ?? skill_name ?? ''))(),
+  ({ agent_id, skill_id, skill_name }) => wrap(() => api.removeSkillFromAgent(agent_id, skill_name ? skill_name : { skill_id }))(),
 );
 
 registerResource(

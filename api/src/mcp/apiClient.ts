@@ -665,7 +665,11 @@ export class AgentHqApiClient {
     return this.request<unknown>('POST', `/api/v1/agents/${agentId}/skills`, input);
   }
 
-  removeSkillFromAgent(agentId: number, skillIdentifier: string | number) {
+  removeSkillFromAgent(agentId: number, skillIdentifier: string | number | { skill_name?: string; skill_id?: number | string }) {
+    if (typeof skillIdentifier === 'object' && skillIdentifier !== null) {
+      const identifier = skillIdentifier.skill_name ?? skillIdentifier.skill_id ?? '';
+      return this.request<unknown>('DELETE', `/api/v1/agents/${agentId}/skills/${encodeURIComponent(String(identifier))}`, skillIdentifier);
+    }
     return this.request<unknown>('DELETE', `/api/v1/agents/${agentId}/skills/${encodeURIComponent(String(skillIdentifier))}`);
   }
 
