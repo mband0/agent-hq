@@ -1131,7 +1131,7 @@ function TransitionsSection({ sprintId, sprintName }: { sprintId: number | null;
   if (!sprintId) {
     return (
       <Card className="bg-slate-900/50 border-slate-700/50 p-6 text-sm text-slate-400">
-        Select a sprint to edit its workflow transitions.
+        Select a sprint to edit its automatic transitions.
       </Card>
     );
   }
@@ -2345,7 +2345,7 @@ export default function RoutingPage() {
     { id: 'rules', label: 'Routing Rules' },
     { id: 'config', label: 'Per-Agent Config', count: configs.length },
     { id: 'statuses', label: 'Status Labels', count: sprintScopedTabs.includes(activeTab) ? statuses.length : undefined },
-    { id: 'transitions', label: 'Workflow Transitions' },
+    { id: 'transitions', label: 'Automatic Transitions' },
     { id: 'transition-reqs', label: 'Gate Requirements' },
     { id: 'dispatch-log', label: 'Dispatch Log' },
     { id: 'agent-contract', label: 'Agent Contract' },
@@ -2469,8 +2469,8 @@ export default function RoutingPage() {
             <>
           <div className="bg-slate-800/40 border border-slate-700/40 rounded-xl px-4 py-3 mb-4 text-sm text-slate-400">
             <strong className="text-slate-300">Display metadata only.</strong> Status labels, colors, and the &ldquo;Allowed Transitions&rdquo; list here are for UI display and user guidance.
-            Actual workflow enforcement is driven by <button className="text-amber-400 underline" onClick={() => setActiveTab('transitions' as RoutingTab)}>Workflow Transitions</button>.
-            The &ldquo;Allowed Transitions&rdquo; field does not gate backend state changes — add a <button className="text-amber-400 underline" onClick={() => setActiveTab('transitions' as RoutingTab)}>Transition row</button> to actually enforce a path.
+            Actual automatic status movement is driven by <button className="text-amber-400 underline" onClick={() => setActiveTab('transitions' as RoutingTab)}>Automatic Transitions</button>.
+            The &ldquo;Allowed Transitions&rdquo; field does not gate backend state changes — add an <button className="text-amber-400 underline" onClick={() => setActiveTab('transitions' as RoutingTab)}>Automatic Transition</button> row to actually enforce a path.
           </div>
           <div className="flex items-center justify-between mb-3">
             <p className="text-slate-400 text-sm">{statuses.length} statuses configured</p>
