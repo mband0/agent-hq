@@ -1218,19 +1218,6 @@ export function initSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_routing_config_project ON routing_config(project_id);
     CREATE INDEX IF NOT EXISTS idx_routing_config_from ON routing_config(from_status, outcome);
 
-    CREATE TABLE IF NOT EXISTS task_routing_rules (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-      task_type   TEXT NOT NULL,
-      status      TEXT NOT NULL,
-      agent_id    INTEGER REFERENCES agents(id) ON DELETE SET NULL,
-      priority    INTEGER NOT NULL DEFAULT 0,
-      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    CREATE INDEX IF NOT EXISTS idx_trr_project ON task_routing_rules(project_id);
-    CREATE INDEX IF NOT EXISTS idx_trr_lookup ON task_routing_rules(project_id, task_type, status);
-
     CREATE TABLE IF NOT EXISTS sprint_task_statuses (
       id                       INTEGER PRIMARY KEY AUTOINCREMENT,
       sprint_id                INTEGER NOT NULL REFERENCES sprints(id) ON DELETE CASCADE,
@@ -1548,12 +1535,6 @@ export function initSchema(): void {
   // All backfills from job_templates removed — Task #579 (table dropped).
   // agent_id columns on these tables were already populated by prior Phase 3 runs.
 
-  // 3b. Ensure agent_id column exists on task_routing_rules (safe if already present)
-  try {
-    db.exec(`ALTER TABLE task_routing_rules ADD COLUMN agent_id INTEGER REFERENCES agents(id)`);
-    console.log(`[schema] Task #459 Phase 3: added agent_id to task_routing_rules`);
-  } catch { /* column already exists */ }
-
   // 3e. Ensure agent_id column exists on task_creation_events
   try {
     db.exec(`ALTER TABLE task_creation_events ADD COLUMN agent_id INTEGER REFERENCES agents(id)`);
@@ -1738,7 +1719,7 @@ function ensureSystemPolicies(): void {
       classification:    'configurable',
       enabled:           1,
       threshold_seconds: null,
-      description:       'Review tasks without a live instance are automatically re-dispatched to the configured QA agent for the task type/project (via task_routing_rules). agent_id and review_owner_agent_id are updated if routing changes.',
+      description:       'Review tasks without a live instance are automatically re-dispatched to the configured QA agent for the task type within the sprint routing policy. agent_id and review_owner_agent_id are updated if routing changes.',
       source_file:       'api/src/scheduler/reconciler.ts (reconcileReviewQaRouting)',
     },
     {
@@ -3506,60 +3487,23 @@ function ensureFailureClassColumns(): void {
  *   - Phase 4 (Task #592): dispatcher now reads agent_id from routing rules (with job_template fallback)
  *
  * What this migration does:
- *   1. Backfill task_routing_rules.agent_id for rows where agent_id IS NULL but
- *      the referenced job_template still exists (18 rows).
- *   2. Assign orphaned routing rules for defunct/deleted job_templates to the
- *      project's primary backend agent. These rows have no valid job_template
- *      to derive agent_id from (16 orphan rows, project 14 / Custom Agent).
- *   3. Backfill legacy task ownership columns so old job-owned rows populate
+ *   1. Drop the retired legacy project-level task_routing_rules table.
+ *   2. Backfill legacy task ownership columns so old job-owned rows populate
  *      tasks.agent_id and tasks.review_owner_agent_id from job_templates.agent_id
  *      before any runtime authority check relies on agent ownership.
- *   4. Make job_instances.template_id nullable via a safe table rebuild.
+ *   3. Make job_instances.template_id nullable via a safe table rebuild.
  *      This is required before any new instance can be created without a
  *      job_templates row (which will be the case after Phase 5 cleanup).
- *   5. Log a validation summary of all pre-conditions for Phase 5 (safe drop).
+ *   4. Log a validation summary of all pre-conditions for Phase 5 (safe drop).
  */
 export function ensureDataMigration593(): void {
   const db = getDb();
 
-  // ── Step 1: Backfill task_routing_rules.agent_id (no-op after job_id column dropped) ──
-  // Previously backfilled agent_id from job_templates.job_id — column no longer exists.
-
-  // ── Step 2: Assign orphan routing rules (no agent_id) to project's primary agent ──
+  // ── Step 1: Retire legacy project-level task routing rules after sprint migration ──
   try {
-    const orphanRules = db.prepare(`
-      SELECT trr.id, trr.project_id
-      FROM task_routing_rules trr
-      WHERE trr.agent_id IS NULL
-    `).all() as Array<{ id: number; project_id: number }>;
-
-    if (orphanRules.length > 0) {
-      const updateStmt = db.prepare(`
-        UPDATE task_routing_rules
-        SET agent_id = (
-          SELECT a.id FROM agents a
-          WHERE a.project_id = ?
-            AND a.enabled = 1
-          ORDER BY a.id ASC
-          LIMIT 1
-        )
-        WHERE id = ?
-      `);
-
-      const tx = db.transaction(() => {
-        let updated = 0;
-        for (const rule of orphanRules) {
-          const r = updateStmt.run(rule.project_id, rule.id);
-          updated += r.changes;
-        }
-        return updated;
-      });
-
-      const updated = tx();
-      console.log(`[schema] Task #593: assigned ${updated} orphan routing rule(s) to project's primary agent`);
-    }
+    db.exec(`DROP TABLE IF EXISTS task_routing_rules`);
   } catch (err) {
-    console.error('[schema] Task #593: step 2 orphan routing rules backfill failed:', err);
+    console.warn('[schema] Task #370 legacy task_routing_rules drop skipped:', (err as Error).message);
   }
 
   // ── Step 3: Backfill legacy task ownership onto agent-owned columns ──
@@ -3674,8 +3618,8 @@ export function ensureDataMigration593(): void {
         wantZero: true,
       }] : []),
       {
-        label: 'task_routing_rules with no agent_id',
-        sql: `SELECT COUNT(*) as n FROM task_routing_rules WHERE agent_id IS NULL`,
+        label: 'sprint_task_routing_rules with no agent_id',
+        sql: `SELECT COUNT(*) as n FROM sprint_task_routing_rules WHERE agent_id IS NULL`,
         wantZero: true,
       },
       {
@@ -3826,36 +3770,6 @@ export function ensurePipelineIntelligenceTelemetry(): void {
     console.log('[schema] Task #596: dropped legacy tables (routing_config_legacy, sprint_job_schedules, sprint_job_assignments, sprint_schedule_fires)');
   } catch (err) {
     console.error('[schema] Task #596: drop legacy tables failed:', err);
-  }
-
-  // Make job_id nullable on task_routing_rules.
-  // SQLite doesn't support ALTER COLUMN, so we recreate the table.
-  try {
-    const trrCols = db.prepare(`PRAGMA table_info(task_routing_rules)`).all() as Array<{ name: string }>;
-    const hasJobId = trrCols.some(c => c.name === 'job_id');
-    if (hasJobId) {
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS task_routing_rules_new (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-          task_type TEXT NOT NULL,
-          status TEXT NOT NULL,
-          priority INTEGER NOT NULL DEFAULT 0,
-          created_at TEXT NOT NULL DEFAULT (datetime('now')),
-          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-          agent_id INTEGER REFERENCES agents(id)
-        );
-        INSERT INTO task_routing_rules_new (id, project_id, task_type, status, priority, created_at, updated_at, agent_id)
-          SELECT id, project_id, task_type, status, priority, created_at, updated_at, agent_id FROM task_routing_rules;
-        DROP TABLE task_routing_rules;
-        ALTER TABLE task_routing_rules_new RENAME TO task_routing_rules;
-        CREATE INDEX IF NOT EXISTS idx_trr_project ON task_routing_rules(project_id);
-        CREATE INDEX IF NOT EXISTS idx_trr_lookup ON task_routing_rules(project_id, task_type, status);
-      `);
-      console.log('[schema] Task #596: dropped job_id column from task_routing_rules');
-    }
-  } catch (err) {
-    console.error('[schema] Task #596: task_routing_rules migration failed:', err);
   }
 
   // ── Task #53: Drop job_template_id FK column from agents ───────────────────

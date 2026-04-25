@@ -790,22 +790,16 @@ router.post('/provision-full', (req: Request, res: Response) => {
         },
       };
 
-      const projectRoutingStmt = db.prepare(`
-        INSERT INTO task_routing_rules (project_id, task_type, status, agent_id, priority)
-        VALUES (?, ?, ?, ?, ?)
-      `);
       const sprintRoutingStmt = db.prepare(`
         INSERT INTO sprint_task_routing_rules (sprint_id, task_type, status, agent_id, priority)
         VALUES (?, ?, ?, ?, ?)
       `);
       for (const rule of body.routing_rules ?? []) {
-        let result;
-        if (rule.sprint_id != null) {
-          seedSprintTaskPolicy(db, rule.sprint_id);
-          result = sprintRoutingStmt.run(rule.sprint_id, rule.task_type, rule.status, agentId, rule.priority ?? 0);
-        } else {
-          result = projectRoutingStmt.run(projectId, rule.task_type, rule.status, agentId, rule.priority ?? 0);
+        if (rule.sprint_id == null) {
+          throw new Error('routing_rules entries must include sprint_id');
         }
+        seedSprintTaskPolicy(db, rule.sprint_id);
+        const result = sprintRoutingStmt.run(rule.sprint_id, rule.task_type, rule.status, agentId, rule.priority ?? 0);
         createdRoutingRuleIds.push(Number(result.lastInsertRowid));
       }
       report.routing = {

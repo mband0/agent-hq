@@ -245,7 +245,7 @@ export function resolveModelFromStoryPoints(
 }
 
 /**
- * RoutingRuleRow — a task_routing_rules row joined with the agent.
+ * RoutingRuleRow — a sprint_task_routing_rules row joined with the agent.
  * The `agent_id` field maps directly to the agents table.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -439,10 +439,9 @@ function getAllDispatchableTasks(db: Database.Database, projectId?: number | nul
 }
 
 /**
- * getMatchingRoutingRules — returns all routing rules that match a task's
- * sprint_id/status/task_type first, then falls back to legacy project routing,
- * ordered by priority DESC so the highest-priority rule is tried first.
- * Each row includes full job_template and agent fields for dispatch.
+ * getMatchingRoutingRules — returns sprint routing rules that match a task's
+ * sprint_id/status/task_type, ordered by priority DESC so the highest-priority
+ * rule is tried first. Each row includes full agent fields for dispatch.
  */
 function getMatchingRoutingRules(db: Database.Database, task: CandidateTask): RoutingRuleRow[] {
   const runRuleQuery = (tableName: string, scopeCondition: string, params: unknown[]): RoutingRuleRow[] => db.prepare(`
@@ -471,57 +470,31 @@ function getMatchingRoutingRules(db: Database.Database, task: CandidateTask): Ro
     }
   }
 
-  if (!task.project_id) return [];
-
-  // Task #596: use agent_id directly from task_routing_rules — no job_templates join needed
-  const rules = runRuleQuery('task_routing_rules', 'rr.project_id = ?', [task.project_id]);
-
-  // in_progress tasks (e.g. QA-failed, sent back) have no dedicated routing rules.
-  // Fall back to the 'ready' rules for the same project+task_type so they re-enter
-  // the normal implementation queue and get picked up by the right agent.
-  if (rules.length === 0 && task.status === 'in_progress') {
-    if (task.sprint_id) {
-      try {
-        const sprintFallback = db.prepare(`
-          SELECT rr.*,
-                 a.id as agent_id, a.job_title as job_title,
-                 a.pre_instructions, a.enabled, a.timeout_seconds, a.model,
-                 a.skill_names,
-                 a.session_key as agent_session_key, a.name as agent_name, a.model as agent_model,
-                 a.openclaw_agent_id, a.runtime_type, a.runtime_config, a.hooks_url as agent_hooks_url,
-                 a.hooks_auth_header as agent_hooks_auth_header,
-                 a.workspace_path, a.preferred_provider, a.repo_path, a.os_user
-          FROM sprint_task_routing_rules rr
-          JOIN agents a ON a.id = rr.agent_id AND a.enabled = 1
-          WHERE rr.sprint_id = ?
-            AND rr.status = 'ready'
-            AND (rr.task_type = ? OR rr.task_type IS NULL)
-          ORDER BY rr.priority DESC, rr.id ASC
-        `).all(task.sprint_id, task.task_type ?? null) as RoutingRuleRow[];
-        if (sprintFallback.length > 0) return sprintFallback;
-      } catch {
-        // fall through to legacy project rules
-      }
+  if (task.status === 'in_progress' && task.sprint_id) {
+    try {
+      const sprintFallback = db.prepare(`
+        SELECT rr.*,
+               a.id as agent_id, a.job_title as job_title,
+               a.pre_instructions, a.enabled, a.timeout_seconds, a.model,
+               a.skill_names,
+               a.session_key as agent_session_key, a.name as agent_name, a.model as agent_model,
+               a.openclaw_agent_id, a.runtime_type, a.runtime_config, a.hooks_url as agent_hooks_url,
+               a.hooks_auth_header as agent_hooks_auth_header,
+               a.workspace_path, a.preferred_provider, a.repo_path, a.os_user
+        FROM sprint_task_routing_rules rr
+        JOIN agents a ON a.id = rr.agent_id AND a.enabled = 1
+        WHERE rr.sprint_id = ?
+          AND rr.status = 'ready'
+          AND (rr.task_type = ? OR rr.task_type IS NULL)
+        ORDER BY rr.priority DESC, rr.id ASC
+      `).all(task.sprint_id, task.task_type ?? null) as RoutingRuleRow[];
+      if (sprintFallback.length > 0) return sprintFallback;
+    } catch {
+      // sprint-scoped tables may not exist in minimal test DBs
     }
-    return db.prepare(`
-      SELECT rr.*,
-             a.id as agent_id, a.job_title as job_title,
-             a.pre_instructions, a.enabled, a.timeout_seconds, a.model,
-             a.skill_names,
-             a.session_key as agent_session_key, a.name as agent_name, a.model as agent_model,
-             a.openclaw_agent_id, a.runtime_type, a.runtime_config, a.hooks_url as agent_hooks_url,
-             a.hooks_auth_header as agent_hooks_auth_header,
-             a.workspace_path, a.preferred_provider, a.repo_path, a.os_user
-      FROM task_routing_rules rr
-      JOIN agents a ON a.id = rr.agent_id AND a.enabled = 1
-      WHERE rr.project_id = ?
-        AND rr.status = 'ready'
-        AND (rr.task_type = ? OR rr.task_type IS NULL)
-      ORDER BY rr.priority DESC, rr.id ASC
-    `).all(task.project_id, task.task_type ?? null) as RoutingRuleRow[];
   }
 
-  return rules;
+  return [];
 }
 
 /**

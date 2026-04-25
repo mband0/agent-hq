@@ -198,26 +198,6 @@ export function seedSprintTaskPolicy(
     }>;
   };
 
-  const loadLegacyRoutingRules = (): Array<{
-    task_type: string;
-    status: string;
-    agent_id: number | null;
-    priority: number;
-  }> => {
-    if (!tableExists(db, 'task_routing_rules') || sprint.project_id == null) return [];
-    return db.prepare(`
-      SELECT task_type, status, agent_id, COALESCE(priority, 0) AS priority
-      FROM task_routing_rules
-      WHERE project_id = ?
-      ORDER BY priority DESC, id ASC
-    `).all(sprint.project_id) as Array<{
-      task_type: string;
-      status: string;
-      agent_id: number | null;
-      priority: number;
-    }>;
-  };
-
   const tx = db.transaction(() => {
     if (force || statusCount === 0) {
       db.prepare(`DELETE FROM sprint_task_statuses WHERE sprint_id = ?`).run(sprintId);
@@ -289,20 +269,6 @@ export function seedSprintTaskPolicy(
 
     if (force || routingRuleCount === 0) {
       db.prepare(`DELETE FROM sprint_task_routing_rules WHERE sprint_id = ?`).run(sprintId);
-      const insert = db.prepare(`
-        INSERT INTO sprint_task_routing_rules (
-          sprint_id, task_type, status, agent_id, priority, is_system, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, 0, datetime('now'), datetime('now'))
-      `);
-      for (const row of loadLegacyRoutingRules()) {
-        insert.run(
-          sprintId,
-          row.task_type,
-          row.status,
-          row.agent_id ?? null,
-          row.priority ?? 0,
-        );
-      }
     }
   });
 

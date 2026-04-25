@@ -806,17 +806,6 @@ router.delete('/transitions/:id', (req: Request, res: Response) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 
-function selectRoutingRuleRowSql(): string {
-  // Task #596: agent_id is the canonical FK; job_id is kept for backward compat only
-  return `
-      SELECT trr.*, trr.agent_id as resolved_agent_id,
-             p.name as project_name, a.job_title as job_title, a.name as agent_name
-      FROM task_routing_rules trr
-      LEFT JOIN projects p ON p.id = trr.project_id
-      LEFT JOIN agents a ON a.id = trr.agent_id
-  `;
-}
-
 function selectSprintRoutingRuleRowSql(): string {
   return `
       SELECT trr.*, trr.agent_id as resolved_agent_id,
@@ -851,46 +840,37 @@ function resolveRoutingRuleTarget(
   throw new Error('agent_id is required');
 }
 
-// GET /rules?project_id=X — all routing rules, optionally filtered by project
+// GET /rules?sprint_id=X — all routing rules for a sprint
 router.get('/rules', (req: Request, res: Response) => {
   try {
     const db = getDb();
     const sprintId = parseSprintId(req.query.sprint_id);
-    if (sprintId) {
-      requireSprint(db, sprintId);
-      let query = selectSprintRoutingRuleRowSql();
-      query += ' WHERE trr.sprint_id = ? ORDER BY trr.sprint_id, trr.task_type, trr.status';
-      const rules = db.prepare(query).all(sprintId);
-      return res.json({ rules });
-    }
-    const { project_id } = req.query;
-
-    let query = selectRoutingRuleRowSql();
-    const params: unknown[] = [];
-
-    if (project_id) {
-      query += ' WHERE trr.project_id = ?';
-      params.push(Number(project_id));
+    if (!sprintId) {
+      return res.status(400).json({ error: 'sprint_id is required' });
     }
 
-    query += ' ORDER BY trr.project_id, trr.task_type, trr.status';
-
-    const rules = db.prepare(query).all(...params);
+    requireSprint(db, sprintId);
+    let query = selectSprintRoutingRuleRowSql();
+    query += ' WHERE trr.sprint_id = ? ORDER BY trr.sprint_id, trr.task_type, trr.status';
+    const rules = db.prepare(query).all(sprintId);
     res.json({ rules });
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
 });
 
-// POST /rules — create a new routing rule
+// POST /rules — create a new sprint routing rule
 router.post('/rules', (req: Request, res: Response) => {
   try {
     const db = getDb();
     const sprintId = parseSprintId(req.body?.sprint_id ?? req.query?.sprint_id);
-    const { project_id, task_type, status, job_id, agent_id, priority = 0 } = req.body;
+    const { task_type, status, job_id, agent_id, priority = 0 } = req.body;
 
+    if (!sprintId) {
+      return res.status(400).json({ error: 'sprint_id is required' });
+    }
     if (!task_type || !status || (job_id == null && agent_id == null)) {
-      return res.status(400).json({ error: 'task_type, status, and either job_id or agent_id are required' });
+      return res.status(400).json({ error: 'sprint_id, task_type, status, and either job_id or agent_id are required' });
     }
 
     if (!isValidTaskType(task_type)) {
@@ -898,153 +878,93 @@ router.post('/rules', (req: Request, res: Response) => {
     }
 
     const target = resolveRoutingRuleTarget(db, { job_id, agent_id });
-
-    if (sprintId) {
-      requireSprint(db, sprintId);
-      seedSprintTaskPolicy(db, sprintId);
-      const result = db.prepare(`
-        INSERT INTO sprint_task_routing_rules (sprint_id, task_type, status, agent_id, priority, is_system)
-        VALUES (?, ?, ?, ?, ?, 0)
-      `).run(sprintId, task_type, status, target.agent_id, priority);
-      const rule = db.prepare(`${selectSprintRoutingRuleRowSql()} WHERE trr.id = ?`).get(result.lastInsertRowid);
-      return res.status(201).json(rule);
-    }
-
-    if (!project_id) {
-      return res.status(400).json({ error: 'project_id is required when sprint_id is not provided' });
-    }
-    const project = db.prepare('SELECT id FROM projects WHERE id = ?').get(project_id);
-    if (!project) return res.status(404).json({ error: `Project ${project_id} not found` });
-
+    requireSprint(db, sprintId);
+    seedSprintTaskPolicy(db, sprintId);
     const result = db.prepare(`
-      INSERT INTO task_routing_rules (project_id, task_type, status, agent_id, priority)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(project_id, task_type, status, target.agent_id, priority);
-
-    const rule = db.prepare(`${selectRoutingRuleRowSql()} WHERE trr.id = ?`).get(result.lastInsertRowid);
-
+      INSERT INTO sprint_task_routing_rules (sprint_id, task_type, status, agent_id, priority, is_system)
+      VALUES (?, ?, ?, ?, ?, 0)
+    `).run(sprintId, task_type, status, target.agent_id, priority);
+    const rule = db.prepare(`${selectSprintRoutingRuleRowSql()} WHERE trr.id = ?`).get(result.lastInsertRowid);
     res.status(201).json(rule);
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
 });
 
-// PUT /rules/:id — update a routing rule
+// PUT /rules/:id — update a sprint routing rule
 router.put('/rules/:id', (req: Request, res: Response) => {
   try {
     const db = getDb();
     const id = Number(req.params.id);
     const sprintId = parseSprintId(req.body?.sprint_id ?? req.query?.sprint_id);
-    if (sprintId) {
-      requireSprint(db, sprintId);
-      seedSprintTaskPolicy(db, sprintId);
-      const existing = db.prepare('SELECT * FROM sprint_task_routing_rules WHERE id = ? AND sprint_id = ?').get(id, sprintId) as Record<string, unknown> | undefined;
-      if (!existing) return res.status(404).json({ error: 'Routing rule not found' });
-
-      const { task_type, status, job_id, agent_id, priority } = req.body;
-      if (task_type && !isValidTaskType(task_type)) {
-        return res.status(400).json({ error: `Invalid task_type "${task_type}". Valid: ${VALID_TASK_TYPES.join(', ')}` });
-      }
-      const target = (job_id !== undefined || agent_id !== undefined)
-        ? resolveRoutingRuleTarget(db, { job_id: job_id ?? null, agent_id: agent_id ?? existing.agent_id })
-        : { agent_id: Number(existing.agent_id) };
-      db.prepare(`
-        UPDATE sprint_task_routing_rules
-        SET task_type = ?, status = ?, agent_id = ?, priority = ?, is_system = 0, updated_at = datetime('now')
-        WHERE id = ? AND sprint_id = ?
-      `).run(task_type ?? existing.task_type, status ?? existing.status, target.agent_id, priority ?? existing.priority, id, sprintId);
-      const rule = db.prepare(`${selectSprintRoutingRuleRowSql()} WHERE trr.id = ?`).get(id);
-      return res.json(rule);
+    if (!sprintId) {
+      return res.status(400).json({ error: 'sprint_id is required' });
     }
 
-    const existing = db.prepare('SELECT * FROM task_routing_rules WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+    requireSprint(db, sprintId);
+    seedSprintTaskPolicy(db, sprintId);
+    const existing = db.prepare('SELECT * FROM sprint_task_routing_rules WHERE id = ? AND sprint_id = ?').get(id, sprintId) as Record<string, unknown> | undefined;
     if (!existing) return res.status(404).json({ error: 'Routing rule not found' });
 
-    const { project_id, task_type, status, job_id, agent_id, priority } = req.body;
-
+    const { task_type, status, job_id, agent_id, priority } = req.body;
     if (task_type && !isValidTaskType(task_type)) {
       return res.status(400).json({ error: `Invalid task_type "${task_type}". Valid: ${VALID_TASK_TYPES.join(', ')}` });
     }
-
-    const newProjectId = project_id ?? existing.project_id;
-    const newTaskType = task_type ?? existing.task_type;
-    const newStatus = status ?? existing.status;
     const target = (job_id !== undefined || agent_id !== undefined)
       ? resolveRoutingRuleTarget(db, { job_id: job_id ?? null, agent_id: agent_id ?? existing.agent_id })
       : { agent_id: Number(existing.agent_id) };
-    const newPriority = priority ?? existing.priority;
-
     db.prepare(`
-      UPDATE task_routing_rules
-      SET project_id = ?, task_type = ?, status = ?, agent_id = ?, priority = ?, updated_at = datetime('now')
-      WHERE id = ?
-    `).run(newProjectId, newTaskType, newStatus, target.agent_id, newPriority, id);
-
-    const rule = db.prepare(`${selectRoutingRuleRowSql()} WHERE trr.id = ?`).get(id);
-
+      UPDATE sprint_task_routing_rules
+      SET task_type = ?, status = ?, agent_id = ?, priority = ?, is_system = 0, updated_at = datetime('now')
+      WHERE id = ? AND sprint_id = ?
+    `).run(task_type ?? existing.task_type, status ?? existing.status, target.agent_id, priority ?? existing.priority, id, sprintId);
+    const rule = db.prepare(`${selectSprintRoutingRuleRowSql()} WHERE trr.id = ?`).get(id);
     res.json(rule);
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
 });
 
-// DELETE /rules/:id — remove a routing rule
+// DELETE /rules/:id — remove a sprint routing rule
 router.delete('/rules/:id', (req: Request, res: Response) => {
   try {
     const db = getDb();
     const id = Number(req.params.id);
     const sprintId = parseSprintId(req.body?.sprint_id ?? req.query?.sprint_id);
-    if (sprintId) {
-      requireSprint(db, sprintId);
-      const existing = db.prepare('SELECT id FROM sprint_task_routing_rules WHERE id = ? AND sprint_id = ?').get(id, sprintId);
-      if (!existing) return res.status(404).json({ error: 'Routing rule not found' });
-      db.prepare('DELETE FROM sprint_task_routing_rules WHERE id = ? AND sprint_id = ?').run(id, sprintId);
-      return res.json({ ok: true });
+    if (!sprintId) {
+      return res.status(400).json({ error: 'sprint_id is required' });
     }
-    const existing = db.prepare('SELECT id FROM task_routing_rules WHERE id = ?').get(id);
-    if (!existing) return res.status(404).json({ error: 'Routing rule not found' });
 
-    db.prepare('DELETE FROM task_routing_rules WHERE id = ?').run(id);
+    requireSprint(db, sprintId);
+    const existing = db.prepare('SELECT id FROM sprint_task_routing_rules WHERE id = ? AND sprint_id = ?').get(id, sprintId);
+    if (!existing) return res.status(404).json({ error: 'Routing rule not found' });
+    db.prepare('DELETE FROM sprint_task_routing_rules WHERE id = ? AND sprint_id = ?').run(id, sprintId);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
 });
 
-// GET /rules/resolve — test rule resolution for a given task_type + status + project
+// GET /rules/resolve — test rule resolution for a given task_type + status + sprint
 router.get('/rules/resolve', (req: Request, res: Response) => {
   try {
     const db = getDb();
     const sprintId = parseSprintId(req.query.sprint_id);
-    const { project_id, task_type, status } = req.query;
+    const { task_type, status } = req.query;
 
-    if (!task_type || !status || (!project_id && !sprintId)) {
-      return res.status(400).json({ error: 'task_type, status, and either sprint_id or project_id are required' });
+    if (!task_type || !status || !sprintId) {
+      return res.status(400).json({ error: 'sprint_id, task_type, and status are required' });
     }
 
-    if (sprintId) {
-      requireSprint(db, sprintId);
-      const rule = db.prepare(`
-        ${selectSprintRoutingRuleRowSql()}
-        WHERE trr.sprint_id = ? AND trr.task_type = ? AND trr.status = ?
-        ORDER BY trr.priority DESC
-        LIMIT 1
-      `).get(sprintId, task_type, status);
-      if (!rule) {
-        return res.json({ matched: false, rule: null, reason: `No rule for ${task_type}/${status} in sprint ${sprintId}` });
-      }
-      return res.json({ matched: true, rule });
-    }
-
+    requireSprint(db, sprintId);
     const rule = db.prepare(`
-      ${selectRoutingRuleRowSql()}
-      WHERE trr.project_id = ? AND trr.task_type = ? AND trr.status = ?
+      ${selectSprintRoutingRuleRowSql()}
+      WHERE trr.sprint_id = ? AND trr.task_type = ? AND trr.status = ?
       ORDER BY trr.priority DESC
       LIMIT 1
-    `).get(Number(project_id), task_type, status);
-
+    `).get(sprintId, task_type, status);
     if (!rule) {
-      return res.json({ matched: false, rule: null, reason: `No rule for ${task_type}/${status} in project ${project_id}` });
+      return res.json({ matched: false, rule: null, reason: `No rule for ${task_type}/${status} in sprint ${sprintId}` });
     }
 
     res.json({ matched: true, rule });

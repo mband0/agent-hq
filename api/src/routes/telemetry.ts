@@ -977,13 +977,6 @@ router.get('/routing', (req: Request, res: Response) => {
       sprintRuleParams.push(Number(project_id));
     }
 
-    const legacyRuleFilters: string[] = [];
-    const legacyRuleParams: unknown[] = [];
-    if (!sprint_id && project_id) {
-      legacyRuleFilters.push('trr.project_id = ?');
-      legacyRuleParams.push(Number(project_id));
-    }
-
     const sprintRules = db.prepare(`
       SELECT
         trr.id,
@@ -1005,27 +998,7 @@ router.get('/routing', (req: Request, res: Response) => {
       ORDER BY COALESCE(s.project_id, -1), trr.sprint_id, trr.task_type, trr.priority DESC
     `).all(...sprintRuleParams);
 
-    const legacyRules = sprint_id ? [] : db.prepare(`
-      SELECT
-        trr.id,
-        trr.project_id,
-        p.name AS project_name,
-        NULL AS sprint_id,
-        NULL AS sprint_name,
-        trr.task_type,
-        trr.status AS route_from_status,
-        trr.agent_id,
-        a.name AS agent_name,
-        trr.priority,
-        'project_legacy' AS scope_type
-      FROM task_routing_rules trr
-      LEFT JOIN projects p ON p.id = trr.project_id
-      LEFT JOIN agents a ON a.id = trr.agent_id
-      ${legacyRuleFilters.length > 0 ? `WHERE ${legacyRuleFilters.join(' AND ')}` : ''}
-      ORDER BY trr.project_id, trr.task_type, trr.priority DESC
-    `).all(...legacyRuleParams);
-
-    const rules = [...sprintRules, ...legacyRules];
+    const rules = sprintRules;
 
     res.json({ period: { from: startDate, to: endDate }, routing_reason_summary: routingGroups, by_agent: byAgent3, routing_rules: rules });
   } catch (err) { res.status(500).json({ error: String(err) }); }

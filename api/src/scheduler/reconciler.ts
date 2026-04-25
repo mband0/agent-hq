@@ -208,32 +208,19 @@ function buildQaTaskContext(task: TaskRow): string {
 }
 
 function resolveReviewRoutingRules(db: Database.Database, task: TaskRow): RoutingRuleRow[] {
-  if (!task.task_type) return [];
-  if (task.sprint_id) {
-    try {
-      const sprintRules = db.prepare(`
-        SELECT *
-        FROM sprint_task_routing_rules
-        WHERE sprint_id = ?
-          AND task_type = ?
-          AND status = 'review'
-        ORDER BY priority DESC, id ASC
-      `).all(task.sprint_id, task.task_type) as RoutingRuleRow[];
-      if (sprintRules.length > 0) return sprintRules;
-    } catch {
-      // fall through to legacy project routing
-    }
+  if (!task.task_type || !task.sprint_id) return [];
+  try {
+    return db.prepare(`
+      SELECT *
+      FROM sprint_task_routing_rules
+      WHERE sprint_id = ?
+        AND task_type = ?
+        AND status = 'review'
+      ORDER BY priority DESC, id ASC
+    `).all(task.sprint_id, task.task_type) as RoutingRuleRow[];
+  } catch {
+    return [];
   }
-  if (!task.project_id) return [];
-  // Task #596: include agent_id from the rule directly
-  return db.prepare(`
-    SELECT *
-    FROM task_routing_rules
-    WHERE project_id = ?
-      AND task_type = ?
-      AND status = 'review'
-    ORDER BY priority DESC, id ASC
-  `).all(task.project_id, task.task_type) as RoutingRuleRow[];
 }
 
 function reassignReviewTaskIfNeeded(db: Database.Database, task: TaskRow, rule: RoutingRuleRow): TaskRow {
@@ -282,8 +269,6 @@ function getReconcilerProjectIds(db: Database.Database): number[] {
       SELECT project_id FROM agents WHERE project_id IS NOT NULL
       UNION ALL
       SELECT project_id FROM tasks WHERE project_id IS NOT NULL
-      UNION ALL
-      SELECT project_id FROM task_routing_rules WHERE project_id IS NOT NULL
       UNION ALL
       SELECT project_id FROM routing_config WHERE project_id IS NOT NULL
     )

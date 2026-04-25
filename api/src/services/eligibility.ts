@@ -85,31 +85,14 @@ function minutesSince(isoStr: string | null): number {
 function resolveTaskRoutingTarget(
   db: Database.Database,
   sprintId: number | null,
-  projectId: number | null,
+  _projectId: number | null,
   taskType: string | null,
   status: string,
 ): { agent_id: number | null } {
   if (!taskType) return { agent_id: null };
 
-  const sprintAssignment = resolveSprintTaskRoutingAssignment(db, sprintId, taskType, status);
-  if (sprintAssignment.agent_id != null) {
-    return sprintAssignment;
-  }
-
-  if (projectId == null) return { agent_id: null };
-
   try {
-    const row = db.prepare(`
-      SELECT agent_id
-      FROM task_routing_rules
-      WHERE project_id = ?
-        AND task_type = ?
-        AND status = ?
-      ORDER BY priority DESC, id ASC
-      LIMIT 1
-    `).get(projectId, taskType, status) as { agent_id: number | null } | undefined;
-
-    return row ?? { agent_id: null };
+    return resolveSprintTaskRoutingAssignment(db, sprintId, taskType, status);
   } catch {
     return { agent_id: null };
   }

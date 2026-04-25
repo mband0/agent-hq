@@ -11,7 +11,7 @@ export function isManualUserStatusChange(changedBy: string | null | undefined, p
 export function resolveTaskRoutingRule(
   db: Database.Database,
   sprintId: number | null | undefined,
-  projectId: number | null | undefined,
+  _projectId: number | null | undefined,
   taskType: string | null | undefined,
   status: string | null | undefined,
 ): { agentId: number | null; routingReason: string | null } {
@@ -20,31 +20,13 @@ export function resolveTaskRoutingRule(
   }
 
   const sprintRule = resolveSprintTaskRoutingAssignment(db, sprintId ?? null, taskType, status);
-  if (sprintRule.agent_id != null) {
-    return {
-      agentId: sprintRule.agent_id,
-      routingReason: `Sprint policy: ${taskType}/${status} → agent #${sprintRule.agent_id}`,
-    };
-  }
-
-  if (!projectId) {
-    return { agentId: null, routingReason: null };
-  }
-
-  const rule = db.prepare(`
-    SELECT agent_id FROM task_routing_rules
-    WHERE project_id = ? AND task_type = ? AND status = ?
-    ORDER BY priority DESC
-    LIMIT 1
-  `).get(projectId, taskType, status) as { agent_id: number } | undefined;
-
-  if (!rule) {
+  if (sprintRule.agent_id == null) {
     return { agentId: null, routingReason: null };
   }
 
   return {
-    agentId: rule.agent_id,
-    routingReason: `Deterministic: ${taskType}/${status} → agent #${rule.agent_id}`,
+    agentId: sprintRule.agent_id,
+    routingReason: `Sprint policy: ${taskType}/${status} → agent #${sprintRule.agent_id}`,
   };
 }
 
