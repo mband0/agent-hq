@@ -38,6 +38,7 @@ import providersRouter from './routes/providers';
 import githubIdentitiesRouter from './routes/github-identities';
 import sessionsRouter from './routes/sessions';
 import { shutdownPool as shutdownBrowserPool } from './services/browserPool';
+import { getMcpCatalog } from './mcp/catalog';
 
 const app = express();
 const PORT = process.env.PORT ?? 3501;
@@ -64,6 +65,21 @@ app.get('/health', (_req, res) => {
 });
 
 // API routes
+app.get('/api/v1/mcp/catalog', (_req, res) => {
+  res.json(getMcpCatalog());
+});
+
+app.get('/api/v1/mcp/catalog/health', (_req, res) => {
+  const catalog = getMcpCatalog();
+  res.json({
+    ok: true,
+    server: catalog.server,
+    tool_count: catalog.tools.length,
+    resource_count: catalog.resources.length,
+    domains: catalog.domains,
+  });
+});
+
 app.use('/api/v1/agents', agentsRouter);
 app.use('/api/v1/skills', skillsRouter);
 app.use('/api/v1/logs', logsRouter);

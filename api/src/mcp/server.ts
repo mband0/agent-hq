@@ -24,6 +24,7 @@ import {
   VALID_TASK_TYPES,
 } from './apiClient';
 import { RateLimiter } from './rateLimiter';
+import { getMcpCatalog, registerCatalogTool } from './catalog';
 
 const cfg = loadConfig();
 const api = new AgentHqApiClient(cfg.apiUrl);
@@ -74,10 +75,18 @@ function registerTool(
   description: string,
   schema: Record<string, z.ZodTypeAny>,
   handler: (args: any) => Promise<{ content: Array<{ type: 'text'; text: string }> }>,
+  options?: { domain?: string; rest_paths?: string[] },
 ) {
   for (const name of names) {
     server.tool(name, description, schema, handler);
   }
+  registerCatalogTool({
+    names,
+    description,
+    schema,
+    domain: options?.domain ?? 'general',
+    rest_paths: options?.rest_paths,
+  });
 }
 
 function registerResource(names: Array<{ id: string; uri: string }>, textFactory: () => Promise<string> | string) {
@@ -99,6 +108,7 @@ registerTool(
   'List Agent HQ projects with clean summary fields.',
   {},
   () => wrap(() => api.listProjects())(),
+  { domain: 'projects', rest_paths: ['/api/v1/projects'] },
 );
 
 registerTool(
@@ -106,6 +116,7 @@ registerTool(
   'Get a project by ID, including metrics.',
   { project_id: z.number().int().positive().describe('Project ID') },
   ({ project_id }) => wrap(() => api.getProject(project_id))(),
+  { domain: 'projects', rest_paths: ['/api/v1/projects/:id'] },
 );
 
 registerTool(
@@ -117,6 +128,7 @@ registerTool(
     context_md: z.string().optional().describe('Project context markdown'),
   },
   ({ name, description, context_md }) => wrap(() => api.createProject({ name, description, context_md }))(),
+  { domain: 'projects', rest_paths: ['/api/v1/projects'] },
 );
 
 registerTool(
@@ -129,6 +141,7 @@ registerTool(
     context_md: z.string().optional().describe('Project context markdown'),
   },
   ({ project_id, name, description, context_md }) => wrap(() => api.updateProject(project_id, { name, description, context_md }))(),
+  { domain: 'projects', rest_paths: ['/api/v1/projects/:id'] },
 );
 
 registerTool(
@@ -139,6 +152,7 @@ registerTool(
     force: z.boolean().optional().describe('Force delete even if active work exists'),
   },
   ({ project_id, force }) => wrap(() => api.deleteProject(project_id, force))(),
+  { domain: 'projects', rest_paths: ['/api/v1/projects/:id'] },
 );
 
 registerTool(
@@ -149,6 +163,7 @@ registerTool(
     include_closed: z.boolean().optional().describe('Include closed sprints (default false)'),
   },
   ({ project_id, include_closed }) => wrap(() => api.listSprints({ project_id, include_closed }))(),
+  { domain: 'sprints', rest_paths: ['/api/v1/sprints'] },
 );
 
 registerTool(
@@ -156,6 +171,7 @@ registerTool(
   'Get sprint detail and metrics.',
   { sprint_id: z.number().int().positive().describe('Sprint ID') },
   ({ sprint_id }) => wrap(() => api.getSprint(sprint_id))(),
+  { domain: 'sprints', rest_paths: ['/api/v1/sprints/:id'] },
 );
 
 registerTool(
@@ -175,6 +191,7 @@ registerTool(
     ended_at: z.string().nullable().optional().describe('Sprint end timestamp'),
   },
   ({ sprint_id, ...patch }) => wrap(() => api.updateSprint(sprint_id, patch))(),
+  { domain: 'sprints', rest_paths: ['/api/v1/sprints/:id'] },
 );
 
 registerTool(
@@ -182,6 +199,7 @@ registerTool(
   'Delete a sprint in Agent HQ.',
   { sprint_id: z.number().int().positive().describe('Sprint ID') },
   ({ sprint_id }) => wrap(() => api.deleteSprint(sprint_id))(),
+  { domain: 'sprints', rest_paths: ['/api/v1/sprints/:id'] },
 );
 
 registerTool(
@@ -213,6 +231,7 @@ registerTool(
     deleted_by: z.string().optional().describe('Audit label for the delete operation'),
   },
   ({ task_id, deleted_by }) => wrap(() => api.deleteTask(task_id, deleted_by))(),
+  { domain: 'tasks', rest_paths: ['/api/v1/tasks/:id'] },
 );
 
 registerTool(
@@ -252,6 +271,7 @@ registerTool(
     body: z.unknown().optional().describe('Optional JSON body for POST/PUT requests'),
   },
   ({ method, path, body }) => wrap(() => api.apiRequest(method, path, body))(),
+  { domain: 'advanced', rest_paths: ['/api/v1/*'] },
 );
 
 registerTool(
@@ -729,6 +749,7 @@ registerTool(
   },
   ({ project_id, name, goal, sprint_type, workflow_template_key, status, length_kind, length_value, started_at, dry_run }) =>
     wrap(() => api.createSprint({ project_id, name, goal, sprint_type, workflow_template_key, status, length_kind, length_value, started_at, dry_run }))(),
+  { domain: 'sprints', rest_paths: ['/api/v1/sprints'] },
 );
 
 registerTool(
@@ -736,6 +757,7 @@ registerTool(
   'List task routing rules for a sprint.',
   { sprint_id: z.number().int().positive().describe('Sprint ID') },
   ({ sprint_id }) => wrap(() => api.listRoutingRules(sprint_id))(),
+  { domain: 'routing_rules', rest_paths: ['/api/v1/routing/rules', '/api/v1/routing-rules'] },
 );
 
 registerTool(
@@ -746,6 +768,7 @@ registerTool(
     sprint_id: z.number().int().positive().describe('Sprint ID'),
   },
   ({ rule_id, sprint_id }) => wrap(() => api.getRoutingRule(rule_id, sprint_id))(),
+  { domain: 'routing_rules', rest_paths: ['/api/v1/routing/rules/:id', '/api/v1/routing-rules/:id'] },
 );
 
 registerTool(
@@ -760,6 +783,7 @@ registerTool(
     priority: z.number().int().optional().describe('Rule priority'),
   },
   (args) => wrap(() => api.createRoutingRule(args))(),
+  { domain: 'routing_rules', rest_paths: ['/api/v1/routing/rules', '/api/v1/routing-rules'] },
 );
 
 registerTool(
@@ -775,6 +799,7 @@ registerTool(
     priority: z.number().int().optional().describe('Rule priority'),
   },
   ({ rule_id, ...patch }) => wrap(() => api.updateRoutingRule(rule_id, patch))(),
+  { domain: 'routing_rules', rest_paths: ['/api/v1/routing/rules/:id', '/api/v1/routing-rules/:id'] },
 );
 
 registerTool(
@@ -785,6 +810,7 @@ registerTool(
     sprint_id: z.number().int().positive().describe('Sprint ID'),
   },
   ({ rule_id, sprint_id }) => wrap(() => api.deleteRoutingRule(rule_id, sprint_id))(),
+  { domain: 'routing_rules', rest_paths: ['/api/v1/routing/rules/:id', '/api/v1/routing-rules/:id'] },
 );
 
 registerTool(
@@ -795,6 +821,7 @@ registerTool(
     project_id: z.number().int().positive().optional().describe('Optional project scope'),
   },
   ({ sprint_id, project_id }) => wrap(() => api.listRoutingTransitions({ sprint_id, project_id }))(),
+  { domain: 'routing_transitions', rest_paths: ['/api/v1/routing/transitions'] },
 );
 
 registerTool(
@@ -806,6 +833,7 @@ registerTool(
     project_id: z.number().int().positive().optional().describe('Optional project scope'),
   },
   ({ transition_id, sprint_id, project_id }) => wrap(() => api.getRoutingTransition(transition_id, { sprint_id, project_id }))(),
+  { domain: 'routing_transitions', rest_paths: ['/api/v1/routing/transitions/:id'] },
 );
 
 registerTool(
@@ -824,6 +852,7 @@ registerTool(
     is_protected: z.boolean().optional().describe('Protected flag for sprint-scoped rules'),
   },
   (args) => wrap(() => api.createRoutingTransition(args))(),
+  { domain: 'routing_transitions', rest_paths: ['/api/v1/routing/transitions'] },
 );
 
 registerTool(
@@ -843,6 +872,7 @@ registerTool(
     is_protected: z.boolean().optional().describe('Protected flag for sprint-scoped rules'),
   },
   ({ transition_id, ...patch }) => wrap(() => api.updateRoutingTransition(transition_id, patch))(),
+  { domain: 'routing_transitions', rest_paths: ['/api/v1/routing/transitions/:id'] },
 );
 
 registerTool(
@@ -853,6 +883,7 @@ registerTool(
     sprint_id: z.number().int().positive().optional().describe('Optional sprint scope'),
   },
   ({ transition_id, sprint_id }) => wrap(() => api.deleteRoutingTransition(transition_id, { sprint_id }))(),
+  { domain: 'routing_transitions', rest_paths: ['/api/v1/routing/transitions/:id'] },
 );
 
 registerTool(
@@ -860,6 +891,7 @@ registerTool(
   'List story-point model-routing rules.',
   {},
   () => wrap(() => api.listModelRoutingRules())(),
+  { domain: 'model_routing', rest_paths: ['/api/v1/model-routing', '/api/v1/story-point-routing'] },
 );
 
 registerTool(
@@ -867,6 +899,7 @@ registerTool(
   'Get a story-point model-routing rule by ID.',
   { rule_id: z.number().int().positive().describe('Model-routing rule ID') },
   ({ rule_id }) => wrap(() => api.getModelRoutingRule(rule_id))(),
+  { domain: 'model_routing', rest_paths: ['/api/v1/model-routing/:id', '/api/v1/story-point-routing/:id'] },
 );
 
 registerTool(
@@ -882,6 +915,7 @@ registerTool(
     label: z.string().nullable().optional().describe('Rule label'),
   },
   (args) => wrap(() => api.createModelRoutingRule(args))(),
+  { domain: 'model_routing', rest_paths: ['/api/v1/model-routing', '/api/v1/story-point-routing'] },
 );
 
 registerTool(
@@ -898,6 +932,7 @@ registerTool(
     label: z.string().nullable().optional().describe('Rule label'),
   },
   ({ rule_id, ...patch }) => wrap(() => api.updateModelRoutingRule(rule_id, patch))(),
+  { domain: 'model_routing', rest_paths: ['/api/v1/model-routing/:id', '/api/v1/story-point-routing/:id'] },
 );
 
 registerTool(
@@ -905,6 +940,7 @@ registerTool(
   'Delete a story-point model-routing rule.',
   { rule_id: z.number().int().positive().describe('Model-routing rule ID') },
   ({ rule_id }) => wrap(() => api.deleteModelRoutingRule(rule_id))(),
+  { domain: 'model_routing', rest_paths: ['/api/v1/model-routing/:id', '/api/v1/story-point-routing/:id'] },
 );
 
 registerTool(
@@ -912,6 +948,7 @@ registerTool(
   'List sprint types.',
   {},
   () => wrap(() => api.listSprintTypes())(),
+  { domain: 'task_definitions', rest_paths: ['/api/v1/sprints/types/list', '/api/v1/task-definitions/sprint-types'] },
 );
 
 registerTool(
@@ -919,6 +956,7 @@ registerTool(
   'List allowed task types for a sprint type.',
   { sprint_type_key: z.string().min(1).describe('Sprint type key') },
   ({ sprint_type_key }) => wrap(() => api.listSprintTypeTaskTypes(sprint_type_key))(),
+  { domain: 'task_definitions', rest_paths: ['/api/v1/sprints/types/:key/task-types', '/api/v1/task-definitions/sprint-types/:key/task-types'] },
 );
 
 registerTool(
@@ -929,6 +967,7 @@ registerTool(
     task_types: z.array(z.string().min(1)).describe('Allowed task type keys'),
   },
   ({ sprint_type_key, task_types }) => wrap(() => api.updateSprintTypeTaskTypes(sprint_type_key, task_types))(),
+  { domain: 'task_definitions', rest_paths: ['/api/v1/sprints/types/:key/task-types', '/api/v1/task-definitions/sprint-types/:key/task-types'] },
 );
 
 registerTool(
@@ -940,6 +979,7 @@ registerTool(
     description: z.string().optional().describe('Sprint type description'),
   },
   (args) => wrap(() => api.createSprintType(args))(),
+  { domain: 'task_definitions', rest_paths: ['/api/v1/sprints/types', '/api/v1/task-definitions/sprint-types'] },
 );
 
 registerTool(
@@ -951,6 +991,7 @@ registerTool(
     description: z.string().optional().describe('Sprint type description'),
   },
   ({ key, ...patch }) => wrap(() => api.updateSprintType(key, patch))(),
+  { domain: 'task_definitions', rest_paths: ['/api/v1/sprints/types/:key', '/api/v1/task-definitions/sprint-types/:key'] },
 );
 
 registerTool(
@@ -958,6 +999,7 @@ registerTool(
   'Delete a sprint type.',
   { key: z.string().min(1).describe('Sprint type key') },
   ({ key }) => wrap(() => api.deleteSprintType(key))(),
+  { domain: 'task_definitions', rest_paths: ['/api/v1/sprints/types/:key', '/api/v1/task-definitions/sprint-types/:key'] },
 );
 
 registerTool(
@@ -965,6 +1007,7 @@ registerTool(
   'List workflow templates, optionally filtered by sprint type.',
   { sprint_type: z.string().optional().describe('Optional sprint type key') },
   ({ sprint_type }) => wrap(() => api.listWorkflowTemplates(sprint_type))(),
+  { domain: 'task_definitions', rest_paths: ['/api/v1/sprints/workflow-templates', '/api/v1/workflow-templates'] },
 );
 
 const workflowStatusSchema = z.object({
@@ -995,6 +1038,7 @@ registerTool(
     template_id: z.number().int().positive().describe('Template ID'),
   },
   ({ sprint_type_key, template_id }) => wrap(() => api.getWorkflowTemplate(sprint_type_key, template_id))(),
+  { domain: 'task_definitions', rest_paths: ['/api/v1/sprints/types/:key/workflow-templates/:templateId', '/api/v1/task-definitions/sprint-types/:key/workflow-templates/:templateId'] },
 );
 
 registerTool(
@@ -1010,6 +1054,7 @@ registerTool(
     transitions: z.array(workflowTransitionSchema).min(1).describe('Workflow transitions'),
   },
   ({ sprint_type_key, ...payload }) => wrap(() => api.createWorkflowTemplate(sprint_type_key, payload))(),
+  { domain: 'task_definitions', rest_paths: ['/api/v1/sprints/types/:key/workflow-templates', '/api/v1/task-definitions/sprint-types/:key/workflow-templates'] },
 );
 
 registerTool(
@@ -1026,6 +1071,7 @@ registerTool(
     transitions: z.array(workflowTransitionSchema).optional().describe('Workflow transitions'),
   },
   ({ sprint_type_key, template_id, ...payload }) => wrap(() => api.updateWorkflowTemplate(sprint_type_key, template_id, payload))(),
+  { domain: 'task_definitions', rest_paths: ['/api/v1/sprints/types/:key/workflow-templates/:templateId', '/api/v1/task-definitions/sprint-types/:key/workflow-templates/:templateId'] },
 );
 
 registerTool(
@@ -1036,6 +1082,7 @@ registerTool(
     template_id: z.number().int().positive().describe('Template ID'),
   },
   ({ sprint_type_key, template_id }) => wrap(() => api.deleteWorkflowTemplate(sprint_type_key, template_id))(),
+  { domain: 'task_definitions', rest_paths: ['/api/v1/sprints/types/:key/workflow-templates/:templateId', '/api/v1/task-definitions/sprint-types/:key/workflow-templates/:templateId'] },
 );
 
 registerTool(
@@ -1045,6 +1092,7 @@ registerTool(
     sprint_type_key: z.string().min(1).describe('Sprint type key'),
   },
   ({ sprint_type_key }) => wrap(() => api.listTaskFieldSchemas(sprint_type_key))(),
+  { domain: 'task_definitions', rest_paths: ['/api/v1/sprints/types/:key/field-schemas', '/api/v1/task-definitions/sprint-types/:key/field-schemas'] },
 );
 
 registerTool(
@@ -1055,6 +1103,7 @@ registerTool(
     schema_id: z.number().int().positive().describe('Schema ID'),
   },
   ({ sprint_type_key, schema_id }) => wrap(() => api.getTaskFieldSchema(sprint_type_key, schema_id))(),
+  { domain: 'task_definitions', rest_paths: ['/api/v1/sprints/types/:key/field-schemas/:schemaId', '/api/v1/task-definitions/sprint-types/:key/field-schemas/:schemaId'] },
 );
 
 registerTool(
@@ -1066,6 +1115,7 @@ registerTool(
     schema: z.record(z.string(), z.unknown()).describe('Field schema payload'),
   },
   ({ sprint_type_key, ...payload }) => wrap(() => api.createTaskFieldSchema(sprint_type_key, payload))(),
+  { domain: 'task_definitions', rest_paths: ['/api/v1/sprints/types/:key/field-schemas', '/api/v1/task-definitions/sprint-types/:key/field-schemas'] },
 );
 
 registerTool(
@@ -1078,6 +1128,7 @@ registerTool(
     schema: z.record(z.string(), z.unknown()).optional().describe('Field schema payload'),
   },
   ({ sprint_type_key, schema_id, ...payload }) => wrap(() => api.updateTaskFieldSchema(sprint_type_key, schema_id, payload))(),
+  { domain: 'task_definitions', rest_paths: ['/api/v1/sprints/types/:key/field-schemas/:schemaId', '/api/v1/task-definitions/sprint-types/:key/field-schemas/:schemaId'] },
 );
 
 registerTool(
@@ -1088,6 +1139,7 @@ registerTool(
     schema_id: z.number().int().positive().describe('Schema ID'),
   },
   ({ sprint_type_key, schema_id }) => wrap(() => api.deleteTaskFieldSchema(sprint_type_key, schema_id))(),
+  { domain: 'task_definitions', rest_paths: ['/api/v1/sprints/types/:key/field-schemas/:schemaId', '/api/v1/task-definitions/sprint-types/:key/field-schemas/:schemaId'] },
 );
 
 registerTool(
@@ -1095,6 +1147,7 @@ registerTool(
   'List skill assignments for an agent as a first-class relation.',
   { agent_id: z.number().int().positive().describe('Agent ID') },
   ({ agent_id }) => wrap(() => api.listAgentSkills(agent_id))(),
+  { domain: 'skills', rest_paths: ['/api/v1/agents/:id/skills'] },
 );
 
 registerTool(
@@ -1106,6 +1159,7 @@ registerTool(
     skill_name: z.string().min(1).optional().describe('Skill name'),
   },
   ({ agent_id, skill_id, skill_name }) => wrap(() => api.assignSkillToAgent(agent_id, { skill_id, skill_name }))(),
+  { domain: 'skills', rest_paths: ['/api/v1/agents/:id/skills'] },
 );
 
 registerTool(
@@ -1117,6 +1171,7 @@ registerTool(
     skill_name: z.string().min(1).optional().describe('Skill name'),
   },
   ({ agent_id, skill_id, skill_name }) => wrap(() => api.removeSkillFromAgent(agent_id, skill_name ? skill_name : { skill_id }))(),
+  { domain: 'skills', rest_paths: ['/api/v1/agents/:id/skills/:skillIdentifier'] },
 );
 
 registerResource(
@@ -1161,6 +1216,14 @@ registerResource(
     }
     return JSON.stringify({ projects });
   },
+);
+
+registerResource(
+  [
+    { id: 'agent-hq-catalog', uri: 'agent-hq://catalog' },
+    { id: 'atlas-catalog', uri: 'atlas://catalog' },
+  ],
+  () => JSON.stringify(getMcpCatalog()),
 );
 
 async function main() {
