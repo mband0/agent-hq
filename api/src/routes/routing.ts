@@ -911,6 +911,38 @@ router.get('/rules', (req: Request, res: Response) => {
   }
 });
 
+// GET /rules/:id — fetch a single sprint routing rule
+router.get('/rules/:id', (req: Request, res: Response) => {
+  try {
+    const db = getDb();
+    const id = Number(req.params.id);
+    const sprintId = parseSprintId(req.query.sprint_id);
+
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ error: 'Valid routing rule id is required' });
+    }
+
+    let query = `${selectSprintRoutingRuleRowSql()} WHERE trr.id = ?`;
+    const params: Array<number> = [id];
+    if (sprintId) {
+      requireSprint(db, sprintId);
+      query += ' AND trr.sprint_id = ?';
+      params.push(sprintId);
+    }
+
+    const rule = db.prepare(query).get(...params);
+    if (!rule) {
+      return res.status(404).json({ error: 'Routing rule not found' });
+    }
+
+    return res.json(rule);
+  } catch (err) {
+    const status = typeof (err as { status?: unknown })?.status === 'number' ? Number((err as { status?: number }).status) : 500;
+    const message = err instanceof Error ? err.message : String(err);
+    return res.status(status).json({ error: message });
+  }
+});
+
 // POST /rules — create a new sprint routing rule
 router.post('/rules', (req: Request, res: Response) => {
   try {
