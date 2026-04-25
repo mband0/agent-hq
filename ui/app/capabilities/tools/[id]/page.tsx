@@ -161,12 +161,12 @@ export default function ToolDetailPage() {
         {!isNew && (
           deleteConfirm ? (
             <div className="flex items-center gap-2">
-              <span className="text-sm text-red-400">Delete?</span>
+              <span className="text-sm text-red-400">Disable?</span>
               <Button variant="danger" size="sm" onClick={handleDelete} loading={deleting}>Yes</Button>
               <Button variant="ghost" size="sm" onClick={() => setDeleteConfirm(false)}>Cancel</Button>
             </div>
           ) : (
-            <Button variant="ghost" size="sm" onClick={() => setDeleteConfirm(true)} className="text-red-400 hover:text-red-300">
+            <Button variant="ghost" size="sm" onClick={() => setDeleteConfirm(true)} className="text-red-400 hover:text-red-300" title="Disable tool">
               <Trash2 className="w-4 h-4" />
             </Button>
           )
