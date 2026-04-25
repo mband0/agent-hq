@@ -11,6 +11,7 @@
  */
 
 import Database from 'better-sqlite3';
+import { execFileSync, type ExecFileSyncOptions } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
@@ -39,6 +40,36 @@ const GH_TOKEN_FILE = '.atlas-gh-token';
 
 /** File written to workspace root containing git identity env vars. */
 const GH_IDENTITY_FILE = '.atlas-gh-identity.env';
+
+function gitExec(args: string[], cwd: string): string {
+  const opts: ExecFileSyncOptions = {
+    cwd,
+    encoding: 'utf-8',
+    timeout: 10_000,
+    stdio: ['pipe', 'pipe', 'pipe'],
+  };
+  return execFileSync('git', args, opts) as unknown as string;
+}
+
+function configureWorktreeGitIdentity(workingDirectory: string, identity: GitHubIdentity): boolean {
+  try {
+    const insideWorktree = gitExec(['rev-parse', '--is-inside-work-tree'], workingDirectory).trim();
+    if (insideWorktree !== 'true') return false;
+
+    gitExec(['config', '--local', 'user.name', identity.git_author_name], workingDirectory);
+    gitExec(['config', '--local', 'user.email', identity.git_author_email], workingDirectory);
+    return true;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes('not a git repository')) return false;
+
+    console.warn(
+      `[githubIdentity] Failed to configure git author for ${identity.github_username} in ${workingDirectory}:`,
+      message,
+    );
+    return false;
+  }
+}
 
 // ── Resolution ───────────────────────────────────────────────────────────────
 
@@ -106,6 +137,7 @@ export function resolveGitHubIdentity(
  * Files written:
  *   .atlas-gh-token        — plaintext PAT (mode 0600)
  *   .atlas-gh-identity.env — shell-sourceable env vars for git + gh CLI
+ *   .git/config            — worktree-local user.name and user.email when cwd is a git worktree
  *
  * The agent's dispatch instructions tell them to:
  *   export GH_TOKEN=$(cat .atlas-gh-token)
@@ -137,10 +169,12 @@ export function injectGitHubCredentials(
       ``,
     ].join('\n');
     fs.writeFileSync(envPath, envContent, { mode: 0o600 });
+    const gitConfigured = configureWorktreeGitIdentity(workingDirectory, identity);
 
     console.log(
       `[githubIdentity] Injected credentials for ${identity.github_username}` +
-      ` (lane: ${identity.lane}) into ${workingDirectory}`
+      ` (lane: ${identity.lane}) into ${workingDirectory}` +
+      `${gitConfigured ? ' and configured worktree git author' : ''}`
     );
     return true;
   } catch (err) {
@@ -201,11 +235,13 @@ export function buildGitHubIdentityContext(
     `- **Lane:** ${identity.lane}`,
     ``,
     `### Credential setup`,
-    `Before running any \`gh\` or \`git push\` commands, source your GitHub credentials:`,
+    `Atlas HQ has already configured this worktree's local git author as ${identity.git_author_name} <${identity.git_author_email}>.`,
+    `Before running any \`git commit\`, \`git merge\`, \`git cherry-pick\`, \`gh\`, or \`git push\` commands, source your GitHub credentials:`,
     '```bash',
     `source "${path.join(workingDirectory, GH_IDENTITY_FILE)}"`,
     '```',
     `This sets GH_TOKEN, GITHUB_TOKEN, GIT_AUTHOR_NAME, GIT_AUTHOR_EMAIL, GIT_COMMITTER_NAME, and GIT_COMMITTER_EMAIL.`,
+    `Before creating commits, verify identity with \`git config user.name\`, \`git config user.email\`, \`git var GIT_AUTHOR_IDENT\`, and \`git var GIT_COMMITTER_IDENT\`.`,
     ``,
     `Alternatively, read the token directly:`,
     '```bash',
