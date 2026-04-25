@@ -100,6 +100,26 @@ interface WorkflowTemplateInput {
   transitions?: unknown;
 }
 
+interface WorkflowTemplateStatusInput {
+  status_key?: unknown;
+  label?: unknown;
+  color?: unknown;
+  stage_order?: unknown;
+  terminal?: unknown;
+  is_default_entry?: unknown;
+  metadata?: unknown;
+}
+
+interface WorkflowTemplateTransitionInput {
+  from_status_key?: unknown;
+  to_status_key?: unknown;
+  transition_key?: unknown;
+  label?: unknown;
+  outcome?: unknown;
+  stage_order?: unknown;
+  metadata?: unknown;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /** Parse a length_value like "2w", "3d", "4h", "30m" to milliseconds. Returns null if unparseable. */
@@ -366,17 +386,86 @@ function buildWorkflowConfigSnapshot(db: ReturnType<typeof getDb>) {
   };
 }
 
+function deriveWorkflowTemplateKey(name: string): string {
+  const candidate = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  if (!candidate) throw new Error('key is required');
+  return normalizeConfigKey(candidate, 'key');
+}
+
+function normalizeWorkflowStatusInput(status: WorkflowTemplateStatusInput, index: number) {
+  const rawStatusKey = status.status_key ?? status.label;
+  const statusKey = normalizeConfigKey(rawStatusKey, `statuses[${index}].status_key`);
+  return {
+    status_key: statusKey,
+    label: normalizeOptionalText(status.label) || statusKey,
+    color: normalizeOptionalText(status.color) || 'slate',
+    stage_order: Number.isFinite(Number(status.stage_order)) ? Number(status.stage_order) : index,
+    terminal: normalizeBooleanInt(status.terminal),
+    is_default_entry: normalizeBooleanInt(status.is_default_entry),
+    metadata: parseMetadataObject(status.metadata, `statuses[${index}].metadata`),
+  };
+}
+
+function normalizeShorthandWorkflowTemplateInput(template: WorkflowTemplateInput): WorkflowTemplateInput {
+  const statuses = Array.isArray(template.statuses)
+    ? template.statuses.map((status, index) => {
+        if (typeof status === 'string') {
+          return {
+            status_key: status,
+            label: status,
+            stage_order: index,
+            is_default_entry: index === 0 ? 1 : 0,
+          };
+        }
+        if (!status || typeof status !== 'object' || Array.isArray(status)) return status;
+        const row = status as WorkflowTemplateStatusInput;
+        return {
+          ...row,
+          status_key: row.status_key ?? row.label,
+          is_default_entry: row.is_default_entry ?? (index === 0 ? 1 : 0),
+          stage_order: row.stage_order ?? index,
+        };
+      })
+    : template.statuses;
+
+  const normalizedStatuses = Array.isArray(statuses)
+    ? statuses.map((status, index) => normalizeWorkflowStatusInput(status as WorkflowTemplateStatusInput, index))
+    : [];
+
+  const transitions = Array.isArray(template.transitions) && template.transitions.length > 0
+    ? template.transitions
+    : normalizedStatuses.slice(0, -1).map((status, index) => ({
+        from_status_key: status.status_key,
+        to_status_key: normalizedStatuses[index + 1].status_key,
+        transition_key: `${status.status_key}-to-${normalizedStatuses[index + 1].status_key}`,
+        label: `${status.label} to ${normalizedStatuses[index + 1].label}`,
+        stage_order: index,
+      }));
+
+  return {
+    ...template,
+    key: template.key ?? (typeof template.name === 'string' ? deriveWorkflowTemplateKey(template.name) : template.key),
+    statuses,
+    transitions,
+  };
+}
+
 function validateWorkflowTemplatePayload(template: WorkflowTemplateInput) {
-  const key = normalizeConfigKey(template.key, 'key');
-  const name = normalizeOptionalText(template.name);
+  const normalizedTemplate = normalizeShorthandWorkflowTemplateInput(template);
+  const key = normalizeConfigKey(normalizedTemplate.key, 'key');
+  const name = normalizeOptionalText(normalizedTemplate.name);
   if (!name) throw new Error('name is required');
-  const description = normalizeOptionalText(template.description);
-  const isDefault = normalizeBooleanInt(template.is_default);
-  if (!Array.isArray(template.statuses) || template.statuses.length === 0) {
+  const description = normalizeOptionalText(normalizedTemplate.description);
+  const isDefault = normalizeBooleanInt(normalizedTemplate.is_default);
+  if (!Array.isArray(normalizedTemplate.statuses) || normalizedTemplate.statuses.length === 0) {
     throw new Error('statuses must include at least one status');
   }
 
-  const statuses = template.statuses.map((status, index) => {
+  const statuses = normalizedTemplate.statuses.map((status, index) => {
     if (!status || typeof status !== 'object' || Array.isArray(status)) {
       throw new Error(`statuses[${index}] must be an object`);
     }
@@ -401,7 +490,7 @@ function validateWorkflowTemplatePayload(template: WorkflowTemplateInput) {
     statusKeys.add(status.status_key);
   }
 
-  const transitions = Array.isArray(template.transitions) ? template.transitions.map((transition, index) => {
+  const transitions = Array.isArray(normalizedTemplate.transitions) ? normalizedTemplate.transitions.map((transition, index) => {
     if (!transition || typeof transition !== 'object' || Array.isArray(transition)) {
       throw new Error(`transitions[${index}] must be an object`);
     }
@@ -1135,6 +1224,19 @@ router.delete('/types/:key/field-schemas/:schemaId', (req: Request, res: Respons
 });
 
 // ── Workflow template CRUD ───────────────────────────────────────────────────
+
+router.get('/types/:key/workflow-templates', (req: Request, res: Response) => {
+  try {
+    const db = getDb();
+    const sprintTypeKey = resolveSprintTypeOrNull(req.params.key);
+    if (!sprintTypeKey) return res.status(400).json({ error: 'Sprint type key is required' });
+    if (!getSprintTypeOr404(db, sprintTypeKey)) return res.status(404).json({ error: 'Sprint type not found' });
+
+    return res.json({ templates: getWorkflowTemplatesDetailed(db, sprintTypeKey) });
+  } catch (err) {
+    return res.status(500).json({ error: String(err) });
+  }
+});
 
 router.post('/types/:key/workflow-templates', (req: Request, res: Response) => {
   try {

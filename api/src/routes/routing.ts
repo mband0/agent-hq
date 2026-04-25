@@ -976,26 +976,30 @@ router.post('/rules', (req: Request, res: Response) => {
   try {
     const db = getDb();
     const sprintId = parseSprintId(req.body?.sprint_id ?? req.query?.sprint_id);
-    const { task_type, status, job_id, agent_id, priority = 0 } = req.body;
+    const taskType = req.body?.task_type;
+    const status = req.body?.status ?? req.body?.task_status;
+    const jobId = req.body?.job_id;
+    const agentId = req.body?.agent_id;
+    const priority = req.body?.priority ?? 0;
 
     if (!sprintId) {
       return res.status(400).json({ error: 'sprint_id is required' });
     }
-    if (!task_type || !status || (job_id == null && agent_id == null)) {
+    if (!taskType || !status || (jobId == null && agentId == null)) {
       return res.status(400).json({ error: 'sprint_id, task_type, status, and either job_id or agent_id are required' });
     }
 
-    if (!isValidTaskType(task_type)) {
-      return res.status(400).json({ error: `Invalid task_type "${task_type}". Valid: ${VALID_TASK_TYPES.join(', ')}` });
+    if (!isValidTaskType(taskType)) {
+      return res.status(400).json({ error: `Invalid task_type "${taskType}". Valid: ${VALID_TASK_TYPES.join(', ')}` });
     }
 
-    const target = resolveRoutingRuleTarget(db, { job_id, agent_id });
+    const target = resolveRoutingRuleTarget(db, { job_id: jobId, agent_id: agentId });
     requireSprint(db, sprintId);
     seedSprintTaskPolicy(db, sprintId);
     const result = db.prepare(`
       INSERT INTO sprint_task_routing_rules (sprint_id, task_type, status, agent_id, priority, is_system)
       VALUES (?, ?, ?, ?, ?, 0)
-    `).run(sprintId, task_type, status, target.agent_id, priority);
+    `).run(sprintId, taskType, status, target.agent_id, priority);
     const rule = db.prepare(`${selectSprintRoutingRuleRowSql()} WHERE trr.id = ?`).get(result.lastInsertRowid);
     res.status(201).json(rule);
   } catch (err) {

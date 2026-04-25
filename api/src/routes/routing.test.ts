@@ -160,6 +160,25 @@ describe('routing rules API', () => {
     }
   });
 
+  it('accepts canonical task_status alias when creating a routing rule', async () => {
+    const { server, baseUrl } = await startTestServer();
+    try {
+      const response = await fetch(`${baseUrl}/api/v1/routing/rules`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sprint_id: 10, task_type: 'backend', task_status: 'ready', agent_id: 7, priority: 5 }),
+      });
+
+      const body = await response.json();
+      if (response.status !== 201) {
+        throw new Error(`Expected 201, received ${response.status}: ${JSON.stringify(body)}`);
+      }
+      expect(body).toEqual(expect.objectContaining({ sprint_id: 10, agent_id: 7, task_type: 'backend', status: 'ready' }));
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
   it('creates, reads, and resolves sprint-scoped routing rules only', async () => {
     const { server, baseUrl } = await startTestServer();
     try {
