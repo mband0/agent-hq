@@ -4,6 +4,12 @@ import { useState, useEffect, useMemo } from 'react';
 import { api, RoutingTransition, TaskStatusMeta } from '@/lib/api';
 import { normalizeTaskStatuses, TaskStatusDefinition, getTaskBoardColumns, getDefaultVisibleTaskColumns } from '@/lib/taskStatuses';
 
+export function buildAllowedTransitionsMap(statuses: TaskStatusMeta[]): Record<string, string[]> {
+  return Object.fromEntries(
+    statuses.map((status) => [status.name, Array.isArray(status.allowed_transitions) ? status.allowed_transitions : []])
+  );
+}
+
 export interface TaskStatusesState {
   statuses: TaskStatusMeta[];
   definitions: TaskStatusDefinition[];
@@ -19,28 +25,6 @@ const CACHE_TTL_MS = 60_000; // 1 min
 interface CacheEntry {
   statuses: TaskStatusMeta[];
   fetchedAt: number;
-}
-
-function buildAllowedTransitionsMap(statuses: TaskStatusMeta[], transitions: RoutingTransition[]): Record<string, string[]> {
-  const fromTransitions = new Map<string, Set<string>>();
-  for (const transition of transitions) {
-    if (transition.enabled !== 1) continue;
-    const fromStatus = String(transition.from_status ?? '').trim();
-    const toStatus = String(transition.to_status ?? '').trim();
-    if (!fromStatus || !toStatus) continue;
-    if (!fromTransitions.has(fromStatus)) fromTransitions.set(fromStatus, new Set());
-    fromTransitions.get(fromStatus)?.add(toStatus);
-  }
-
-  if (fromTransitions.size > 0) {
-    return Object.fromEntries(
-      Array.from(fromTransitions.entries()).map(([status, targets]) => [status, Array.from(targets)])
-    );
-  }
-
-  return Object.fromEntries(
-    statuses.map((status) => [status.name, Array.isArray(status.allowed_transitions) ? status.allowed_transitions : []])
-  );
 }
 
 function readCache(): TaskStatusMeta[] | null {
@@ -81,13 +65,10 @@ export function useTaskStatuses(sprintId?: number | null): TaskStatusesState {
 
       if (sprintId) {
         try {
-          const [{ statuses: fetchedStatuses }, { transitions }] = await Promise.all([
-            api.getRoutingStatuses(sprintId),
-            api.getRoutingTransitions(undefined, sprintId),
-          ]);
+          const { statuses: fetchedStatuses } = await api.getRoutingStatuses(sprintId);
           if (cancelled) return;
           setStatuses(fetchedStatuses);
-          setAllowedTransitionsMap(buildAllowedTransitionsMap(fetchedStatuses, transitions));
+          setAllowedTransitionsMap(buildAllowedTransitionsMap(fetchedStatuses));
         } catch {
           if (!cancelled) {
             setStatuses([]);
@@ -105,17 +86,14 @@ export function useTaskStatuses(sprintId?: number | null): TaskStatusesState {
       }
 
       try {
-        const [statusResponse, transitionResponse] = await Promise.all([
-          cached ? Promise.resolve({ statuses: cached }) : api.getRoutingStatuses(),
-          api.getRoutingTransitions(),
-        ]);
+        const statusResponse = await (cached ? Promise.resolve({ statuses: cached }) : api.getRoutingStatuses());
         if (cancelled) return;
         setStatuses(statusResponse.statuses);
-        setAllowedTransitionsMap(buildAllowedTransitionsMap(statusResponse.statuses, transitionResponse.transitions));
+        setAllowedTransitionsMap(buildAllowedTransitionsMap(statusResponse.statuses));
         if (!cached) writeCache(statusResponse.statuses);
       } catch {
         if (!cancelled) {
-          setAllowedTransitionsMap(buildAllowedTransitionsMap(cached ?? [], []));
+          setAllowedTransitionsMap(buildAllowedTransitionsMap(cached ?? []));
         }
       } finally {
         if (!cancelled) setLoading(false);
