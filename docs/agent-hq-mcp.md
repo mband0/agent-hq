@@ -132,6 +132,7 @@ Legacy `atlas_*` aliases may still exist for backward compatibility, but new doc
 | `agent_hq_create_task_field_schema` | Create a task field schema |
 | `agent_hq_update_task_field_schema` | Update a task field schema |
 | `agent_hq_delete_task_field_schema` | Delete a task field schema |
+| `agent_hq_list_agent_skills` | List skill assignments for an agent |
 | `agent_hq_assign_skill_to_agent` | Assign a skill to an agent |
 | `agent_hq_remove_skill_from_agent` | Remove a skill from an agent |
 
@@ -187,6 +188,16 @@ Tool: `agent_hq_move_task`
 - `agent_hq_add_task_note` adds a note/comment to a task
 - `agent_hq_add_blocker` creates a blocker relationship
 - `agent_hq_remove_blocker` removes a blocker relationship
+
+### Canonical routing and schema endpoints behind the MCP tools
+
+These typed MCP tools map to explicit, self-describing API surfaces so clients do not need to guess hidden paths:
+- sprint task routing rules: `/api/v1/routing/rules`
+- canonical workflow routing transitions: `/api/v1/routing/transitions`
+- canonical story-point model routing: `/api/v1/model-routing`
+- compatibility aliases for canonical model routing: `/api/v1/routing/model-routing`, `/api/v1/routing/story-point-routing`
+- task field schema surfaces: `/api/v1/sprints/types/:key/field-schemas`
+- top-level schema aliases for external clients: `/api/v1/task-field-schemas`, `/api/v1/task-field-definitions`
 
 ---
 

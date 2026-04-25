@@ -158,6 +158,112 @@ app.put('/api/v1/task-definitions/sprint-types/:key/field-schemas/:schemaId', (r
 app.delete('/api/v1/task-definitions/sprint-types/:key/field-schemas/:schemaId', (req, res) => {
   res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(req.params.key)}/field-schemas/${encodeURIComponent(req.params.schemaId)}`);
 });
+app.get('/api/v1/task-field-schemas', (req, res) => {
+  const sprintTypeKey = typeof req.query.sprint_type_key === 'string'
+    ? req.query.sprint_type_key
+    : typeof req.query.sprint_type === 'string'
+      ? req.query.sprint_type
+      : '';
+  if (!sprintTypeKey.trim()) {
+    return res.status(400).json({
+      error: 'sprint_type_key is required',
+      supported_query_params: ['sprint_type_key', 'sprint_type'],
+      canonical_path_template: '/api/v1/sprints/types/:key/field-schemas',
+    });
+  }
+  res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(sprintTypeKey)}/field-schemas`);
+});
+app.post('/api/v1/task-field-schemas', (req, res) => {
+  const sprintTypeKey = typeof req.body?.sprint_type_key === 'string'
+    ? req.body.sprint_type_key
+    : typeof req.body?.sprint_type === 'string'
+      ? req.body.sprint_type
+      : '';
+  if (!sprintTypeKey.trim()) {
+    return res.status(400).json({
+      error: 'sprint_type_key is required',
+      supported_body_fields: ['sprint_type_key', 'sprint_type', 'task_type', 'schema'],
+      canonical_path_template: '/api/v1/sprints/types/:key/field-schemas',
+    });
+  }
+  req.url = `/types/${encodeURIComponent(sprintTypeKey)}/field-schemas`;
+  sprintsRouter(req, res, () => undefined);
+});
+app.get('/api/v1/task-field-schemas/:schemaId', (req, res) => {
+  const sprintTypeKey = typeof req.query.sprint_type_key === 'string'
+    ? req.query.sprint_type_key
+    : typeof req.query.sprint_type === 'string'
+      ? req.query.sprint_type
+      : '';
+  if (!sprintTypeKey.trim()) {
+    return res.status(400).json({
+      error: 'sprint_type_key is required',
+      supported_query_params: ['sprint_type_key', 'sprint_type'],
+      canonical_path_template: '/api/v1/sprints/types/:key/field-schemas/:schemaId',
+    });
+  }
+  res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(sprintTypeKey)}/field-schemas/${encodeURIComponent(req.params.schemaId)}`);
+});
+app.put('/api/v1/task-field-schemas/:schemaId', (req, res) => {
+  const sprintTypeKey = typeof req.body?.sprint_type_key === 'string'
+    ? req.body.sprint_type_key
+    : typeof req.body?.sprint_type === 'string'
+      ? req.body.sprint_type
+      : typeof req.query.sprint_type_key === 'string'
+        ? req.query.sprint_type_key
+        : typeof req.query.sprint_type === 'string'
+          ? req.query.sprint_type
+          : '';
+  if (!sprintTypeKey.trim()) {
+    return res.status(400).json({
+      error: 'sprint_type_key is required',
+      supported_fields: ['sprint_type_key', 'sprint_type', 'task_type', 'schema'],
+      canonical_path_template: '/api/v1/sprints/types/:key/field-schemas/:schemaId',
+    });
+  }
+  req.url = `/types/${encodeURIComponent(sprintTypeKey)}/field-schemas/${encodeURIComponent(req.params.schemaId)}`;
+  sprintsRouter(req, res, () => undefined);
+});
+app.delete('/api/v1/task-field-schemas/:schemaId', (req, res) => {
+  const sprintTypeKey = typeof req.body?.sprint_type_key === 'string'
+    ? req.body.sprint_type_key
+    : typeof req.body?.sprint_type === 'string'
+      ? req.body.sprint_type
+      : typeof req.query.sprint_type_key === 'string'
+        ? req.query.sprint_type_key
+        : typeof req.query.sprint_type === 'string'
+          ? req.query.sprint_type
+          : '';
+  if (!sprintTypeKey.trim()) {
+    return res.status(400).json({
+      error: 'sprint_type_key is required',
+      supported_fields: ['sprint_type_key', 'sprint_type'],
+      canonical_path_template: '/api/v1/sprints/types/:key/field-schemas/:schemaId',
+    });
+  }
+  req.url = `/types/${encodeURIComponent(sprintTypeKey)}/field-schemas/${encodeURIComponent(req.params.schemaId)}`;
+  sprintsRouter(req, res, () => undefined);
+});
+app.get('/api/v1/task-field-definitions', (req, res) => {
+  const query = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+  res.redirect(307, `/api/v1/task-field-schemas${query}`);
+});
+app.post('/api/v1/task-field-definitions', (req, res) => {
+  req.url = `/task-field-schemas`;
+  app._router.handle(req, res, () => undefined);
+});
+app.get('/api/v1/task-field-definitions/:schemaId', (req, res) => {
+  const query = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+  res.redirect(307, `/api/v1/task-field-schemas/${encodeURIComponent(req.params.schemaId)}${query}`);
+});
+app.put('/api/v1/task-field-definitions/:schemaId', (req, res) => {
+  req.url = `/task-field-schemas/${encodeURIComponent(req.params.schemaId)}`;
+  app._router.handle(req, res, () => undefined);
+});
+app.delete('/api/v1/task-field-definitions/:schemaId', (req, res) => {
+  req.url = `/task-field-schemas/${encodeURIComponent(req.params.schemaId)}`;
+  app._router.handle(req, res, () => undefined);
+});
 app.get('/api/v1/task-definitions/sprint-types/:key/workflow-templates', (req, res) => {
   res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(req.params.key)}/workflow`);
 });
@@ -198,6 +304,8 @@ app.use('/api/v1/telemetry', telemetryRouter);
 app.use('/api/v1/routing', routingRouter);
 app.use('/api/v1/dispatch', dispatchRouter);
 app.use('/api/v1/model-routing', modelRoutingRouter);
+app.use('/api/v1/routing/model-routing', modelRoutingRouter);
+app.use('/api/v1/routing/story-point-routing', modelRoutingRouter);
 app.use('/api/v1/browser', browserRouter);
 app.use('/api/v1/setup', setupRouter);
 app.use('/api/v1/settings', settingsRouter);
