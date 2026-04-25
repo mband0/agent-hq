@@ -2,7 +2,10 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { closeDb, getDb } from '../db/client';
-import { materializeAgentMcpConfig } from './mcpMaterialization';
+import {
+  ensureOpenClawMcpWorkspaceBundleEnabled,
+  materializeAgentMcpConfig,
+} from './mcpMaterialization';
 
 function resetDb(): void {
   closeDb();
@@ -72,6 +75,7 @@ describe('materializeAgentMcpConfig', () => {
     expect(result.ok).toBe(true);
     expect(result.count).toBe(0);
     expect(fs.existsSync(path.join(workingDirectory, '.mcp.json'))).toBe(false);
+    expect(fs.existsSync(path.join(workingDirectory, '.openclaw', 'extensions', 'agent-hq-mcp', '.mcp.json'))).toBe(false);
   });
 
   it('still materializes explicitly assigned MCP servers without adding agent-local-tool-mcp', () => {
@@ -83,9 +87,34 @@ describe('materializeAgentMcpConfig', () => {
 
     const result = materializeAgentMcpConfig({ db: getDb(), agentId: 1, workingDirectory });
     const config = JSON.parse(fs.readFileSync(path.join(workingDirectory, '.mcp.json'), 'utf8'));
+    const bundleConfig = JSON.parse(fs.readFileSync(path.join(workingDirectory, '.openclaw', 'extensions', 'agent-hq-mcp', '.mcp.json'), 'utf8'));
 
     expect(result.ok).toBe(true);
     expect(config.mcpServers['agent-hq']).toMatchObject({ command: 'node', args: ['server.js'] });
+    expect(bundleConfig.mcpServers['agent-hq']).toMatchObject({ command: 'node', args: ['server.js'] });
     expect(config.mcpServers['agent-local-tool-mcp']).toBeUndefined();
+    expect(bundleConfig.mcpServers['agent-local-tool-mcp']).toBeUndefined();
+  });
+
+  it('enables the OpenClaw workspace MCP bundle plugin idempotently', () => {
+    const configPath = path.join(makeTempDir('agent-hq-openclaw-config-'), 'openclaw.json');
+    fs.writeFileSync(configPath, JSON.stringify({
+      plugins: {
+        entries: {
+          existing: { enabled: true },
+        },
+      },
+    }), 'utf8');
+
+    const first = ensureOpenClawMcpWorkspaceBundleEnabled(configPath);
+    const second = ensureOpenClawMcpWorkspaceBundleEnabled(configPath);
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+
+    expect(first.ok).toBe(true);
+    expect(first.changed).toBe(true);
+    expect(second.ok).toBe(true);
+    expect(second.changed).toBe(false);
+    expect(config.plugins.entries.existing.enabled).toBe(true);
+    expect(config.plugins.entries['agent-hq-mcp'].enabled).toBe(true);
   });
 });

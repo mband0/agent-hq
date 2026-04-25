@@ -1,8 +1,11 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import type Database from 'better-sqlite3';
 
 const MANAGED_KEYS_FIELD = 'agentHqManagedMcpServers';
+const OPENCLAW_MCP_BUNDLE_ID = 'agent-hq-mcp';
+const OPENCLAW_MCP_BUNDLE_DIR = path.join('.openclaw', 'extensions', OPENCLAW_MCP_BUNDLE_ID);
 
 interface AgentMcpRow {
   slug: string;
@@ -23,6 +26,7 @@ export interface McpMaterializationResult {
   ok: boolean;
   count: number;
   path: string;
+  bundlePath: string;
   warnings: string[];
   error?: string;
 }
@@ -35,6 +39,7 @@ export interface AgentMcpSyncResult {
   count: number;
   warnings: string[];
   path?: string;
+  bundlePath?: string;
   error?: string;
   skipped?: 'agent_not_found' | 'missing_workspace' | 'unsupported_runtime';
 }
@@ -95,6 +100,65 @@ function extractServerMap(raw: unknown): Record<string, Record<string, unknown>>
       .filter(([, value]) => isRecord(value))
       .map(([key, value]) => [key, { ...(value as Record<string, unknown>) }]),
   );
+}
+
+function resolveOpenClawConfigPath(): string {
+  return process.env.OPENCLAW_CONFIG_PATH
+    ?? path.join(process.env.HOME ?? os.homedir(), '.openclaw', 'openclaw.json');
+}
+
+export function ensureOpenClawMcpWorkspaceBundleEnabled(configPath = resolveOpenClawConfigPath()): {
+  ok: boolean;
+  changed: boolean;
+  path: string;
+  error?: string;
+} {
+  let rawConfig: Record<string, unknown> = {};
+  if (fs.existsSync(configPath)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      if (!isRecord(parsed)) {
+        return { ok: false, changed: false, path: configPath, error: 'OpenClaw config is not a JSON object' };
+      }
+      rawConfig = parsed;
+    } catch (err) {
+      return {
+        ok: false,
+        changed: false,
+        path: configPath,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }
+
+  const before = JSON.stringify(rawConfig);
+  const plugins = isRecord(rawConfig.plugins) ? rawConfig.plugins : {};
+  const entries = isRecord(plugins.entries) ? plugins.entries : {};
+  const existingEntry = isRecord(entries[OPENCLAW_MCP_BUNDLE_ID]) ? entries[OPENCLAW_MCP_BUNDLE_ID] : {};
+
+  entries[OPENCLAW_MCP_BUNDLE_ID] = {
+    ...existingEntry,
+    enabled: true,
+  };
+  rawConfig.plugins = {
+    ...plugins,
+    entries,
+  };
+
+  if (JSON.stringify(rawConfig) === before) return { ok: true, changed: false, path: configPath };
+
+  try {
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.writeFileSync(configPath, `${JSON.stringify(rawConfig, null, 2)}\n`, 'utf8');
+    return { ok: true, changed: true, path: configPath };
+  } catch (err) {
+    return {
+      ok: false,
+      changed: false,
+      path: configPath,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
 }
 
 function buildDesiredServerConfig(row: AgentMcpRow): Record<string, unknown> | null {
@@ -158,6 +222,7 @@ export function materializeAgentMcpConfig(params: {
     ok: true,
     count: 0,
     path: path.join(params.workingDirectory, '.mcp.json'),
+    bundlePath: path.join(params.workingDirectory, OPENCLAW_MCP_BUNDLE_DIR, '.mcp.json'),
     warnings: [],
   };
 
@@ -205,6 +270,7 @@ export function materializeAgentMcpConfig(params: {
 
     if (Object.keys(mergedServers).length === 0 && Object.keys(preservedTopLevel).length === 0) {
       if (fs.existsSync(result.path)) fs.unlinkSync(result.path);
+      if (fs.existsSync(result.bundlePath)) fs.unlinkSync(result.bundlePath);
       return result;
     }
 
@@ -215,6 +281,8 @@ export function materializeAgentMcpConfig(params: {
     if (desiredKeys.length > 0) nextConfig[MANAGED_KEYS_FIELD] = desiredKeys;
 
     fs.writeFileSync(result.path, `${JSON.stringify(nextConfig, null, 2)}\n`, 'utf8');
+    fs.mkdirSync(path.dirname(result.bundlePath), { recursive: true });
+    fs.writeFileSync(result.bundlePath, `${JSON.stringify(nextConfig, null, 2)}\n`, 'utf8');
     result.count = desiredKeys.length;
     return result;
   } catch (err) {
@@ -282,6 +350,15 @@ export function syncAssignedMcpForAgent(params: {
     workingDirectory,
   });
 
+  if (result.ok && result.count > 0) {
+    const configResult = ensureOpenClawMcpWorkspaceBundleEnabled();
+    if (!configResult.ok) {
+      result.warnings.push(
+        `[mcp-materialization] could not enable OpenClaw workspace MCP bundle in ${configResult.path}: ${configResult.error ?? 'unknown error'}`,
+      );
+    }
+  }
+
   return {
     agentId: agent.id,
     runtimeType,
@@ -290,6 +367,7 @@ export function syncAssignedMcpForAgent(params: {
     count: result.count,
     warnings: result.warnings,
     path: result.path,
+    bundlePath: result.bundlePath,
     ...(result.error ? { error: result.error } : {}),
   };
 }

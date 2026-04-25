@@ -48,7 +48,7 @@ app.use(express.json({ limit: '10mb' }));
 
 // Health check
 app.get('/health', (_req, res) => {
-  res.json({ ok: true, service: 'Atlas HQ API', ts: new Date().toISOString() });
+  res.json({ ok: true, service: 'Agent HQ API', ts: new Date().toISOString() });
 });
 
 // API routes
@@ -180,7 +180,7 @@ console.log('[boot] setupChatProxy returned');
 console.log('[boot] about to server.listen', { port: Number(PORT), host: HOST });
 server.listen(Number(PORT), HOST, () => {
   const displayHost = HOST === '0.0.0.0' ? '127.0.0.1' : HOST;
-  console.log(`Atlas HQ API running on http://${displayHost}:${PORT}`);
+  console.log(`Agent HQ API running on http://${displayHost}:${PORT}`);
 });
 
 // Graceful shutdown: close browser pool

@@ -1969,6 +1969,7 @@ router.post('/:id/mcp/sync', (req: Request, res: Response) => {
       working_directory: result.workingDirectory,
       count: result.count,
       path: result.path ?? null,
+      bundle_path: result.bundlePath ?? null,
       warnings: result.warnings,
       skipped: result.skipped ?? null,
       ...(result.error ? { error: result.error } : {}),

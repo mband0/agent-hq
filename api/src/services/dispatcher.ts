@@ -38,7 +38,7 @@ import {
   type TransportContext,
 } from './contracts';
 import { getSkillMaterializationAdapter } from '../runtimes/skillMaterialization';
-import { materializeAgentMcpConfig } from '../runtimes/mcpMaterialization';
+import { syncAssignedMcpForAgent } from '../runtimes/mcpMaterialization';
 import { getDb } from '../db/client';
 import { getAgentHqBaseUrl } from '../lib/agentHqBaseUrl';
 import { buildHookSessionKey, resolveRuntimeAgentSlug } from '../lib/sessionKeys';
@@ -1200,14 +1200,14 @@ async function fireAgentRun(
   }
 
   // ── Runtime-aware MCP materialization ────────────────────────────────────
-  // OpenClaw agents consume MCP servers from workspace project settings
-  // (`.mcp.json`). Atlas owns the canonical assignment in the DB, so write the
+  // OpenClaw agents consume assigned MCP servers through workspace extension
+  // bundles. Atlas owns the canonical assignment in the DB, so write the
   // effective assigned server set into the working directory before dispatch.
   if ((job.runtime_type ?? 'openclaw') === 'openclaw') {
     const effectiveMcpDir: string | null = worktreePath ?? job.workspace_path ?? null;
     if (effectiveMcpDir) {
       try {
-        const mcpResult = materializeAgentMcpConfig({
+        const mcpResult = syncAssignedMcpForAgent({
           db,
           agentId: job.agent_id,
           workingDirectory: effectiveMcpDir,
