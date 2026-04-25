@@ -68,6 +68,45 @@ app.get('/api/v1/workflow-templates', (req, res) => {
 app.get('/api/v1/sprint-types', (_req, res) => {
   res.redirect(307, '/api/v1/sprints/types/list');
 });
+app.get('/api/v1/sprint-types/:key', (req, res) => {
+  res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(req.params.key)}`);
+});
+app.get('/api/v1/sprint-types/:key/task-types', (req, res) => {
+  res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(req.params.key)}/task-types`);
+});
+app.put('/api/v1/sprint-types/:key/task-types', (req, res) => {
+  res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(req.params.key)}/task-types`);
+});
+app.get('/api/v1/sprint-types/:key/field-schemas', (req, res) => {
+  res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(req.params.key)}/field-schemas`);
+});
+app.post('/api/v1/sprint-types/:key/field-schemas', (req, res) => {
+  res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(req.params.key)}/field-schemas`);
+});
+app.get('/api/v1/sprint-types/:key/field-schemas/:schemaId', (req, res) => {
+  res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(req.params.key)}/field-schemas/${encodeURIComponent(req.params.schemaId)}`);
+});
+app.put('/api/v1/sprint-types/:key/field-schemas/:schemaId', (req, res) => {
+  res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(req.params.key)}/field-schemas/${encodeURIComponent(req.params.schemaId)}`);
+});
+app.delete('/api/v1/sprint-types/:key/field-schemas/:schemaId', (req, res) => {
+  res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(req.params.key)}/field-schemas/${encodeURIComponent(req.params.schemaId)}`);
+});
+app.get('/api/v1/sprint-types/:key/workflow-templates', (req, res) => {
+  res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(req.params.key)}/workflow`);
+});
+app.post('/api/v1/sprint-types/:key/workflow-templates', (req, res) => {
+  res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(req.params.key)}/workflow-templates`);
+});
+app.get('/api/v1/sprint-types/:key/workflow-templates/:templateId', (req, res) => {
+  res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(req.params.key)}/workflow-templates/${encodeURIComponent(req.params.templateId)}`);
+});
+app.put('/api/v1/sprint-types/:key/workflow-templates/:templateId', (req, res) => {
+  res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(req.params.key)}/workflow-templates/${encodeURIComponent(req.params.templateId)}`);
+});
+app.delete('/api/v1/sprint-types/:key/workflow-templates/:templateId', (req, res) => {
+  res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(req.params.key)}/workflow-templates/${encodeURIComponent(req.params.templateId)}`);
+});
 app.use('/api/v1/projects/:id/files', projectFilesRouter);
 app.use('/api/v1/telemetry', telemetryRouter);
 app.use('/api/v1/routing', routingRouter);

@@ -482,6 +482,26 @@ router.get('/types/list', (_req: Request, res: Response) => {
   }
 });
 
+router.get('/types/:key', (req: Request, res: Response) => {
+  try {
+    const db = getDb();
+    const sprintTypeKey = resolveSprintTypeOrNull(req.params.key);
+    if (!sprintTypeKey) return res.status(400).json({ error: 'Sprint type key is required' });
+
+    const sprintType = getSprintTypeOr404(db, sprintTypeKey);
+    if (!sprintType) return res.status(404).json({ error: 'Sprint type not found' });
+
+    return res.json({
+      ...sprintType,
+      task_types: getTaskTypesForSprintType(db, sprintTypeKey),
+      field_schemas: getFieldSchemasForSprintType(db, sprintTypeKey),
+      workflow_templates: getWorkflowTemplatesDetailed(db, sprintTypeKey),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: String(err) });
+  }
+});
+
 router.get('/workflow-templates', (req: Request, res: Response) => {
   try {
     const sprintType = resolveSprintTypeOrNull(req.query.sprint_type);
