@@ -502,6 +502,23 @@ router.get('/types/:key', (req: Request, res: Response) => {
   }
 });
 
+function serializeWorkflowTemplateDetail(db: ReturnType<typeof getDb>, template: SprintWorkflowTemplateRow) {
+  const statusesStmt = db.prepare(`
+    SELECT status_key, label, color, stage_order, terminal, is_default_entry, metadata_json, created_at, updated_at
+    FROM sprint_workflow_statuses
+    WHERE template_id = ?
+    ORDER BY stage_order ASC, id ASC
+  `);
+
+  return {
+    ...template,
+    statuses: (statusesStmt.all(template.id) as SprintWorkflowStatusRow[]).map((status) => ({
+      ...status,
+      metadata: JSON.parse(status.metadata_json || '{}'),
+    })),
+  };
+}
+
 router.get('/workflow-templates', (req: Request, res: Response) => {
   try {
     const sprintType = resolveSprintTypeOrNull(req.query.sprint_type);
@@ -517,21 +534,8 @@ router.get('/workflow-templates', (req: Request, res: Response) => {
           ORDER BY sprint_type_key ASC, is_default DESC, name ASC, id ASC
         `).all(systemOnly ? 1 : 0) as SprintWorkflowTemplateRow[];
 
-    const statusesStmt = db.prepare(`
-      SELECT status_key, label, color, stage_order, terminal, is_default_entry, metadata_json, created_at, updated_at
-      FROM sprint_workflow_statuses
-      WHERE template_id = ?
-      ORDER BY stage_order ASC, id ASC
-    `);
-
     return res.json({
-      templates: templates.map((template) => ({
-        ...template,
-        statuses: statusesStmt.all(template.id).map((status: any) => ({
-          ...status,
-          metadata: JSON.parse(status.metadata_json || '{}'),
-        })),
-      })),
+      templates: templates.map((template) => serializeWorkflowTemplateDetail(db, template)),
     });
   } catch (err) {
     return res.status(500).json({ error: String(err) });
@@ -781,6 +785,29 @@ router.get('/types/:key/field-schemas/:schemaId', (req: Request, res: Response) 
       ...row,
       schema: JSON.parse(row.schema_json || '{}'),
     });
+  } catch (err) {
+    return res.status(500).json({ error: String(err) });
+  }
+});
+
+router.get('/workflow-templates/:templateId', (req: Request, res: Response) => {
+  try {
+    const db = getDb();
+    const templateId = Number(req.params.templateId);
+    if (!Number.isInteger(templateId) || templateId <= 0) {
+      return res.status(400).json({ error: 'Valid workflow template ID is required' });
+    }
+
+    const template = db.prepare(`
+      SELECT id, sprint_type_key, key, name, description, is_default, is_system, created_at, updated_at
+      FROM sprint_workflow_templates
+      WHERE id = ?
+      LIMIT 1
+    `).get(templateId) as SprintWorkflowTemplateRow | undefined;
+
+    if (!template) return res.status(404).json({ error: 'Workflow template not found' });
+
+    return res.json(serializeWorkflowTemplateDetail(db, template));
   } catch (err) {
     return res.status(500).json({ error: String(err) });
   }
