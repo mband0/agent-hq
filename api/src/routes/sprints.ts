@@ -1307,6 +1307,7 @@ router.put('/:id', (req: Request, res: Response) => {
     if (!existing) return res.status(404).json({ error: 'Sprint not found' });
 
     const {
+      project_id,
       name,
       goal,
       sprint_type,
@@ -1337,7 +1338,18 @@ router.put('/:id', (req: Request, res: Response) => {
       return res.status(400).json({ error: resolvedWorkflowTemplate.error });
     }
 
+    const requestedProjectId = project_id !== undefined ? Number(project_id) : existing.project_id;
+    if (!Number.isInteger(requestedProjectId) || requestedProjectId <= 0) {
+      return res.status(400).json({ error: 'project_id must be a positive integer when provided' });
+    }
+
+    const targetProject = db.prepare('SELECT id FROM projects WHERE id = ?').get(requestedProjectId);
+    if (!targetProject) {
+      return res.status(400).json({ error: `Project ${requestedProjectId} does not exist` });
+    }
+
     const newValues = {
+      project_id: requestedProjectId,
       name: name ?? existing.name,
       goal: goal !== undefined ? goal : existing.goal,
       sprint_type: resolvedSprintType,
@@ -1351,6 +1363,7 @@ router.put('/:id', (req: Request, res: Response) => {
 
     db.prepare(`
       UPDATE sprints SET
+        project_id = ?,
         name = ?,
         goal = ?,
         sprint_type = ?,
@@ -1362,6 +1375,7 @@ router.put('/:id', (req: Request, res: Response) => {
         ended_at = ?
       WHERE id = ?
     `).run(
+      newValues.project_id,
       newValues.name, newValues.goal, newValues.sprint_type, newValues.workflow_template_key, newValues.status,
       newValues.length_kind, newValues.length_value,
       newValues.started_at, newValues.ended_at, id
@@ -1388,12 +1402,12 @@ router.put('/:id', (req: Request, res: Response) => {
         status: newValues.status,
         length_kind: newValues.length_kind,
         length_value: newValues.length_value,
-        project_id: existing.project_id,
+        project_id: newValues.project_id,
       },
     );
     if (Object.keys(changes).length > 0) {
       const actor = extractActor(req);
-      writeProjectAudit(db, existing.project_id, 'sprint', id, 'updated', actor, changes);
+      writeProjectAudit(db, newValues.project_id, 'sprint', id, 'updated', actor, changes);
     }
 
     const updated = db.prepare(`

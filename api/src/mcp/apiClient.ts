@@ -729,7 +729,7 @@ export class AgentHqApiClient {
     return this.request<unknown>('GET', `/api/v1/routing/rules?sprint_id=${encodeURIComponent(String(sprintId))}`).then((payload) => {
       const rules = asArray(asRecord(payload).rules);
       const match = rules.find((row) => asNumber(asRecord(row).id) === ruleId);
-      if (!match) throw new Error('Routing rule not found');
+      if (!match) throw new Error(`Routing rule ${ruleId} not found in sprint ${sprintId}`);
       return match;
     });
   }
@@ -742,8 +742,10 @@ export class AgentHqApiClient {
     return this.request<unknown>('PUT', `/api/v1/routing/rules/${ruleId}`, data);
   }
 
-  deleteRoutingRule(ruleId: number, sprintId: number) {
-    return this.request<unknown>('DELETE', `/api/v1/routing/rules/${ruleId}?sprint_id=${encodeURIComponent(String(sprintId))}`);
+  deleteRoutingRule(ruleId: number, sprintId?: number) {
+    const qs = new URLSearchParams();
+    if (sprintId !== undefined) qs.set('sprint_id', String(sprintId));
+    return this.request<unknown>('DELETE', `/api/v1/routing/rules/${ruleId}${qs.toString() ? `?${qs.toString()}` : ''}`);
   }
 
   listRoutingTransitions(params: { sprint_id?: number; project_id?: number } = {}) {

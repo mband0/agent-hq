@@ -1886,7 +1886,10 @@ router.post('/:id/skills', (req: Request, res: Response) => {
     if (!skillName) return res.status(400).json({ error: 'skill_name is required' });
 
     const skillPath = path.join(OPENCLAW_SKILLS_PATH, skillName);
-    if (!fs.existsSync(skillPath)) return res.status(404).json({ error: `Skill '${skillName}' not found` });
+    const atlasSkillPath = path.resolve(process.cwd(), '..', 'skills', skillName);
+    if (!fs.existsSync(skillPath) && !fs.existsSync(atlasSkillPath)) {
+      return res.status(404).json({ error: `Skill '${skillName}' not found` });
+    }
 
     let skillNames: string[] = [];
     try {

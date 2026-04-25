@@ -167,31 +167,38 @@ router.delete('/:id', (req: Request, res: Response) => {
 
     const force = req.query.force === 'true';
 
-    if (!force) {
-      // Check for active tasks (in_progress or review)
-      const activeTasksRow = db.prepare(`
-        SELECT COUNT(*) as count FROM tasks
-        WHERE project_id = ? AND status IN ('in_progress', 'review', 'dispatched')
-      `).get(req.params.id) as { count: number };
+    const activeTasksRow = db.prepare(`
+      SELECT COUNT(*) as count FROM tasks
+      WHERE project_id = ? AND status IN ('in_progress', 'review', 'dispatched')
+    `).get(req.params.id) as { count: number };
 
-      // Check for running job instances linked to this project's agents
-      const runningInstancesRow = db.prepare(`
-        SELECT COUNT(*) as count FROM job_instances ji
-        JOIN agents a ON a.id = ji.agent_id
-        WHERE a.project_id = ? AND ji.status IN ('queued', 'dispatched', 'running')
-      `).get(req.params.id) as { count: number };
+    const runningInstancesRow = db.prepare(`
+      SELECT COUNT(*) as count FROM job_instances ji
+      JOIN agents a ON a.id = ji.agent_id
+      WHERE a.project_id = ? AND ji.status IN ('queued', 'dispatched', 'running')
+    `).get(req.params.id) as { count: number };
 
-      const activeTasks = activeTasksRow.count ?? 0;
-      const runningInstances = runningInstancesRow.count ?? 0;
+    const sprintCountRow = db.prepare(`SELECT COUNT(*) as count FROM sprints WHERE project_id = ?`).get(req.params.id) as { count: number };
+    const taskCountRow = db.prepare(`SELECT COUNT(*) as count FROM tasks WHERE project_id = ?`).get(req.params.id) as { count: number };
+    const agentCountRow = db.prepare(`SELECT COUNT(*) as count FROM agents WHERE project_id = ?`).get(req.params.id) as { count: number };
 
-      if (activeTasks > 0 || runningInstances > 0) {
-        return res.status(409).json({
-          error: 'Project has active work',
-          active_tasks: activeTasks,
-          running_instances: runningInstances,
-          message: `This project has ${activeTasks} active task(s) and ${runningInstances} running agent instance(s). Pass ?force=true to delete anyway.`,
-        });
-      }
+    const activeTasks = activeTasksRow.count ?? 0;
+    const runningInstances = runningInstancesRow.count ?? 0;
+    const sprintCount = sprintCountRow.count ?? 0;
+    const taskCount = taskCountRow.count ?? 0;
+    const agentCount = agentCountRow.count ?? 0;
+
+    if (!force && (activeTasks > 0 || runningInstances > 0 || sprintCount > 0 || taskCount > 0 || agentCount > 0)) {
+      return res.status(409).json({
+        error: 'Project delete requires confirmation',
+        code: 'project_delete_requires_force',
+        active_tasks: activeTasks,
+        running_instances: runningInstances,
+        dependent_sprints: sprintCount,
+        dependent_tasks: taskCount,
+        dependent_agents: agentCount,
+        message: `Project ${req.params.id} still owns ${sprintCount} sprint(s), ${taskCount} task(s), and ${agentCount} agent(s), with ${activeTasks} active task(s) and ${runningInstances} running instance(s). Pass ?force=true to delete this project and its dependents.`,
+      });
     }
 
     const actor = extractActor(req);
@@ -201,7 +208,7 @@ router.delete('/:id', (req: Request, res: Response) => {
     });
 
     db.prepare('DELETE FROM projects WHERE id = ?').run(req.params.id);
-    return res.json({ ok: true });
+    return res.json({ ok: true, deleted: true, project_id: Number(req.params.id), forced: force });
   } catch (err) {
     return res.status(500).json({ error: String(err) });
   }
