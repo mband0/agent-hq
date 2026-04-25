@@ -68,7 +68,16 @@ app.get('/api/v1/workflow-templates', (req, res) => {
 app.get('/api/v1/sprint-types', (_req, res) => {
   res.redirect(307, '/api/v1/sprints/types/list');
 });
+app.post('/api/v1/sprint-types', (_req, res) => {
+  res.redirect(307, '/api/v1/sprints/types');
+});
 app.get('/api/v1/sprint-types/:key', (req, res) => {
+  res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(req.params.key)}`);
+});
+app.put('/api/v1/sprint-types/:key', (req, res) => {
+  res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(req.params.key)}`);
+});
+app.delete('/api/v1/sprint-types/:key', (req, res) => {
   res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(req.params.key)}`);
 });
 app.get('/api/v1/sprint-types/:key/task-types', (req, res) => {
@@ -106,6 +115,83 @@ app.put('/api/v1/sprint-types/:key/workflow-templates/:templateId', (req, res) =
 });
 app.delete('/api/v1/sprint-types/:key/workflow-templates/:templateId', (req, res) => {
   res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(req.params.key)}/workflow-templates/${encodeURIComponent(req.params.templateId)}`);
+});
+app.get('/api/v1/task-definitions', (_req, res) => {
+  res.redirect(307, '/api/v1/sprints/config');
+});
+app.get('/api/v1/task-definitions/config', (_req, res) => {
+  res.redirect(307, '/api/v1/sprints/config');
+});
+app.get('/api/v1/task-definitions/sprint-types', (_req, res) => {
+  res.redirect(307, '/api/v1/sprints/types/list');
+});
+app.post('/api/v1/task-definitions/sprint-types', (_req, res) => {
+  res.redirect(307, '/api/v1/sprints/types');
+});
+app.get('/api/v1/task-definitions/sprint-types/:key', (req, res) => {
+  res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(req.params.key)}`);
+});
+app.put('/api/v1/task-definitions/sprint-types/:key', (req, res) => {
+  res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(req.params.key)}`);
+});
+app.delete('/api/v1/task-definitions/sprint-types/:key', (req, res) => {
+  res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(req.params.key)}`);
+});
+app.get('/api/v1/task-definitions/sprint-types/:key/task-types', (req, res) => {
+  res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(req.params.key)}/task-types`);
+});
+app.put('/api/v1/task-definitions/sprint-types/:key/task-types', (req, res) => {
+  res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(req.params.key)}/task-types`);
+});
+app.get('/api/v1/task-definitions/sprint-types/:key/field-schemas', (req, res) => {
+  res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(req.params.key)}/field-schemas`);
+});
+app.post('/api/v1/task-definitions/sprint-types/:key/field-schemas', (req, res) => {
+  res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(req.params.key)}/field-schemas`);
+});
+app.get('/api/v1/task-definitions/sprint-types/:key/field-schemas/:schemaId', (req, res) => {
+  res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(req.params.key)}/field-schemas/${encodeURIComponent(req.params.schemaId)}`);
+});
+app.put('/api/v1/task-definitions/sprint-types/:key/field-schemas/:schemaId', (req, res) => {
+  res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(req.params.key)}/field-schemas/${encodeURIComponent(req.params.schemaId)}`);
+});
+app.delete('/api/v1/task-definitions/sprint-types/:key/field-schemas/:schemaId', (req, res) => {
+  res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(req.params.key)}/field-schemas/${encodeURIComponent(req.params.schemaId)}`);
+});
+app.get('/api/v1/task-definitions/sprint-types/:key/workflow-templates', (req, res) => {
+  res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(req.params.key)}/workflow`);
+});
+app.post('/api/v1/task-definitions/sprint-types/:key/workflow-templates', (req, res) => {
+  res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(req.params.key)}/workflow-templates`);
+});
+app.get('/api/v1/task-definitions/sprint-types/:key/workflow-templates/:templateId', (req, res) => {
+  res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(req.params.key)}/workflow-templates/${encodeURIComponent(req.params.templateId)}`);
+});
+app.put('/api/v1/task-definitions/sprint-types/:key/workflow-templates/:templateId', (req, res) => {
+  res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(req.params.key)}/workflow-templates/${encodeURIComponent(req.params.templateId)}`);
+});
+app.delete('/api/v1/task-definitions/sprint-types/:key/workflow-templates/:templateId', (req, res) => {
+  res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(req.params.key)}/workflow-templates/${encodeURIComponent(req.params.templateId)}`);
+});
+app.get('/api/v1/routing-rules', (req, res) => {
+  const query = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+  res.redirect(307, `/api/v1/routing/rules${query}`);
+});
+app.post('/api/v1/routing-rules', (req, res) => {
+  const query = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+  res.redirect(307, `/api/v1/routing/rules${query}`);
+});
+app.get('/api/v1/routing-rules/:id', (req, res) => {
+  const query = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+  res.redirect(307, `/api/v1/routing/rules${query}`);
+});
+app.put('/api/v1/routing-rules/:id', (req, res) => {
+  const query = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+  res.redirect(307, `/api/v1/routing/rules/${encodeURIComponent(req.params.id)}${query}`);
+});
+app.delete('/api/v1/routing-rules/:id', (req, res) => {
+  const query = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+  res.redirect(307, `/api/v1/routing/rules/${encodeURIComponent(req.params.id)}${query}`);
 });
 app.use('/api/v1/projects/:id/files', projectFilesRouter);
 app.use('/api/v1/telemetry', telemetryRouter);
