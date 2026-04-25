@@ -275,6 +275,20 @@ export class AgentHqApiClient {
     return this.request<unknown>('GET', `/api/v1/projects/${id}`).then(shapeProjectSummary);
   }
 
+  createProject(data: { name: string; description?: string; context_md?: string }) {
+    return this.request<unknown>('POST', '/api/v1/projects', data);
+  }
+
+  updateProject(id: number, data: { name?: string; description?: string; context_md?: string }) {
+    return this.request<unknown>('PUT', `/api/v1/projects/${id}`, data);
+  }
+
+  deleteProject(id: number, force?: boolean) {
+    const qs = new URLSearchParams();
+    if (force) qs.set('force', 'true');
+    return this.request<unknown>('DELETE', `/api/v1/projects/${id}${qs.toString() ? `?${qs.toString()}` : ''}`);
+  }
+
   listSprints(params: { project_id?: number; include_closed?: boolean } = {}) {
     const qs = new URLSearchParams();
     if (params.project_id !== undefined) qs.set('project_id', String(params.project_id));
@@ -285,6 +299,14 @@ export class AgentHqApiClient {
 
   getSprint(id: number) {
     return this.request<unknown>('GET', `/api/v1/sprints/${id}`).then(shapeSprintSummary);
+  }
+
+  updateSprint(id: number, data: Record<string, unknown>) {
+    return this.request<unknown>('PUT', `/api/v1/sprints/${id}`, data);
+  }
+
+  deleteSprint(id: number) {
+    return this.request<unknown>('DELETE', `/api/v1/sprints/${id}`);
   }
 
   listTasks(params: {
@@ -315,6 +337,12 @@ export class AgentHqApiClient {
 
   getTask(id: number) {
     return this.request<unknown>('GET', `/api/v1/tasks/${id}`).then(shapeTaskDetail);
+  }
+
+  deleteTask(id: number, deletedBy?: string) {
+    const qs = new URLSearchParams();
+    if (deletedBy) qs.set('deleted_by', deletedBy);
+    return this.request<unknown>('DELETE', `/api/v1/tasks/${id}${qs.toString() ? `?${qs.toString()}` : ''}`);
   }
 
   getTaskNotes(id: number) {
@@ -438,6 +466,8 @@ export class AgentHqApiClient {
     project_id: number;
     name: string;
     goal?: string;
+    sprint_type?: string;
+    workflow_template_key?: string | null;
     status?: 'planning' | 'active' | 'paused' | 'complete' | 'closed';
     length_kind?: 'time' | 'runs';
     length_value?: string;
@@ -454,6 +484,8 @@ export class AgentHqApiClient {
             project_id: data.project_id,
             name: data.name,
             goal: data.goal ?? '',
+            sprint_type: data.sprint_type,
+            workflow_template_key: data.workflow_template_key ?? null,
             status: data.status ?? 'planning',
             length_kind: data.length_kind ?? 'time',
             length_value: data.length_value ?? '',
@@ -625,6 +657,18 @@ export class AgentHqApiClient {
     return this.request<unknown[]>('GET', '/api/v1/skills');
   }
 
+  listAgentSkills(agentId: number) {
+    return this.request<unknown>('GET', `/api/v1/agents/${agentId}/skills`);
+  }
+
+  assignSkillToAgent(agentId: number, skillName: string) {
+    return this.request<unknown>('POST', `/api/v1/agents/${agentId}/skills`, { skill_name: skillName });
+  }
+
+  removeSkillFromAgent(agentId: number, skillName: string) {
+    return this.request<unknown>('DELETE', `/api/v1/agents/${agentId}/skills/${encodeURIComponent(skillName)}`);
+  }
+
   getSkill(name: string) {
     return this.request<unknown>('GET', `/api/v1/skills/${encodeURIComponent(name)}`);
   }
@@ -675,5 +719,127 @@ export class AgentHqApiClient {
 
   removeMcpServerFromAgent(agentId: number, mcpServerId: number) {
     return this.request<unknown>('DELETE', `/api/v1/agents/${agentId}/mcp-servers/${mcpServerId}`);
+  }
+
+  listRoutingRules(sprintId: number) {
+    return this.request<unknown>('GET', `/api/v1/routing/rules?sprint_id=${encodeURIComponent(String(sprintId))}`);
+  }
+
+  getRoutingRule(ruleId: number, sprintId: number) {
+    return this.request<unknown>('GET', `/api/v1/routing/rules?sprint_id=${encodeURIComponent(String(sprintId))}`).then((payload) => {
+      const rules = asArray(asRecord(payload).rules);
+      const match = rules.find((row) => asNumber(asRecord(row).id) === ruleId);
+      if (!match) throw new Error('Routing rule not found');
+      return match;
+    });
+  }
+
+  createRoutingRule(data: Record<string, unknown>) {
+    return this.request<unknown>('POST', '/api/v1/routing/rules', data);
+  }
+
+  updateRoutingRule(ruleId: number, data: Record<string, unknown>) {
+    return this.request<unknown>('PUT', `/api/v1/routing/rules/${ruleId}`, data);
+  }
+
+  deleteRoutingRule(ruleId: number, sprintId: number) {
+    return this.request<unknown>('DELETE', `/api/v1/routing/rules/${ruleId}?sprint_id=${encodeURIComponent(String(sprintId))}`);
+  }
+
+  listRoutingTransitions(params: { sprint_id?: number; project_id?: number } = {}) {
+    const qs = new URLSearchParams();
+    if (params.sprint_id !== undefined) qs.set('sprint_id', String(params.sprint_id));
+    if (params.project_id !== undefined) qs.set('project_id', String(params.project_id));
+    return this.request<unknown>('GET', `/api/v1/routing/transitions${qs.toString() ? `?${qs.toString()}` : ''}`);
+  }
+
+  getRoutingTransition(transitionId: number, params: { sprint_id?: number; project_id?: number } = {}) {
+    return this.listRoutingTransitions(params).then((payload) => {
+      const transitions = asArray(asRecord(payload).transitions);
+      const match = transitions.find((row) => asNumber(asRecord(row).id) === transitionId);
+      if (!match) throw new Error('Routing transition not found');
+      return match;
+    });
+  }
+
+  createRoutingTransition(data: Record<string, unknown>) {
+    return this.request<unknown>('POST', '/api/v1/routing/transitions', data);
+  }
+
+  updateRoutingTransition(transitionId: number, data: Record<string, unknown>) {
+    return this.request<unknown>('PUT', `/api/v1/routing/transitions/${transitionId}`, data);
+  }
+
+  deleteRoutingTransition(transitionId: number, data?: { sprint_id?: number }) {
+    const qs = new URLSearchParams();
+    if (data?.sprint_id !== undefined) qs.set('sprint_id', String(data.sprint_id));
+    return this.request<unknown>('DELETE', `/api/v1/routing/transitions/${transitionId}${qs.toString() ? `?${qs.toString()}` : ''}`);
+  }
+
+  listSprintTypes() {
+    return this.request<unknown[]>('GET', '/api/v1/sprints/types/list');
+  }
+
+  createSprintType(data: Record<string, unknown>) {
+    return this.request<unknown>('POST', '/api/v1/sprints/types', data);
+  }
+
+  updateSprintType(key: string, data: Record<string, unknown>) {
+    return this.request<unknown>('PUT', `/api/v1/sprints/types/${encodeURIComponent(key)}`, data);
+  }
+
+  deleteSprintType(key: string) {
+    return this.request<unknown>('DELETE', `/api/v1/sprints/types/${encodeURIComponent(key)}`);
+  }
+
+  listWorkflowTemplates(sprintType?: string) {
+    const qs = new URLSearchParams();
+    if (sprintType) qs.set('sprint_type', sprintType);
+    qs.set('system_only', 'false');
+    return this.request<unknown>('GET', `/api/v1/sprints/workflow-templates${qs.toString() ? `?${qs.toString()}` : ''}`);
+  }
+
+  createWorkflowTemplate(sprintTypeKey: string, data: Record<string, unknown>) {
+    return this.request<unknown>('POST', `/api/v1/sprints/types/${encodeURIComponent(sprintTypeKey)}/workflow-templates`, data);
+  }
+
+  updateWorkflowTemplate(sprintTypeKey: string, templateId: number, data: Record<string, unknown>) {
+    return this.request<unknown>('PUT', `/api/v1/sprints/types/${encodeURIComponent(sprintTypeKey)}/workflow-templates/${templateId}`, data);
+  }
+
+  deleteWorkflowTemplate(sprintTypeKey: string, templateId: number) {
+    return this.request<unknown>('DELETE', `/api/v1/sprints/types/${encodeURIComponent(sprintTypeKey)}/workflow-templates/${templateId}`);
+  }
+
+  createTaskFieldSchema(sprintTypeKey: string, data: Record<string, unknown>) {
+    return this.request<unknown>('POST', `/api/v1/sprints/types/${encodeURIComponent(sprintTypeKey)}/field-schemas`, data);
+  }
+
+  updateTaskFieldSchema(sprintTypeKey: string, schemaId: number, data: Record<string, unknown>) {
+    return this.request<unknown>('PUT', `/api/v1/sprints/types/${encodeURIComponent(sprintTypeKey)}/field-schemas/${schemaId}`, data);
+  }
+
+  deleteTaskFieldSchema(sprintTypeKey: string, schemaId: number) {
+    return this.request<unknown>('DELETE', `/api/v1/sprints/types/${encodeURIComponent(sprintTypeKey)}/field-schemas/${schemaId}`);
+  }
+
+  listModelRoutingRules() {
+    return this.request<unknown[]>('GET', '/api/v1/model-routing');
+  }
+
+  getModelRoutingRule(id: number) {
+    return this.request<unknown>('GET', `/api/v1/model-routing/${id}`);
+  }
+
+  createModelRoutingRule(data: Record<string, unknown>) {
+    return this.request<unknown>('POST', '/api/v1/model-routing', data);
+  }
+
+  updateModelRoutingRule(id: number, data: Record<string, unknown>) {
+    return this.request<unknown>('PUT', `/api/v1/model-routing/${id}`, data);
+  }
+
+  deleteModelRoutingRule(id: number) {
+    return this.request<unknown>('DELETE', `/api/v1/model-routing/${id}`);
   }
 }

@@ -45,30 +45,30 @@ Once connected, you can ask things like:
 
 ## Scope
 
-### In scope for v1
+### In scope
 
 | Resource | Read | Write | Notes |
 |---|---|---|---|
-| Projects | Yes | No | Read-only in v1 |
-| Sprints / Boards | Yes | Limited | Sprint create exists in current implementation; broader sprint lifecycle stays out of scope |
-| Tasks | Yes | Yes | Create, update, move status |
+| Projects | Yes | Yes | Full CRUD via typed MCP tools |
+| Sprints / Boards | Yes | Yes | Full CRUD plus sprint definition/config surfaces |
+| Tasks | Yes | Yes | Create, update, move status, delete |
 | Task Notes | Yes | Yes | Add notes/comments |
 | Task Blockers | Yes | Yes | Add and remove blocker relationships |
 | Task History | Yes | No | Audit trail / history only |
-| Jobs | Yes | No | Read-only |
-| Agents | Yes | No | Read-only |
+| Agents | Yes | Yes | Includes skill assignment relations, tools, MCP servers |
+| Routing Rules | Yes | Yes | Sprint task routing rules CRUD |
+| Routing Transitions | Yes | Yes | Canonical workflow/model-selection routing object CRUD |
+| Model Routing | Yes | Yes | Story-point model-routing CRUD |
+| Sprint Types | Yes | Yes | First-class sprint definition surface |
+| Workflow Templates | Yes | Yes | First-class workflow definition surface |
+| Task Field Schemas | Yes | Yes | First-class task-definition surface |
 
-### Out of scope for v1
+### Still intentionally out of scope
 
-- project create/update/delete
-- sprint close/complete/admin lifecycle actions
-- task delete
-- task cancellation semantics that depend on dispatch/instance state
-- task outcomes and evidence posting
-- instance management
-- routing / provider / settings management
+- raw database access
+- instance lifecycle internals beyond existing Agent HQ API surfaces
 - attachments and file upload workflows
-- browser pool or other internal agent runtime concerns
+- browser pool or other internal runtime concerns
 
 ---
 
@@ -96,13 +96,39 @@ Legacy `atlas_*` aliases may still exist for backward compatibility, but new doc
 
 | Tool | Description |
 |---|---|
+| `agent_hq_create_project` | Create a project |
+| `agent_hq_update_project` | Update a project |
+| `agent_hq_delete_project` | Delete a project |
+| `agent_hq_create_sprint` | Create a sprint |
+| `agent_hq_update_sprint` | Update a sprint |
+| `agent_hq_delete_sprint` | Delete a sprint |
 | `agent_hq_create_task` | Create a new task |
 | `agent_hq_update_task` | Update writable task fields |
+| `agent_hq_delete_task` | Delete a task |
 | `agent_hq_move_task` | Move a task to a new status |
 | `agent_hq_add_task_note` | Add a note to a task |
 | `agent_hq_add_blocker` | Add a blocker relationship |
 | `agent_hq_remove_blocker` | Remove a blocker relationship |
-| `agent_hq_create_sprint` | Create a sprint |
+| `agent_hq_create_routing_rule` | Create a sprint task routing rule |
+| `agent_hq_update_routing_rule` | Update a sprint task routing rule |
+| `agent_hq_delete_routing_rule` | Delete a sprint task routing rule |
+| `agent_hq_create_routing_transition` | Create a canonical routing transition |
+| `agent_hq_update_routing_transition` | Update a canonical routing transition |
+| `agent_hq_delete_routing_transition` | Delete a canonical routing transition |
+| `agent_hq_create_model_routing_rule` | Create a story-point model-routing rule |
+| `agent_hq_update_model_routing_rule` | Update a story-point model-routing rule |
+| `agent_hq_delete_model_routing_rule` | Delete a story-point model-routing rule |
+| `agent_hq_create_sprint_type` | Create a sprint type |
+| `agent_hq_update_sprint_type` | Update a sprint type |
+| `agent_hq_delete_sprint_type` | Delete a sprint type |
+| `agent_hq_create_workflow_template` | Create a workflow template |
+| `agent_hq_update_workflow_template` | Update a workflow template |
+| `agent_hq_delete_workflow_template` | Delete a workflow template |
+| `agent_hq_create_task_field_schema` | Create a task field schema |
+| `agent_hq_update_task_field_schema` | Update a task field schema |
+| `agent_hq_delete_task_field_schema` | Delete a task field schema |
+| `agent_hq_assign_skill_to_agent` | Assign a skill to an agent |
+| `agent_hq_remove_skill_from_agent` | Remove a skill from an agent |
 
 ### MCP resources
 
@@ -440,4 +466,4 @@ Avoid Atlas-era naming in new docs.
 
 ## Summary
 
-Agent HQ MCP is a local stdio MCP server that exposes a safe, practical subset of Agent HQ to AI clients. It is designed for local single-user use, routes everything through the existing API, and supports both board visibility and core task actions without exposing admin or runtime-internal operations.
+Agent HQ MCP is a local stdio MCP server that exposes a broad first-class control surface for Agent HQ through typed tools and self-describing resources. It routes everything through the existing API, covers core planning, routing, capability, and assignment objects, and minimizes the need for clients to guess raw REST calls.

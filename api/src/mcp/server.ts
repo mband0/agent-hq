@@ -109,6 +109,39 @@ registerTool(
 );
 
 registerTool(
+  ['agent_hq_create_project', 'atlas_create_project'],
+  'Create a project in Agent HQ.',
+  {
+    name: z.string().min(1).describe('Project name'),
+    description: z.string().optional().describe('Project description'),
+    context_md: z.string().optional().describe('Project context markdown'),
+  },
+  ({ name, description, context_md }) => wrap(() => api.createProject({ name, description, context_md }))(),
+);
+
+registerTool(
+  ['agent_hq_update_project', 'atlas_update_project'],
+  'Update a project in Agent HQ.',
+  {
+    project_id: z.number().int().positive().describe('Project ID'),
+    name: z.string().min(1).optional().describe('Project name'),
+    description: z.string().optional().describe('Project description'),
+    context_md: z.string().optional().describe('Project context markdown'),
+  },
+  ({ project_id, name, description, context_md }) => wrap(() => api.updateProject(project_id, { name, description, context_md }))(),
+);
+
+registerTool(
+  ['agent_hq_delete_project', 'atlas_delete_project'],
+  'Delete a project. Returns truthful validation errors when active work blocks deletion unless force=true is passed.',
+  {
+    project_id: z.number().int().positive().describe('Project ID'),
+    force: z.boolean().optional().describe('Force delete even if active work exists'),
+  },
+  ({ project_id, force }) => wrap(() => api.deleteProject(project_id, force))(),
+);
+
+registerTool(
   ['agent_hq_get_sprints', 'atlas_get_sprints', 'agent_hq_list_sprints', 'atlas_list_sprints'],
   'List Agent HQ sprints. Optionally filter by project.',
   {
@@ -123,6 +156,32 @@ registerTool(
   'Get sprint detail and metrics.',
   { sprint_id: z.number().int().positive().describe('Sprint ID') },
   ({ sprint_id }) => wrap(() => api.getSprint(sprint_id))(),
+);
+
+registerTool(
+  ['agent_hq_update_sprint', 'atlas_update_sprint'],
+  'Update a sprint in Agent HQ. Project reassignment is passed through truthfully and will fail clearly if the backend rejects it.',
+  {
+    sprint_id: z.number().int().positive().describe('Sprint ID'),
+    project_id: z.number().int().positive().optional().describe('Optional project reassignment request'),
+    name: z.string().min(1).optional().describe('Sprint name'),
+    goal: z.string().optional().describe('Sprint goal'),
+    sprint_type: z.string().optional().describe('Sprint type key'),
+    workflow_template_key: z.string().nullable().optional().describe('Workflow template key'),
+    status: z.enum(['planning', 'active', 'paused', 'complete', 'closed']).optional().describe('Sprint status'),
+    length_kind: z.enum(['time', 'runs']).optional().describe('Sprint length kind'),
+    length_value: z.string().optional().describe('Sprint length value'),
+    started_at: z.string().nullable().optional().describe('Sprint start timestamp'),
+    ended_at: z.string().nullable().optional().describe('Sprint end timestamp'),
+  },
+  ({ sprint_id, ...patch }) => wrap(() => api.updateSprint(sprint_id, patch))(),
+);
+
+registerTool(
+  ['agent_hq_delete_sprint', 'atlas_delete_sprint'],
+  'Delete a sprint in Agent HQ.',
+  { sprint_id: z.number().int().positive().describe('Sprint ID') },
+  ({ sprint_id }) => wrap(() => api.deleteSprint(sprint_id))(),
 );
 
 registerTool(
@@ -144,6 +203,16 @@ registerTool(
   'Get full task detail including blocker, sprint, and assignment context.',
   { task_id: z.number().int().positive().describe('Task ID') },
   ({ task_id }) => wrap(() => api.getTask(task_id))(),
+);
+
+registerTool(
+  ['agent_hq_delete_task', 'atlas_delete_task'],
+  'Delete a task from Agent HQ.',
+  {
+    task_id: z.number().int().positive().describe('Task ID'),
+    deleted_by: z.string().optional().describe('Audit label for the delete operation'),
+  },
+  ({ task_id, deleted_by }) => wrap(() => api.deleteTask(task_id, deleted_by))(),
 );
 
 registerTool(
@@ -650,14 +719,356 @@ registerTool(
     project_id: z.number().int().positive().describe('Project ID (required)'),
     name: z.string().min(1).describe('Sprint name (required)'),
     goal: z.string().optional().describe('Sprint goal'),
+    sprint_type: z.string().optional().describe('Sprint type key'),
+    workflow_template_key: z.string().nullable().optional().describe('Workflow template key'),
     status: z.enum(['planning', 'active', 'paused', 'complete', 'closed']).optional().describe('Initial sprint status'),
     length_kind: z.enum(['time', 'runs']).optional().describe('Sprint length kind'),
     length_value: z.string().optional().describe('Sprint length value, e.g. 2w or 10'),
     started_at: z.string().nullable().optional().describe('Sprint start timestamp'),
     dry_run: z.boolean().optional().describe('Return a mutation preview without writing data'),
   },
-  ({ project_id, name, goal, status, length_kind, length_value, started_at, dry_run }) =>
-    wrap(() => api.createSprint({ project_id, name, goal, status, length_kind, length_value, started_at, dry_run }))(),
+  ({ project_id, name, goal, sprint_type, workflow_template_key, status, length_kind, length_value, started_at, dry_run }) =>
+    wrap(() => api.createSprint({ project_id, name, goal, sprint_type, workflow_template_key, status, length_kind, length_value, started_at, dry_run }))(),
+);
+
+registerTool(
+  ['agent_hq_list_routing_rules', 'atlas_list_routing_rules'],
+  'List task routing rules for a sprint.',
+  { sprint_id: z.number().int().positive().describe('Sprint ID') },
+  ({ sprint_id }) => wrap(() => api.listRoutingRules(sprint_id))(),
+);
+
+registerTool(
+  ['agent_hq_get_routing_rule', 'atlas_get_routing_rule'],
+  'Get a single task routing rule by ID within a sprint.',
+  {
+    rule_id: z.number().int().positive().describe('Routing rule ID'),
+    sprint_id: z.number().int().positive().describe('Sprint ID'),
+  },
+  ({ rule_id, sprint_id }) => wrap(() => api.getRoutingRule(rule_id, sprint_id))(),
+);
+
+registerTool(
+  ['agent_hq_create_routing_rule', 'atlas_create_routing_rule'],
+  'Create a task routing rule for a sprint.',
+  {
+    sprint_id: z.number().int().positive().describe('Sprint ID'),
+    task_type: z.enum(VALID_TASK_TYPES).describe('Task type'),
+    status: z.string().min(1).describe('Task status'),
+    agent_id: z.number().int().positive().optional().describe('Canonical agent target'),
+    job_id: z.number().int().positive().optional().describe('Legacy compat alias for agent_id'),
+    priority: z.number().int().optional().describe('Rule priority'),
+  },
+  (args) => wrap(() => api.createRoutingRule(args))(),
+);
+
+registerTool(
+  ['agent_hq_update_routing_rule', 'atlas_update_routing_rule'],
+  'Update a task routing rule for a sprint.',
+  {
+    rule_id: z.number().int().positive().describe('Routing rule ID'),
+    sprint_id: z.number().int().positive().describe('Sprint ID'),
+    task_type: z.enum(VALID_TASK_TYPES).optional().describe('Task type'),
+    status: z.string().min(1).optional().describe('Task status'),
+    agent_id: z.number().int().positive().optional().describe('Canonical agent target'),
+    job_id: z.number().int().positive().optional().describe('Legacy compat alias for agent_id'),
+    priority: z.number().int().optional().describe('Rule priority'),
+  },
+  ({ rule_id, ...patch }) => wrap(() => api.updateRoutingRule(rule_id, patch))(),
+);
+
+registerTool(
+  ['agent_hq_delete_routing_rule', 'atlas_delete_routing_rule'],
+  'Delete a task routing rule from a sprint.',
+  {
+    rule_id: z.number().int().positive().describe('Routing rule ID'),
+    sprint_id: z.number().int().positive().describe('Sprint ID'),
+  },
+  ({ rule_id, sprint_id }) => wrap(() => api.deleteRoutingRule(rule_id, sprint_id))(),
+);
+
+registerTool(
+  ['agent_hq_list_routing_transitions', 'atlas_list_routing_transitions'],
+  'List canonical routing transitions used for model/workflow routing.',
+  {
+    sprint_id: z.number().int().positive().optional().describe('Optional sprint scope'),
+    project_id: z.number().int().positive().optional().describe('Optional project scope'),
+  },
+  ({ sprint_id, project_id }) => wrap(() => api.listRoutingTransitions({ sprint_id, project_id }))(),
+);
+
+registerTool(
+  ['agent_hq_get_routing_transition', 'atlas_get_routing_transition'],
+  'Get a canonical routing transition by ID.',
+  {
+    transition_id: z.number().int().positive().describe('Transition ID'),
+    sprint_id: z.number().int().positive().optional().describe('Optional sprint scope'),
+    project_id: z.number().int().positive().optional().describe('Optional project scope'),
+  },
+  ({ transition_id, sprint_id, project_id }) => wrap(() => api.getRoutingTransition(transition_id, { sprint_id, project_id }))(),
+);
+
+registerTool(
+  ['agent_hq_create_routing_transition', 'atlas_create_routing_transition'],
+  'Create a canonical routing transition.',
+  {
+    sprint_id: z.number().int().positive().optional().describe('Optional sprint scope'),
+    project_id: z.number().int().positive().optional().describe('Optional project scope'),
+    task_type: z.enum(VALID_TASK_TYPES).nullable().optional().describe('Optional task type scope'),
+    from_status: z.string().min(1).describe('From status'),
+    outcome: z.string().min(1).describe('Outcome key'),
+    to_status: z.string().min(1).describe('To status'),
+    lane: z.string().optional().describe('Lane label'),
+    enabled: z.boolean().optional().describe('Enabled flag'),
+    priority: z.number().int().optional().describe('Priority'),
+    is_protected: z.boolean().optional().describe('Protected flag for sprint-scoped rules'),
+  },
+  (args) => wrap(() => api.createRoutingTransition(args))(),
+);
+
+registerTool(
+  ['agent_hq_update_routing_transition', 'atlas_update_routing_transition'],
+  'Update a canonical routing transition.',
+  {
+    transition_id: z.number().int().positive().describe('Transition ID'),
+    sprint_id: z.number().int().positive().optional().describe('Optional sprint scope'),
+    project_id: z.number().int().positive().optional().describe('Optional project scope'),
+    task_type: z.enum(VALID_TASK_TYPES).nullable().optional().describe('Optional task type scope'),
+    from_status: z.string().min(1).optional().describe('From status'),
+    outcome: z.string().min(1).optional().describe('Outcome key'),
+    to_status: z.string().min(1).optional().describe('To status'),
+    lane: z.string().optional().describe('Lane label'),
+    enabled: z.boolean().optional().describe('Enabled flag'),
+    priority: z.number().int().optional().describe('Priority'),
+    is_protected: z.boolean().optional().describe('Protected flag for sprint-scoped rules'),
+  },
+  ({ transition_id, ...patch }) => wrap(() => api.updateRoutingTransition(transition_id, patch))(),
+);
+
+registerTool(
+  ['agent_hq_delete_routing_transition', 'atlas_delete_routing_transition'],
+  'Delete a canonical routing transition.',
+  {
+    transition_id: z.number().int().positive().describe('Transition ID'),
+    sprint_id: z.number().int().positive().optional().describe('Optional sprint scope'),
+  },
+  ({ transition_id, sprint_id }) => wrap(() => api.deleteRoutingTransition(transition_id, { sprint_id }))(),
+);
+
+registerTool(
+  ['agent_hq_list_model_routing_rules', 'atlas_list_model_routing_rules'],
+  'List story-point model-routing rules.',
+  {},
+  () => wrap(() => api.listModelRoutingRules())(),
+);
+
+registerTool(
+  ['agent_hq_get_model_routing_rule', 'atlas_get_model_routing_rule'],
+  'Get a story-point model-routing rule by ID.',
+  { rule_id: z.number().int().positive().describe('Model-routing rule ID') },
+  ({ rule_id }) => wrap(() => api.getModelRoutingRule(rule_id))(),
+);
+
+registerTool(
+  ['agent_hq_create_model_routing_rule', 'atlas_create_model_routing_rule'],
+  'Create a story-point model-routing rule.',
+  {
+    max_points: z.number().int().positive().describe('Max story points threshold'),
+    provider: z.string().optional().describe('Model provider'),
+    model: z.string().min(1).describe('Primary model'),
+    fallback_model: z.string().nullable().optional().describe('Fallback model'),
+    max_turns: z.number().int().positive().nullable().optional().describe('Max turns'),
+    max_budget_usd: z.number().nullable().optional().describe('Budget cap'),
+    label: z.string().nullable().optional().describe('Rule label'),
+  },
+  (args) => wrap(() => api.createModelRoutingRule(args))(),
+);
+
+registerTool(
+  ['agent_hq_update_model_routing_rule', 'atlas_update_model_routing_rule'],
+  'Update a story-point model-routing rule.',
+  {
+    rule_id: z.number().int().positive().describe('Model-routing rule ID'),
+    max_points: z.number().int().positive().optional().describe('Max story points threshold'),
+    provider: z.string().optional().describe('Model provider'),
+    model: z.string().min(1).optional().describe('Primary model'),
+    fallback_model: z.string().nullable().optional().describe('Fallback model'),
+    max_turns: z.number().int().positive().nullable().optional().describe('Max turns'),
+    max_budget_usd: z.number().nullable().optional().describe('Budget cap'),
+    label: z.string().nullable().optional().describe('Rule label'),
+  },
+  ({ rule_id, ...patch }) => wrap(() => api.updateModelRoutingRule(rule_id, patch))(),
+);
+
+registerTool(
+  ['agent_hq_delete_model_routing_rule', 'atlas_delete_model_routing_rule'],
+  'Delete a story-point model-routing rule.',
+  { rule_id: z.number().int().positive().describe('Model-routing rule ID') },
+  ({ rule_id }) => wrap(() => api.deleteModelRoutingRule(rule_id))(),
+);
+
+registerTool(
+  ['agent_hq_list_sprint_types', 'atlas_list_sprint_types'],
+  'List sprint types.',
+  {},
+  () => wrap(() => api.listSprintTypes())(),
+);
+
+registerTool(
+  ['agent_hq_create_sprint_type', 'atlas_create_sprint_type'],
+  'Create a sprint type.',
+  {
+    key: z.string().min(1).describe('Sprint type key'),
+    name: z.string().min(1).describe('Sprint type name'),
+    description: z.string().optional().describe('Sprint type description'),
+  },
+  (args) => wrap(() => api.createSprintType(args))(),
+);
+
+registerTool(
+  ['agent_hq_update_sprint_type', 'atlas_update_sprint_type'],
+  'Update a sprint type.',
+  {
+    key: z.string().min(1).describe('Sprint type key'),
+    name: z.string().min(1).optional().describe('Sprint type name'),
+    description: z.string().optional().describe('Sprint type description'),
+  },
+  ({ key, ...patch }) => wrap(() => api.updateSprintType(key, patch))(),
+);
+
+registerTool(
+  ['agent_hq_delete_sprint_type', 'atlas_delete_sprint_type'],
+  'Delete a sprint type.',
+  { key: z.string().min(1).describe('Sprint type key') },
+  ({ key }) => wrap(() => api.deleteSprintType(key))(),
+);
+
+registerTool(
+  ['agent_hq_list_workflow_templates', 'atlas_list_workflow_templates'],
+  'List workflow templates, optionally filtered by sprint type.',
+  { sprint_type: z.string().optional().describe('Optional sprint type key') },
+  ({ sprint_type }) => wrap(() => api.listWorkflowTemplates(sprint_type))(),
+);
+
+const workflowStatusSchema = z.object({
+  status_key: z.string().min(1).describe('Status key'),
+  label: z.string().min(1).describe('Status label'),
+  color: z.string().optional().describe('Status color'),
+  stage_order: z.number().int().min(0).describe('Display order'),
+  terminal: z.union([z.boolean(), z.number().int()]).optional().describe('Terminal status flag'),
+  is_default_entry: z.union([z.boolean(), z.number().int()]).optional().describe('Default entry flag'),
+  metadata: z.record(z.string(), z.unknown()).optional().describe('Optional metadata'),
+});
+
+const workflowTransitionSchema = z.object({
+  from_status_key: z.string().min(1).describe('From status key'),
+  to_status_key: z.string().min(1).describe('To status key'),
+  transition_key: z.string().min(1).describe('Transition key'),
+  label: z.string().min(1).describe('Transition label'),
+  outcome: z.string().nullable().optional().describe('Optional mapped outcome'),
+  stage_order: z.number().int().min(0).describe('Display order'),
+  metadata: z.record(z.string(), z.unknown()).optional().describe('Optional metadata'),
+});
+
+registerTool(
+  ['agent_hq_create_workflow_template', 'atlas_create_workflow_template'],
+  'Create a workflow template for a sprint type.',
+  {
+    sprint_type_key: z.string().min(1).describe('Sprint type key'),
+    key: z.string().min(1).describe('Template key'),
+    name: z.string().min(1).describe('Template name'),
+    description: z.string().optional().describe('Template description'),
+    is_default: z.union([z.boolean(), z.number().int()]).optional().describe('Default template flag'),
+    statuses: z.array(workflowStatusSchema).min(1).describe('Workflow statuses'),
+    transitions: z.array(workflowTransitionSchema).min(1).describe('Workflow transitions'),
+  },
+  ({ sprint_type_key, ...payload }) => wrap(() => api.createWorkflowTemplate(sprint_type_key, payload))(),
+);
+
+registerTool(
+  ['agent_hq_update_workflow_template', 'atlas_update_workflow_template'],
+  'Update a workflow template for a sprint type.',
+  {
+    sprint_type_key: z.string().min(1).describe('Sprint type key'),
+    template_id: z.number().int().positive().describe('Template ID'),
+    key: z.string().min(1).optional().describe('Template key'),
+    name: z.string().min(1).optional().describe('Template name'),
+    description: z.string().optional().describe('Template description'),
+    is_default: z.union([z.boolean(), z.number().int()]).optional().describe('Default template flag'),
+    statuses: z.array(workflowStatusSchema).optional().describe('Workflow statuses'),
+    transitions: z.array(workflowTransitionSchema).optional().describe('Workflow transitions'),
+  },
+  ({ sprint_type_key, template_id, ...payload }) => wrap(() => api.updateWorkflowTemplate(sprint_type_key, template_id, payload))(),
+);
+
+registerTool(
+  ['agent_hq_delete_workflow_template', 'atlas_delete_workflow_template'],
+  'Delete a workflow template from a sprint type.',
+  {
+    sprint_type_key: z.string().min(1).describe('Sprint type key'),
+    template_id: z.number().int().positive().describe('Template ID'),
+  },
+  ({ sprint_type_key, template_id }) => wrap(() => api.deleteWorkflowTemplate(sprint_type_key, template_id))(),
+);
+
+registerTool(
+  ['agent_hq_create_task_field_schema', 'atlas_create_task_field_schema'],
+  'Create a task field schema for a sprint type.',
+  {
+    sprint_type_key: z.string().min(1).describe('Sprint type key'),
+    task_type: z.string().nullable().optional().describe('Optional task type scope'),
+    schema: z.record(z.string(), z.unknown()).describe('Field schema payload'),
+  },
+  ({ sprint_type_key, ...payload }) => wrap(() => api.createTaskFieldSchema(sprint_type_key, payload))(),
+);
+
+registerTool(
+  ['agent_hq_update_task_field_schema', 'atlas_update_task_field_schema'],
+  'Update a task field schema for a sprint type.',
+  {
+    sprint_type_key: z.string().min(1).describe('Sprint type key'),
+    schema_id: z.number().int().positive().describe('Schema ID'),
+    task_type: z.string().nullable().optional().describe('Optional task type scope'),
+    schema: z.record(z.string(), z.unknown()).optional().describe('Field schema payload'),
+  },
+  ({ sprint_type_key, schema_id, ...payload }) => wrap(() => api.updateTaskFieldSchema(sprint_type_key, schema_id, payload))(),
+);
+
+registerTool(
+  ['agent_hq_delete_task_field_schema', 'atlas_delete_task_field_schema'],
+  'Delete a task field schema from a sprint type.',
+  {
+    sprint_type_key: z.string().min(1).describe('Sprint type key'),
+    schema_id: z.number().int().positive().describe('Schema ID'),
+  },
+  ({ sprint_type_key, schema_id }) => wrap(() => api.deleteTaskFieldSchema(sprint_type_key, schema_id))(),
+);
+
+registerTool(
+  ['agent_hq_list_agent_skills', 'atlas_list_agent_skills'],
+  'List skill assignments for an agent as a first-class relation.',
+  { agent_id: z.number().int().positive().describe('Agent ID') },
+  ({ agent_id }) => wrap(() => api.listAgentSkills(agent_id))(),
+);
+
+registerTool(
+  ['agent_hq_assign_skill_to_agent', 'atlas_assign_skill_to_agent'],
+  'Assign a skill to an agent as a first-class relation.',
+  {
+    agent_id: z.number().int().positive().describe('Agent ID'),
+    skill_name: z.string().min(1).describe('Skill name'),
+  },
+  ({ agent_id, skill_name }) => wrap(() => api.assignSkillToAgent(agent_id, skill_name))(),
+);
+
+registerTool(
+  ['agent_hq_remove_skill_from_agent', 'atlas_remove_skill_from_agent'],
+  'Remove a skill assignment from an agent as a first-class relation.',
+  {
+    agent_id: z.number().int().positive().describe('Agent ID'),
+    skill_name: z.string().min(1).describe('Skill name'),
+  },
+  ({ agent_id, skill_name }) => wrap(() => api.removeSkillFromAgent(agent_id, skill_name))(),
 );
 
 registerResource(

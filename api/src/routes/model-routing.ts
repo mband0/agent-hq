@@ -3,6 +3,11 @@ import { getDb } from '../db/client';
 
 const router = Router();
 
+function readRuleById(id: number) {
+  const db = getDb();
+  return db.prepare(`SELECT * FROM story_point_model_routing WHERE id = ?`).get(id);
+}
+
 // GET /api/v1/model-routing — list all rules ordered by max_points ASC
 router.get('/', (_req: Request, res: Response) => {
   try {
@@ -12,6 +17,17 @@ router.get('/', (_req: Request, res: Response) => {
       ORDER BY max_points ASC
     `).all();
     return res.json(rules);
+  } catch (err) {
+    return res.status(500).json({ error: String(err) });
+  }
+});
+
+// GET /api/v1/model-routing/:id — fetch a single canonical routing rule
+router.get('/:id', (req: Request, res: Response) => {
+  try {
+    const rule = readRuleById(Number(req.params.id));
+    if (!rule) return res.status(404).json({ error: 'Routing rule not found' });
+    return res.json(rule);
   } catch (err) {
     return res.status(500).json({ error: String(err) });
   }
