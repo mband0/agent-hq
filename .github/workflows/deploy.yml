@@ -42,7 +42,17 @@ jobs:
           pm2 save
 
       - name: Health check API
-        run: curl -f http://localhost:3501/health
+        run: |
+          for i in {1..30}; do
+            curl -f http://localhost:3501/health && exit 0
+            sleep 1
+          done
+          exit 1
 
       - name: Health check UI
-        run: curl -f -I http://localhost:3500
+        run: |
+          for i in {1..30}; do
+            curl -f -I http://localhost:3500 && exit 0
+            sleep 1
+          done
+          exit 1
