@@ -92,7 +92,19 @@ router.put('/:id', (req: Request, res: Response) => {
     const existing = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id) as Project | undefined;
     if (!existing) return res.status(404).json({ error: 'Project not found' });
 
-    const { name, description, context_md } = req.body as Partial<Project>;
+    const body = (req.body && typeof req.body === 'object') ? req.body as Record<string, unknown> : {};
+    const allowedFields = new Set(['name', 'description', 'context_md']);
+    const unsupportedFields = Object.keys(body).filter((key) => !allowedFields.has(key));
+    if (unsupportedFields.length > 0) {
+      return res.status(400).json({
+        error: `Unsupported project update field(s): ${unsupportedFields.join(', ')}`,
+        code: 'unsupported_project_update_fields',
+        unsupported_fields: unsupportedFields,
+        allowed_fields: Array.from(allowedFields),
+      });
+    }
+
+    const { name, description, context_md } = body as Partial<Project>;
 
     const newValues = {
       name: name ?? existing.name,

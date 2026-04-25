@@ -1306,6 +1306,29 @@ router.put('/:id', (req: Request, res: Response) => {
     const existing = db.prepare('SELECT * FROM sprints WHERE id = ?').get(id) as Sprint | undefined;
     if (!existing) return res.status(404).json({ error: 'Sprint not found' });
 
+    const body = (req.body && typeof req.body === 'object') ? req.body as Record<string, unknown> : {};
+    const allowedFields = new Set([
+      'project_id',
+      'name',
+      'goal',
+      'sprint_type',
+      'workflow_template_key',
+      'status',
+      'length_kind',
+      'length_value',
+      'started_at',
+      'ended_at',
+    ]);
+    const unsupportedFields = Object.keys(body).filter((key) => !allowedFields.has(key));
+    if (unsupportedFields.length > 0) {
+      return res.status(400).json({
+        error: `Unsupported sprint update field(s): ${unsupportedFields.join(', ')}`,
+        code: 'unsupported_sprint_update_fields',
+        unsupported_fields: unsupportedFields,
+        allowed_fields: Array.from(allowedFields),
+      });
+    }
+
     const {
       project_id,
       name,
@@ -1317,7 +1340,7 @@ router.put('/:id', (req: Request, res: Response) => {
       length_value,
       started_at,
       ended_at,
-    } = req.body as Partial<Sprint>;
+    } = body as Partial<Sprint>;
 
     const resolvedSprintType = sprint_type !== undefined
       ? resolveSprintTypeOrNull(sprint_type)
