@@ -1219,16 +1219,7 @@ router.put('/:id', (req: Request, res: Response) => {
       : (system_role === ATLAS_SYSTEM_ROLE ? ATLAS_SYSTEM_ROLE : null);
     const resolvedSessionKey = session_key !== undefined
       ? session_key
-      : (
-        currentSessionParsed?.scope === 'main'
-          ? buildDefaultAgentSessionKey({
-              name: resolvedName,
-              role: resolvedRole,
-              projectId: resolvedProjectId,
-              systemRole: resolvedSystemRole,
-            })
-          : currentSessionKey
-      );
+      : currentSessionKey;
 
     db.prepare(`
       UPDATE agents SET
