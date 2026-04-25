@@ -911,6 +911,34 @@ router.get('/rules', (req: Request, res: Response) => {
   }
 });
 
+// GET /rules/resolve — test rule resolution for a given task_type + status + sprint
+router.get('/rules/resolve', (req: Request, res: Response) => {
+  try {
+    const db = getDb();
+    const sprintId = parseSprintId(req.query.sprint_id);
+    const { task_type, status } = req.query;
+
+    if (!task_type || !status || !sprintId) {
+      return res.status(400).json({ error: 'sprint_id, task_type, and status are required' });
+    }
+
+    requireSprint(db, sprintId);
+    const rule = db.prepare(`
+      ${selectSprintRoutingRuleRowSql()}
+      WHERE trr.sprint_id = ? AND trr.task_type = ? AND trr.status = ?
+      ORDER BY trr.priority DESC
+      LIMIT 1
+    `).get(sprintId, task_type, status);
+    if (!rule) {
+      return res.json({ matched: false, rule: null, reason: `No rule for ${task_type}/${status} in sprint ${sprintId}` });
+    }
+
+    res.json({ matched: true, rule });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
 // GET /rules/:id — fetch a single sprint routing rule
 router.get('/rules/:id', (req: Request, res: Response) => {
   try {
@@ -1034,34 +1062,6 @@ router.delete('/rules/:id', (req: Request, res: Response) => {
     const status = typeof (err as { status?: unknown })?.status === 'number' ? Number((err as { status?: number }).status) : 500;
     const message = err instanceof Error ? err.message : String(err);
     res.status(status).json({ error: message });
-  }
-});
-
-// GET /rules/resolve — test rule resolution for a given task_type + status + sprint
-router.get('/rules/resolve', (req: Request, res: Response) => {
-  try {
-    const db = getDb();
-    const sprintId = parseSprintId(req.query.sprint_id);
-    const { task_type, status } = req.query;
-
-    if (!task_type || !status || !sprintId) {
-      return res.status(400).json({ error: 'sprint_id, task_type, and status are required' });
-    }
-
-    requireSprint(db, sprintId);
-    const rule = db.prepare(`
-      ${selectSprintRoutingRuleRowSql()}
-      WHERE trr.sprint_id = ? AND trr.task_type = ? AND trr.status = ?
-      ORDER BY trr.priority DESC
-      LIMIT 1
-    `).get(sprintId, task_type, status);
-    if (!rule) {
-      return res.json({ matched: false, rule: null, reason: `No rule for ${task_type}/${status} in sprint ${sprintId}` });
-    }
-
-    res.json({ matched: true, rule });
-  } catch (err) {
-    res.status(500).json({ error: String(err) });
   }
 });
 

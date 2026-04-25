@@ -196,6 +196,7 @@ These typed MCP tools map to explicit, self-describing API surfaces so clients d
 - canonical workflow routing transitions: `/api/v1/routing/transitions`
 - canonical story-point model routing: `/api/v1/model-routing`
 - compatibility aliases for canonical model routing: `/api/v1/routing/model-routing`, `/api/v1/routing/story-point-routing`
+- agent skill assignment relation surface: `/api/v1/agents/:id/skills`
 - task field schema surfaces: `/api/v1/sprints/types/:key/field-schemas`
 - top-level schema aliases for external clients: `/api/v1/task-field-schemas`, `/api/v1/task-field-definitions`
 
@@ -450,16 +451,48 @@ Typical rate limit error:
 |---|---|---|
 | `agent_hq_list_projects` | GET | `/api/v1/projects` |
 | `agent_hq_get_project` | GET | `/api/v1/projects/:id` plus metrics endpoint if needed |
+| `agent_hq_create_project` | POST | `/api/v1/projects` |
+| `agent_hq_update_project` | PUT | `/api/v1/projects/:id` |
+| `agent_hq_delete_project` | DELETE | `/api/v1/projects/:id` |
 | `agent_hq_list_sprints` | GET | `/api/v1/sprints` |
 | `agent_hq_get_sprint` | GET | `/api/v1/sprints/:id` plus metrics endpoint if needed |
+| `agent_hq_create_sprint` | POST | `/api/v1/sprints` |
+| `agent_hq_update_sprint` | PUT | `/api/v1/sprints/:id` |
+| `agent_hq_delete_sprint` | DELETE | `/api/v1/sprints/:id` |
+| `agent_hq_list_routing_rules` | GET | `/api/v1/routing/rules?sprint_id=:sprintId` |
+| `agent_hq_get_routing_rule` | GET | `/api/v1/routing/rules/:id?sprint_id=:sprintId` |
+| `agent_hq_create_routing_rule` | POST | `/api/v1/routing/rules` |
+| `agent_hq_update_routing_rule` | PUT | `/api/v1/routing/rules/:id` |
+| `agent_hq_delete_routing_rule` | DELETE | `/api/v1/routing/rules/:id` |
+| `agent_hq_list_routing_transitions` | GET | `/api/v1/routing/transitions` |
 | `agent_hq_get_routing_transition` | GET | `/api/v1/routing/transitions/:id` |
+| `agent_hq_create_routing_transition` | POST | `/api/v1/routing/transitions` |
+| `agent_hq_update_routing_transition` | PUT | `/api/v1/routing/transitions/:id` |
+| `agent_hq_delete_routing_transition` | DELETE | `/api/v1/routing/transitions/:id` |
+| `agent_hq_list_model_routing_rules` | GET | `/api/v1/model-routing` |
+| `agent_hq_get_model_routing_rule` | GET | `/api/v1/model-routing/:id` |
+| `agent_hq_create_model_routing_rule` | POST | `/api/v1/model-routing` |
+| `agent_hq_update_model_routing_rule` | PUT | `/api/v1/model-routing/:id` |
+| `agent_hq_delete_model_routing_rule` | DELETE | `/api/v1/model-routing/:id` |
+| `agent_hq_list_sprint_types` | GET | `/api/v1/sprints/types/list` |
 | `agent_hq_list_sprint_type_task_types` | GET | `/api/v1/sprints/types/:key/task-types` |
 | `agent_hq_update_sprint_type_task_types` | PUT | `/api/v1/sprints/types/:key/task-types` |
+| `agent_hq_create_sprint_type` | POST | `/api/v1/sprints/types` |
+| `agent_hq_update_sprint_type` | PUT | `/api/v1/sprints/types/:key` |
+| `agent_hq_delete_sprint_type` | DELETE | `/api/v1/sprints/types/:key` |
+| `agent_hq_list_workflow_templates` | GET | `/api/v1/sprints/workflow-templates` or `/api/v1/sprints/types/:key/workflow-templates` |
 | `agent_hq_get_workflow_template` | GET | `/api/v1/sprints/types/:key/workflow-templates/:templateId` |
+| `agent_hq_create_workflow_template` | POST | `/api/v1/sprints/types/:key/workflow-templates` |
+| `agent_hq_update_workflow_template` | PUT | `/api/v1/sprints/types/:key/workflow-templates/:templateId` |
+| `agent_hq_delete_workflow_template` | DELETE | `/api/v1/sprints/types/:key/workflow-templates/:templateId` |
 | `agent_hq_list_task_field_schemas` | GET | `/api/v1/sprints/types/:key/field-schemas` |
 | `agent_hq_get_task_field_schema` | GET | `/api/v1/sprints/types/:key/field-schemas/:schemaId` |
+| `agent_hq_create_task_field_schema` | POST | `/api/v1/sprints/types/:key/field-schemas` |
+| `agent_hq_update_task_field_schema` | PUT | `/api/v1/sprints/types/:key/field-schemas/:schemaId` |
+| `agent_hq_delete_task_field_schema` | DELETE | `/api/v1/sprints/types/:key/field-schemas/:schemaId` |
 | `agent_hq_list_tasks` | GET | `/api/v1/tasks` |
 | `agent_hq_get_task` | GET | `/api/v1/tasks/:id` |
+| `agent_hq_delete_task` | DELETE | `/api/v1/tasks/:id` |
 | `agent_hq_get_task_notes` | GET | `/api/v1/tasks/:id/notes` |
 | `agent_hq_get_task_history` | GET | `/api/v1/tasks/:id/history` |
 | `agent_hq_list_jobs` | GET | `/api/v1/jobs` |
@@ -470,6 +503,9 @@ Typical rate limit error:
 | `agent_hq_add_task_note` | POST | `/api/v1/tasks/:id/notes` |
 | `agent_hq_add_blocker` | POST | `/api/v1/tasks/:id/blockers` |
 | `agent_hq_remove_blocker` | DELETE | `/api/v1/tasks/:id/blockers/:blocker_id` |
+| `agent_hq_list_agent_skills` | GET | `/api/v1/agents/:id/skills` |
+| `agent_hq_assign_skill_to_agent` | POST | `/api/v1/agents/:id/skills` |
+| `agent_hq_remove_skill_from_agent` | DELETE | `/api/v1/agents/:id/skills/:skillName` |
 
 ---
 
