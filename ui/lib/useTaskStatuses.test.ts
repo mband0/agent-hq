@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildAllowedTransitionsMap } from './useTaskStatuses.ts';
-import type { RoutingTransition, TaskStatusMeta } from './api.ts';
+import type { TaskStatusMeta } from './api.ts';
 
 const statuses: TaskStatusMeta[] = [
   {
@@ -30,20 +30,8 @@ const statuses: TaskStatusMeta[] = [
   },
 ];
 
-test('buildAllowedTransitionsMap uses status allowed_transitions even when workflow transitions disagree', () => {
-  const routingTransitions: RoutingTransition[] = [
-    {
-      id: 1,
-      project_id: null,
-      from_status: 'todo',
-      outcome: 'completed_for_review',
-      to_status: 'done',
-      lane: 'manual',
-      enabled: 1,
-    },
-  ];
-
-  const result = buildAllowedTransitionsMap(statuses, routingTransitions);
+test('buildAllowedTransitionsMap uses status allowed_transitions for board move gating', () => {
+  const result = buildAllowedTransitionsMap(statuses);
 
   assert.deepEqual(result, {
     todo: ['ready', 'cancelled'],
@@ -63,7 +51,7 @@ test('buildAllowedTransitionsMap falls back to empty arrays when a status omits 
       is_system: true,
       allowed_transitions: undefined as unknown as string[],
     },
-  ], []);
+  ]);
 
   assert.deepEqual(result.review, []);
 });
