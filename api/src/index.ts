@@ -39,6 +39,9 @@ import githubIdentitiesRouter from './routes/github-identities';
 import sessionsRouter from './routes/sessions';
 import { shutdownPool as shutdownBrowserPool } from './services/browserPool';
 import { getMcpCatalog } from './mcp/catalog';
+import { registerAgentHqMcpCatalog } from './mcp/registerCatalog';
+
+registerAgentHqMcpCatalog();
 
 const app = express();
 const PORT = process.env.PORT ?? 3501;
