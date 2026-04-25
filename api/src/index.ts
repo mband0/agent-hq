@@ -46,6 +46,18 @@ const HOST = process.env.HOST ?? '0.0.0.0';
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
+function dispatchToSprintsAlias(req: express.Request, res: express.Response, targetUrl: string): void {
+  const originalUrl = req.url;
+  req.url = targetUrl;
+  sprintsRouter(req, res, () => {
+    req.url = originalUrl;
+  });
+}
+
+function resolveSprintTypeKey(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
 // Health check
 app.get('/health', (_req, res) => {
   res.json({ ok: true, service: 'Agent HQ API', ts: new Date().toISOString() });
@@ -171,7 +183,7 @@ app.get('/api/v1/task-field-schemas', (req, res) => {
       canonical_path_template: '/api/v1/sprints/types/:key/field-schemas',
     });
   }
-  res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(sprintTypeKey)}/field-schemas`);
+  dispatchToSprintsAlias(req, res, `/types/${encodeURIComponent(sprintTypeKey)}/field-schemas`);
 });
 app.post('/api/v1/task-field-schemas', (req, res) => {
   const sprintTypeKey = typeof req.body?.sprint_type_key === 'string'
@@ -202,7 +214,7 @@ app.get('/api/v1/task-field-schemas/:schemaId', (req, res) => {
       canonical_path_template: '/api/v1/sprints/types/:key/field-schemas/:schemaId',
     });
   }
-  res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(sprintTypeKey)}/field-schemas/${encodeURIComponent(req.params.schemaId)}`);
+  dispatchToSprintsAlias(req, res, `/types/${encodeURIComponent(sprintTypeKey)}/field-schemas/${encodeURIComponent(req.params.schemaId)}`);
 });
 app.put('/api/v1/task-field-schemas/:schemaId', (req, res) => {
   const sprintTypeKey = typeof req.body?.sprint_type_key === 'string'
@@ -245,16 +257,34 @@ app.delete('/api/v1/task-field-schemas/:schemaId', (req, res) => {
   sprintsRouter(req, res, () => undefined);
 });
 app.get('/api/v1/task-field-definitions', (req, res) => {
-  const query = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
-  res.redirect(307, `/api/v1/task-field-schemas${query}`);
+  const sprintTypeKey = resolveSprintTypeKey(req.query.sprint_type_key)
+    || resolveSprintTypeKey(req.query.sprint_type);
+  if (!sprintTypeKey) {
+    return res.status(400).json({
+      error: 'sprint_type_key is required',
+      supported_query_params: ['sprint_type_key', 'sprint_type'],
+      canonical_path_template: '/api/v1/sprints/types/:key/field-schemas',
+      alias_of: '/api/v1/task-field-schemas',
+    });
+  }
+  dispatchToSprintsAlias(req, res, `/types/${encodeURIComponent(sprintTypeKey)}/field-schemas`);
 });
 app.post('/api/v1/task-field-definitions', (req, res) => {
   req.url = `/task-field-schemas`;
   app._router.handle(req, res, () => undefined);
 });
 app.get('/api/v1/task-field-definitions/:schemaId', (req, res) => {
-  const query = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
-  res.redirect(307, `/api/v1/task-field-schemas/${encodeURIComponent(req.params.schemaId)}${query}`);
+  const sprintTypeKey = resolveSprintTypeKey(req.query.sprint_type_key)
+    || resolveSprintTypeKey(req.query.sprint_type);
+  if (!sprintTypeKey) {
+    return res.status(400).json({
+      error: 'sprint_type_key is required',
+      supported_query_params: ['sprint_type_key', 'sprint_type'],
+      canonical_path_template: '/api/v1/sprints/types/:key/field-schemas/:schemaId',
+      alias_of: '/api/v1/task-field-schemas/:schemaId',
+    });
+  }
+  dispatchToSprintsAlias(req, res, `/types/${encodeURIComponent(sprintTypeKey)}/field-schemas/${encodeURIComponent(req.params.schemaId)}`);
 });
 app.put('/api/v1/task-field-definitions/:schemaId', (req, res) => {
   req.url = `/task-field-schemas/${encodeURIComponent(req.params.schemaId)}`;
