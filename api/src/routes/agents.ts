@@ -1866,9 +1866,18 @@ router.get('/:id/skills', (req: Request, res: Response) => {
       }
     })();
 
+    const toStableSkillId = (name: string): number => {
+      let hash = 0;
+      for (const ch of name) hash = ((hash * 31) + ch.charCodeAt(0)) | 0;
+      return Math.abs(hash) || 1;
+    };
+
     return res.json({
       agent_id: agent.id,
-      skills: skillNames.map((name) => ({ name })),
+      skills: skillNames.map((name) => ({
+        id: toStableSkillId(name),
+        name,
+      })),
       skill_names: skillNames,
     });
   } catch (err) {
@@ -1929,11 +1938,23 @@ router.post('/:id/skills', (req: Request, res: Response) => {
       };
     }
 
+    const toStableSkillId = (name: string): number => {
+      let hash = 0;
+      for (const ch of name) hash = ((hash * 31) + ch.charCodeAt(0)) | 0;
+      return Math.abs(hash) || 1;
+    };
+
     return res.status(201).json({
       ok: true,
       agent_id: Number(req.params.id),
-      skill: { name: skillName },
-      skills: nextSkillNames.map((name) => ({ name })),
+      skill: {
+        id: toStableSkillId(skillName),
+        name: skillName,
+      },
+      skills: nextSkillNames.map((name) => ({
+        id: toStableSkillId(name),
+        name,
+      })),
       skill_names: nextSkillNames,
       sync: syncResult,
     });
@@ -1989,11 +2010,24 @@ router.delete('/:id/skills/:skillName', (req: Request, res: Response) => {
       };
     }
 
+    const toStableSkillId = (name: string): number => {
+      let hash = 0;
+      for (const ch of name) hash = ((hash * 31) + ch.charCodeAt(0)) | 0;
+      return Math.abs(hash) || 1;
+    };
+
     return res.json({
       ok: true,
       agent_id: Number(req.params.id),
+      removed_skill: {
+        id: toStableSkillId(skillName),
+        name: skillName,
+      },
       removed_skill_name: skillName,
-      skills: nextSkillNames.map((name) => ({ name })),
+      skills: nextSkillNames.map((name) => ({
+        id: toStableSkillId(name),
+        name,
+      })),
       skill_names: nextSkillNames,
       sync: syncResult,
     });

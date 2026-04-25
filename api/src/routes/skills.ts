@@ -5,6 +5,14 @@ import path from 'path';
 const router = Router();
 const INTERNAL_SKILLS_DIR = path.resolve(process.cwd(), '..', 'skills');
 
+function makeStableSkillId(name: string): number {
+  let hash = 0;
+  for (let i = 0; i < name.length; i += 1) {
+    hash = ((hash * 31) + name.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash) || 1;
+}
+
 // ---------------------------------------------------------------------------
 // Filesystem helpers (used for system skills overlay + migration)
 // ---------------------------------------------------------------------------
@@ -97,7 +105,7 @@ interface SkillListEntry {
 router.get('/', (_req: Request, res: Response) => {
   try {
     const result: SkillListEntry[] = listFsSkillsDir(INTERNAL_SKILLS_DIR).map(skill => ({
-      id: null,
+      id: makeStableSkillId(skill.name),
       name: skill.name,
       source: 'atlas',
       description: '',
@@ -122,7 +130,7 @@ router.get('/:name', (req: Request, res: Response) => {
     const fsPath = path.join(INTERNAL_SKILLS_DIR, name);
     if (fs.existsSync(fsPath)) {
       return res.json({
-        id: null,
+        id: makeStableSkillId(name),
         name,
         source: 'atlas',
         description: '',
@@ -177,7 +185,7 @@ router.post('/', async (req: Request, res: Response) => {
       'utf-8'
     );
     return res.status(201).json({
-      id: null,
+      id: makeStableSkillId(name),
       name,
       source: 'atlas',
       description: description ?? '',
@@ -201,7 +209,7 @@ router.put('/:name', async (req: Request, res: Response) => {
     if (content === undefined) return res.status(400).json({ error: 'No fields to update' });
     fs.writeFileSync(path.join(skillDir, 'SKILL.md'), content, 'utf-8');
     return res.json({
-      id: null,
+      id: makeStableSkillId(name),
       name,
       source: 'atlas',
       description: '',

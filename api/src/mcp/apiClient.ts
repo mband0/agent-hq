@@ -847,19 +847,39 @@ export class AgentHqApiClient {
     return this.request<unknown[]>('GET', '/api/v1/model-routing');
   }
 
+  listStoryPointRoutingRules() {
+    return this.request<unknown[]>('GET', '/api/v1/story-point-routing');
+  }
+
   getModelRoutingRule(id: number) {
     return this.request<unknown>('GET', `/api/v1/model-routing/${id}`);
+  }
+
+  getStoryPointRoutingRule(id: number) {
+    return this.request<unknown>('GET', `/api/v1/story-point-routing/${id}`);
   }
 
   createModelRoutingRule(data: Record<string, unknown>) {
     return this.request<unknown>('POST', '/api/v1/model-routing', data);
   }
 
+  createStoryPointRoutingRule(data: Record<string, unknown>) {
+    return this.request<unknown>('POST', '/api/v1/story-point-routing', data);
+  }
+
   updateModelRoutingRule(id: number, data: Record<string, unknown>) {
     return this.request<unknown>('PUT', `/api/v1/model-routing/${id}`, data);
   }
 
+  updateStoryPointRoutingRule(id: number, data: Record<string, unknown>) {
+    return this.request<unknown>('PUT', `/api/v1/story-point-routing/${id}`, data);
+  }
+
   deleteModelRoutingRule(id: number) {
     return this.request<unknown>('DELETE', `/api/v1/model-routing/${id}`);
+  }
+
+  deleteStoryPointRoutingRule(id: number) {
+    return this.request<unknown>('DELETE', `/api/v1/story-point-routing/${id}`);
   }
 }
