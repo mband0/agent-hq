@@ -661,12 +661,12 @@ export class AgentHqApiClient {
     return this.request<unknown>('GET', `/api/v1/agents/${agentId}/skills`);
   }
 
-  assignSkillToAgent(agentId: number, skillName: string) {
-    return this.request<unknown>('POST', `/api/v1/agents/${agentId}/skills`, { skill_name: skillName });
+  assignSkillToAgent(agentId: number, input: { skill_name?: string; skill_id?: number }) {
+    return this.request<unknown>('POST', `/api/v1/agents/${agentId}/skills`, input);
   }
 
-  removeSkillFromAgent(agentId: number, skillName: string) {
-    return this.request<unknown>('DELETE', `/api/v1/agents/${agentId}/skills/${encodeURIComponent(skillName)}`);
+  removeSkillFromAgent(agentId: number, skillIdentifier: string | number) {
+    return this.request<unknown>('DELETE', `/api/v1/agents/${agentId}/skills/${encodeURIComponent(String(skillIdentifier))}`);
   }
 
   getSkill(name: string) {

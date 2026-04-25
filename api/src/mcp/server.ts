@@ -1099,22 +1099,24 @@ registerTool(
 
 registerTool(
   ['agent_hq_assign_skill_to_agent', 'atlas_assign_skill_to_agent'],
-  'Assign a skill to an agent as a first-class relation.',
+  'Assign a skill to an agent as a first-class relation by skill id or skill name.',
   {
     agent_id: z.number().int().positive().describe('Agent ID'),
-    skill_name: z.string().min(1).describe('Skill name'),
+    skill_id: z.number().int().positive().optional().describe('Skill ID'),
+    skill_name: z.string().min(1).optional().describe('Skill name'),
   },
-  ({ agent_id, skill_name }) => wrap(() => api.assignSkillToAgent(agent_id, skill_name))(),
+  ({ agent_id, skill_id, skill_name }) => wrap(() => api.assignSkillToAgent(agent_id, { skill_id, skill_name }))(),
 );
 
 registerTool(
   ['agent_hq_remove_skill_from_agent', 'atlas_remove_skill_from_agent'],
-  'Remove a skill assignment from an agent as a first-class relation.',
+  'Remove a skill assignment from an agent as a first-class relation by skill id or skill name.',
   {
     agent_id: z.number().int().positive().describe('Agent ID'),
-    skill_name: z.string().min(1).describe('Skill name'),
+    skill_id: z.number().int().positive().optional().describe('Skill ID'),
+    skill_name: z.string().min(1).optional().describe('Skill name'),
   },
-  ({ agent_id, skill_name }) => wrap(() => api.removeSkillFromAgent(agent_id, skill_name))(),
+  ({ agent_id, skill_id, skill_name }) => wrap(() => api.removeSkillFromAgent(agent_id, skill_id ?? skill_name ?? ''))(),
 );
 
 registerResource(

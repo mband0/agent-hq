@@ -1852,25 +1852,85 @@ router.post('/:id/claude-md/regen', (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 // Agent skill assignment relations
 // ---------------------------------------------------------------------------
+const toStableSkillId = (name: string): number => {
+  let hash = 0;
+  for (const ch of name) hash = ((hash * 31) + ch.charCodeAt(0)) | 0;
+  return Math.abs(hash) || 1;
+};
+
+const resolveAgentSkillNames = (raw: unknown): string[] => {
+  try {
+    return typeof raw === 'string' ? normalizeJsonArray(JSON.parse(raw)) : [];
+  } catch {
+    return [];
+  }
+};
+
+const resolveSkillNameInput = (input: unknown): string => (typeof input === 'string' ? input.trim() : '');
+
+const findSkillNameByIdentifier = (skillIdentifier: string, availableSkillNames: string[]): string | null => {
+  if (!skillIdentifier) return null;
+
+  const byName = availableSkillNames.find((name) => name === skillIdentifier);
+  if (byName) return byName;
+
+  const numericId = Number(skillIdentifier);
+  if (Number.isInteger(numericId) && numericId > 0) {
+    const byId = availableSkillNames.find((name) => toStableSkillId(name) === numericId);
+    if (byId) return byId;
+  }
+
+  return null;
+};
+
+const resolveExistingSkillName = (db: ReturnType<typeof getDb>, skillId: number): string | null => {
+  const filesystemSkills = Array.from(new Set([
+    ...fs.readdirSync(OPENCLAW_SKILLS_PATH, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name),
+    ...fs.readdirSync(path.resolve(process.cwd(), '..', 'skills'), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name),
+  ]));
+
+  return filesystemSkills.find((name) => toStableSkillId(name) === skillId) ?? null;
+};
+
+const materializeAgentSkills = (
+  db: ReturnType<typeof getDb>,
+  agent: Record<string, unknown>,
+  skillNames: string[],
+): Record<string, unknown> | null => {
+  const workingDirectory = (agent.workspace_path as string | null) ?? null;
+  if (!workingDirectory) return null;
+
+  const runtimeType = (agent.runtime_type as string | null) ?? 'openclaw';
+  const adapter = getSkillMaterializationAdapter(runtimeType);
+  const result = adapter.materialize({
+    workingDirectory,
+    skillNames,
+    skillsBasePath: OPENCLAW_SKILLS_PATH,
+    hooksUrl: (agent.hooks_url as string | null) ?? null,
+    db,
+  });
+
+  return {
+    ok: result.ok,
+    adapter: adapter.adapterName,
+    count: result.count,
+    details: result.details,
+    warnings: result.warnings,
+    ...(result.error ? { error: result.error } : {}),
+  };
+};
+
 router.get('/:id/skills', (req: Request, res: Response) => {
   try {
     const db = getDb();
     const agent = db.prepare('SELECT id, skill_names FROM agents WHERE id = ?').get(req.params.id) as { id: number; skill_names: string | null } | undefined;
     if (!agent) return res.status(404).json({ error: 'Agent not found' });
 
-    const skillNames = (() => {
-      try {
-        return agent.skill_names ? normalizeJsonArray(JSON.parse(agent.skill_names)) : [];
-      } catch {
-        return [];
-      }
-    })();
-
-    const toStableSkillId = (name: string): number => {
-      let hash = 0;
-      for (const ch of name) hash = ((hash * 31) + ch.charCodeAt(0)) | 0;
-      return Math.abs(hash) || 1;
-    };
+    const skillNames = resolveAgentSkillNames(agent.skill_names);
 
     return res.json({
       agent_id: agent.id,
@@ -1891,8 +1951,20 @@ router.post('/:id/skills', (req: Request, res: Response) => {
     const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(req.params.id) as Record<string, unknown> | undefined;
     if (!agent) return res.status(404).json({ error: 'Agent not found' });
 
-    const skillName = typeof req.body?.skill_name === 'string' ? req.body.skill_name.trim() : '';
-    if (!skillName) return res.status(400).json({ error: 'skill_name is required' });
+    const requestedSkillName = resolveSkillNameInput(req.body?.skill_name);
+    const requestedSkillId = Number.isInteger(req.body?.skill_id) ? Number(req.body.skill_id) : null;
+
+    let skillName = requestedSkillName;
+    if (!skillName && requestedSkillId) {
+      skillName = resolveExistingSkillName(db, requestedSkillId) ?? '';
+      if (!skillName) {
+        return res.status(404).json({ error: `Skill with id '${requestedSkillId}' not found` });
+      }
+    }
+
+    if (!skillName) {
+      return res.status(400).json({ error: 'skill_name or skill_id is required' });
+    }
 
     const skillPath = path.join(OPENCLAW_SKILLS_PATH, skillName);
     const atlasSkillPath = path.resolve(process.cwd(), '..', 'skills', skillName);
@@ -1900,49 +1972,13 @@ router.post('/:id/skills', (req: Request, res: Response) => {
       return res.status(404).json({ error: `Skill '${skillName}' not found` });
     }
 
-    let skillNames: string[] = [];
-    try {
-      skillNames = agent.skill_names && typeof agent.skill_names === 'string'
-        ? normalizeJsonArray(JSON.parse(agent.skill_names))
-        : [];
-    } catch {
-      skillNames = [];
-    }
-
+    const skillNames = resolveAgentSkillNames(agent.skill_names);
     if (skillNames.includes(skillName)) {
       return res.status(409).json({ error: `Skill '${skillName}' is already assigned to this agent` });
     }
 
     const nextSkillNames = [...skillNames, skillName].sort((a, b) => a.localeCompare(b));
     db.prepare(`UPDATE agents SET skill_names = ? WHERE id = ?`).run(JSON.stringify(nextSkillNames), req.params.id);
-
-    const workingDirectory = (agent.workspace_path as string | null) ?? null;
-    let syncResult: Record<string, unknown> | null = null;
-    if (workingDirectory) {
-      const runtimeType = (agent.runtime_type as string | null) ?? 'openclaw';
-      const adapter = getSkillMaterializationAdapter(runtimeType);
-      const result = adapter.materialize({
-        workingDirectory,
-        skillNames: nextSkillNames,
-        skillsBasePath: OPENCLAW_SKILLS_PATH,
-        hooksUrl: (agent.hooks_url as string | null) ?? null,
-        db,
-      });
-      syncResult = {
-        ok: result.ok,
-        adapter: adapter.adapterName,
-        count: result.count,
-        details: result.details,
-        warnings: result.warnings,
-        ...(result.error ? { error: result.error } : {}),
-      };
-    }
-
-    const toStableSkillId = (name: string): number => {
-      let hash = 0;
-      for (const ch of name) hash = ((hash * 31) + ch.charCodeAt(0)) | 0;
-      return Math.abs(hash) || 1;
-    };
 
     return res.status(201).json({
       ok: true,
@@ -1956,7 +1992,7 @@ router.post('/:id/skills', (req: Request, res: Response) => {
         name,
       })),
       skill_names: nextSkillNames,
-      sync: syncResult,
+      sync: materializeAgentSkills(db, agent, nextSkillNames),
     });
   } catch (err) {
     return res.status(500).json({ error: String(err) });
@@ -1969,52 +2005,17 @@ router.delete('/:id/skills/:skillName', (req: Request, res: Response) => {
     const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(req.params.id) as Record<string, unknown> | undefined;
     if (!agent) return res.status(404).json({ error: 'Agent not found' });
 
-    const skillName = typeof req.params.skillName === 'string' ? req.params.skillName.trim() : '';
-    if (!skillName) return res.status(400).json({ error: 'skillName is required' });
+    const skillNames = resolveAgentSkillNames(agent.skill_names);
+    const skillIdentifier = resolveSkillNameInput(req.params.skillName);
+    const skillName = findSkillNameByIdentifier(skillIdentifier, skillNames);
 
-    let skillNames: string[] = [];
-    try {
-      skillNames = agent.skill_names && typeof agent.skill_names === 'string'
-        ? normalizeJsonArray(JSON.parse(agent.skill_names))
-        : [];
-    } catch {
-      skillNames = [];
-    }
-
-    if (!skillNames.includes(skillName)) {
-      return res.status(404).json({ error: `Skill '${skillName}' is not assigned to this agent` });
+    if (!skillIdentifier) return res.status(400).json({ error: 'skillName is required' });
+    if (!skillName) {
+      return res.status(404).json({ error: `Skill '${skillIdentifier}' is not assigned to this agent` });
     }
 
     const nextSkillNames = skillNames.filter((name) => name !== skillName);
     db.prepare(`UPDATE agents SET skill_names = ? WHERE id = ?`).run(JSON.stringify(nextSkillNames), req.params.id);
-
-    const workingDirectory = (agent.workspace_path as string | null) ?? null;
-    let syncResult: Record<string, unknown> | null = null;
-    if (workingDirectory) {
-      const runtimeType = (agent.runtime_type as string | null) ?? 'openclaw';
-      const adapter = getSkillMaterializationAdapter(runtimeType);
-      const result = adapter.materialize({
-        workingDirectory,
-        skillNames: nextSkillNames,
-        skillsBasePath: OPENCLAW_SKILLS_PATH,
-        hooksUrl: (agent.hooks_url as string | null) ?? null,
-        db,
-      });
-      syncResult = {
-        ok: result.ok,
-        adapter: adapter.adapterName,
-        count: result.count,
-        details: result.details,
-        warnings: result.warnings,
-        ...(result.error ? { error: result.error } : {}),
-      };
-    }
-
-    const toStableSkillId = (name: string): number => {
-      let hash = 0;
-      for (const ch of name) hash = ((hash * 31) + ch.charCodeAt(0)) | 0;
-      return Math.abs(hash) || 1;
-    };
 
     return res.json({
       ok: true,
@@ -2029,7 +2030,7 @@ router.delete('/:id/skills/:skillName', (req: Request, res: Response) => {
         name,
       })),
       skill_names: nextSkillNames,
-      sync: syncResult,
+      sync: materializeAgentSkills(db, agent, nextSkillNames),
     });
   } catch (err) {
     return res.status(500).json({ error: String(err) });
