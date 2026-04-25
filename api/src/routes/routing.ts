@@ -611,6 +611,25 @@ router.delete('/statuses/:name', (req: Request, res: Response) => {
 // ROUTING TRANSITIONS — outcome-driven state machine
 // ═══════════════════════════════════════════════════════════════════════════════
 
+function readGlobalRoutingTransition(db: ReturnType<typeof getDb>, id: number) {
+  return db.prepare(`
+    SELECT rt.*, p.name as project_name
+    FROM routing_transitions rt
+    LEFT JOIN projects p ON p.id = rt.project_id
+    WHERE rt.id = ?
+  `).get(id);
+}
+
+function readSprintRoutingTransition(db: ReturnType<typeof getDb>, sprintId: number, id: number) {
+  const sprintName = (db.prepare(`SELECT name FROM sprints WHERE id = ?`).get(sprintId) as { name?: string } | undefined)?.name ?? null;
+  const row = db.prepare(`
+    SELECT *
+    FROM sprint_task_transitions
+    WHERE id = ? AND sprint_id = ?
+  `).get(id, sprintId) as Record<string, unknown> | undefined;
+  return row ? { ...row, sprint_name: sprintName } : undefined;
+}
+
 // GET /transitions — all routing transition rules
 router.get('/transitions', (req: Request, res: Response) => {
   try {
@@ -643,6 +662,29 @@ router.get('/transitions', (req: Request, res: Response) => {
 
     const transitions = db.prepare(query).all(...params);
     res.json({ transitions });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+// GET /transitions/:id — fetch a single routing transition
+router.get('/transitions/:id', (req: Request, res: Response) => {
+  try {
+    const db = getDb();
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: 'Valid transition id is required' });
+
+    const sprintId = parseSprintId(req.query.sprint_id);
+    if (sprintId) {
+      requireSprint(db, sprintId);
+      const transition = readSprintRoutingTransition(db, sprintId, id);
+      if (!transition) return res.status(404).json({ error: 'Routing transition not found' });
+      return res.json(transition);
+    }
+
+    const transition = readGlobalRoutingTransition(db, id);
+    if (!transition) return res.status(404).json({ error: 'Routing transition not found' });
+    return res.json(transition);
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }

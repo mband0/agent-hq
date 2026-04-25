@@ -915,6 +915,23 @@ registerTool(
 );
 
 registerTool(
+  ['agent_hq_list_sprint_type_task_types', 'atlas_list_sprint_type_task_types'],
+  'List allowed task types for a sprint type.',
+  { sprint_type_key: z.string().min(1).describe('Sprint type key') },
+  ({ sprint_type_key }) => wrap(() => api.listSprintTypeTaskTypes(sprint_type_key))(),
+);
+
+registerTool(
+  ['agent_hq_update_sprint_type_task_types', 'atlas_update_sprint_type_task_types'],
+  'Replace the allowed task types for a sprint type.',
+  {
+    sprint_type_key: z.string().min(1).describe('Sprint type key'),
+    task_types: z.array(z.string().min(1)).describe('Allowed task type keys'),
+  },
+  ({ sprint_type_key, task_types }) => wrap(() => api.updateSprintTypeTaskTypes(sprint_type_key, task_types))(),
+);
+
+registerTool(
   ['agent_hq_create_sprint_type', 'atlas_create_sprint_type'],
   'Create a sprint type.',
   {
@@ -971,6 +988,16 @@ const workflowTransitionSchema = z.object({
 });
 
 registerTool(
+  ['agent_hq_get_workflow_template', 'atlas_get_workflow_template'],
+  'Get a workflow template for a sprint type.',
+  {
+    sprint_type_key: z.string().min(1).describe('Sprint type key'),
+    template_id: z.number().int().positive().describe('Template ID'),
+  },
+  ({ sprint_type_key, template_id }) => wrap(() => api.getWorkflowTemplate(sprint_type_key, template_id))(),
+);
+
+registerTool(
   ['agent_hq_create_workflow_template', 'atlas_create_workflow_template'],
   'Create a workflow template for a sprint type.',
   {
@@ -1009,6 +1036,25 @@ registerTool(
     template_id: z.number().int().positive().describe('Template ID'),
   },
   ({ sprint_type_key, template_id }) => wrap(() => api.deleteWorkflowTemplate(sprint_type_key, template_id))(),
+);
+
+registerTool(
+  ['agent_hq_list_task_field_schemas', 'atlas_list_task_field_schemas'],
+  'List task field schemas for a sprint type.',
+  {
+    sprint_type_key: z.string().min(1).describe('Sprint type key'),
+  },
+  ({ sprint_type_key }) => wrap(() => api.listTaskFieldSchemas(sprint_type_key))(),
+);
+
+registerTool(
+  ['agent_hq_get_task_field_schema', 'atlas_get_task_field_schema'],
+  'Get a task field schema for a sprint type.',
+  {
+    sprint_type_key: z.string().min(1).describe('Sprint type key'),
+    schema_id: z.number().int().positive().describe('Schema ID'),
+  },
+  ({ sprint_type_key, schema_id }) => wrap(() => api.getTaskFieldSchema(sprint_type_key, schema_id))(),
 );
 
 registerTool(

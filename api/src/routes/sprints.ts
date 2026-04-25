@@ -715,6 +715,74 @@ router.get('/types/:key/task-types', (req: Request, res: Response) => {
   }
 });
 
+router.get('/types/:key/field-schemas', (req: Request, res: Response) => {
+  try {
+    const db = getDb();
+    const sprintTypeKey = resolveSprintTypeOrNull(req.params.key);
+    if (!sprintTypeKey) return res.status(400).json({ error: 'Sprint type key is required' });
+    const sprintType = getSprintTypeOr404(db, sprintTypeKey);
+    if (!sprintType) return res.status(404).json({ error: 'Sprint type not found' });
+
+    const rows = db.prepare(`
+      SELECT id, sprint_type_key, task_type, schema_json, is_system, created_at, updated_at
+      FROM task_field_schemas
+      WHERE sprint_type_key = ?
+      ORDER BY CASE WHEN task_type IS NULL THEN 0 ELSE 1 END, task_type ASC, id ASC
+    `).all(sprintTypeKey) as TaskFieldSchemaRow[];
+
+    return res.json({
+      sprint_type: sprintType,
+      field_schemas: rows.map((row) => ({
+        ...row,
+        schema: JSON.parse(row.schema_json || '{}'),
+      })),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: String(err) });
+  }
+});
+
+router.get('/types/:key/field-schemas/:schemaId', (req: Request, res: Response) => {
+  try {
+    const db = getDb();
+    const sprintTypeKey = resolveSprintTypeOrNull(req.params.key);
+    const schemaId = Number(req.params.schemaId);
+    if (!sprintTypeKey) return res.status(400).json({ error: 'Sprint type key is required' });
+
+    const row = db.prepare(`
+      SELECT id, sprint_type_key, task_type, schema_json, is_system, created_at, updated_at
+      FROM task_field_schemas
+      WHERE id = ? AND sprint_type_key = ?
+    `).get(schemaId, sprintTypeKey) as TaskFieldSchemaRow | undefined;
+
+    if (!row) return res.status(404).json({ error: 'Field schema not found' });
+
+    return res.json({
+      ...row,
+      schema: JSON.parse(row.schema_json || '{}'),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: String(err) });
+  }
+});
+
+router.get('/types/:key/workflow-templates/:templateId', (req: Request, res: Response) => {
+  try {
+    const db = getDb();
+    const sprintTypeKey = resolveSprintTypeOrNull(req.params.key);
+    const templateId = Number(req.params.templateId);
+    if (!sprintTypeKey) return res.status(400).json({ error: 'Sprint type key is required' });
+    if (!getSprintTypeOr404(db, sprintTypeKey)) return res.status(404).json({ error: 'Sprint type not found' });
+
+    const template = getWorkflowTemplatesDetailed(db, sprintTypeKey).find((row) => row.id === templateId);
+    if (!template) return res.status(404).json({ error: 'Workflow template not found' });
+
+    return res.json(template);
+  } catch (err) {
+    return res.status(500).json({ error: String(err) });
+  }
+});
+
 // ── GET /api/v1/sprints/types/:key/workflow ─────────────────────────────────
 
 router.get('/types/:key/workflow', (req: Request, res: Response) => {

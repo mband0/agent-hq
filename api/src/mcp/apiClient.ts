@@ -756,12 +756,10 @@ export class AgentHqApiClient {
   }
 
   getRoutingTransition(transitionId: number, params: { sprint_id?: number; project_id?: number } = {}) {
-    return this.listRoutingTransitions(params).then((payload) => {
-      const transitions = asArray(asRecord(payload).transitions);
-      const match = transitions.find((row) => asNumber(asRecord(row).id) === transitionId);
-      if (!match) throw new Error('Routing transition not found');
-      return match;
-    });
+    const qs = new URLSearchParams();
+    if (params.sprint_id !== undefined) qs.set('sprint_id', String(params.sprint_id));
+    if (params.project_id !== undefined) qs.set('project_id', String(params.project_id));
+    return this.request<unknown>('GET', `/api/v1/routing/transitions/${transitionId}${qs.toString() ? `?${qs.toString()}` : ''}`);
   }
 
   createRoutingTransition(data: Record<string, unknown>) {
@@ -794,11 +792,23 @@ export class AgentHqApiClient {
     return this.request<unknown>('DELETE', `/api/v1/sprints/types/${encodeURIComponent(key)}`);
   }
 
+  listSprintTypeTaskTypes(sprintTypeKey: string) {
+    return this.request<unknown>('GET', `/api/v1/sprints/types/${encodeURIComponent(sprintTypeKey)}/task-types`);
+  }
+
+  updateSprintTypeTaskTypes(sprintTypeKey: string, taskTypes: string[]) {
+    return this.request<unknown>('PUT', `/api/v1/sprints/types/${encodeURIComponent(sprintTypeKey)}/task-types`, { task_types: taskTypes });
+  }
+
   listWorkflowTemplates(sprintType?: string) {
     const qs = new URLSearchParams();
     if (sprintType) qs.set('sprint_type', sprintType);
     qs.set('system_only', 'false');
     return this.request<unknown>('GET', `/api/v1/sprints/workflow-templates${qs.toString() ? `?${qs.toString()}` : ''}`);
+  }
+
+  getWorkflowTemplate(sprintTypeKey: string, templateId: number) {
+    return this.request<unknown>('GET', `/api/v1/sprints/types/${encodeURIComponent(sprintTypeKey)}/workflow-templates/${templateId}`);
   }
 
   createWorkflowTemplate(sprintTypeKey: string, data: Record<string, unknown>) {
@@ -811,6 +821,14 @@ export class AgentHqApiClient {
 
   deleteWorkflowTemplate(sprintTypeKey: string, templateId: number) {
     return this.request<unknown>('DELETE', `/api/v1/sprints/types/${encodeURIComponent(sprintTypeKey)}/workflow-templates/${templateId}`);
+  }
+
+  listTaskFieldSchemas(sprintTypeKey: string) {
+    return this.request<unknown>('GET', `/api/v1/sprints/types/${encodeURIComponent(sprintTypeKey)}/field-schemas`);
+  }
+
+  getTaskFieldSchema(sprintTypeKey: string, schemaId: number) {
+    return this.request<unknown>('GET', `/api/v1/sprints/types/${encodeURIComponent(sprintTypeKey)}/field-schemas/${schemaId}`);
   }
 
   createTaskFieldSchema(sprintTypeKey: string, data: Record<string, unknown>) {

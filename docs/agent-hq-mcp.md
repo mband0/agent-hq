@@ -118,12 +118,17 @@ Legacy `atlas_*` aliases may still exist for backward compatibility, but new doc
 | `agent_hq_create_model_routing_rule` | Create a story-point model-routing rule |
 | `agent_hq_update_model_routing_rule` | Update a story-point model-routing rule |
 | `agent_hq_delete_model_routing_rule` | Delete a story-point model-routing rule |
+| `agent_hq_list_sprint_type_task_types` | List allowed task types for a sprint type |
+| `agent_hq_update_sprint_type_task_types` | Replace allowed task types for a sprint type |
 | `agent_hq_create_sprint_type` | Create a sprint type |
 | `agent_hq_update_sprint_type` | Update a sprint type |
 | `agent_hq_delete_sprint_type` | Delete a sprint type |
+| `agent_hq_get_workflow_template` | Get a workflow template |
 | `agent_hq_create_workflow_template` | Create a workflow template |
 | `agent_hq_update_workflow_template` | Update a workflow template |
 | `agent_hq_delete_workflow_template` | Delete a workflow template |
+| `agent_hq_list_task_field_schemas` | List task field schemas for a sprint type |
+| `agent_hq_get_task_field_schema` | Get a task field schema |
 | `agent_hq_create_task_field_schema` | Create a task field schema |
 | `agent_hq_update_task_field_schema` | Update a task field schema |
 | `agent_hq_delete_task_field_schema` | Delete a task field schema |
@@ -436,6 +441,12 @@ Typical rate limit error:
 | `agent_hq_get_project` | GET | `/api/v1/projects/:id` plus metrics endpoint if needed |
 | `agent_hq_list_sprints` | GET | `/api/v1/sprints` |
 | `agent_hq_get_sprint` | GET | `/api/v1/sprints/:id` plus metrics endpoint if needed |
+| `agent_hq_get_routing_transition` | GET | `/api/v1/routing/transitions/:id` |
+| `agent_hq_list_sprint_type_task_types` | GET | `/api/v1/sprints/types/:key/task-types` |
+| `agent_hq_update_sprint_type_task_types` | PUT | `/api/v1/sprints/types/:key/task-types` |
+| `agent_hq_get_workflow_template` | GET | `/api/v1/sprints/types/:key/workflow-templates/:templateId` |
+| `agent_hq_list_task_field_schemas` | GET | `/api/v1/sprints/types/:key/field-schemas` |
+| `agent_hq_get_task_field_schema` | GET | `/api/v1/sprints/types/:key/field-schemas/:schemaId` |
 | `agent_hq_list_tasks` | GET | `/api/v1/tasks` |
 | `agent_hq_get_task` | GET | `/api/v1/tasks/:id` |
 | `agent_hq_get_task_notes` | GET | `/api/v1/tasks/:id/notes` |
