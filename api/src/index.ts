@@ -173,25 +173,10 @@ app.put('/api/v1/task-definitions/sprint-types/:key/workflow-templates/:template
 app.delete('/api/v1/task-definitions/sprint-types/:key/workflow-templates/:templateId', (req, res) => {
   res.redirect(307, `/api/v1/sprints/types/${encodeURIComponent(req.params.key)}/workflow-templates/${encodeURIComponent(req.params.templateId)}`);
 });
-app.get('/api/v1/routing-rules', (req, res) => {
-  const query = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
-  res.redirect(307, `/api/v1/routing/rules${query}`);
-});
-app.post('/api/v1/routing-rules', (req, res) => {
-  const query = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
-  res.redirect(307, `/api/v1/routing/rules${query}`);
-});
-app.get('/api/v1/routing-rules/:id', (req, res) => {
-  const query = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
-  res.redirect(307, `/api/v1/routing/rules${query}`);
-});
-app.put('/api/v1/routing-rules/:id', (req, res) => {
-  const query = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
-  res.redirect(307, `/api/v1/routing/rules/${encodeURIComponent(req.params.id)}${query}`);
-});
-app.delete('/api/v1/routing-rules/:id', (req, res) => {
-  const query = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
-  res.redirect(307, `/api/v1/routing/rules/${encodeURIComponent(req.params.id)}${query}`);
+app.use('/api/v1/routing-rules', (req, res, next) => {
+  const suffix = req.path === '/' ? '' : req.path;
+  req.url = `/rules${suffix}${req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''}`;
+  routingRouter(req, res, next);
 });
 app.use('/api/v1/projects/:id/files', projectFilesRouter);
 app.use('/api/v1/telemetry', telemetryRouter);
