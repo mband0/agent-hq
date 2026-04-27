@@ -18,6 +18,9 @@ function resetDb(): void {
   process.env.AGENT_HQ_DB_PATH = dbPath;
   process.env.AGENT_CONTRACT_ROOT = path.join(tempDir, 'agent-contracts');
   fs.mkdirSync(process.env.AGENT_CONTRACT_ROOT, { recursive: true });
+  fs.writeFileSync(path.join(process.env.AGENT_CONTRACT_ROOT, 'generic.md'), 'Sprint type: {{sprintType}}\n');
+  fs.writeFileSync(path.join(process.env.AGENT_CONTRACT_ROOT, 'bugs.md'), '## Atlas HQ bug-fix contract for this dispatched instance\nREQUIRED OUTPUTS FOR BUGS\n');
+  fs.writeFileSync(path.join(process.env.AGENT_CONTRACT_ROOT, 'enhancements.md'), '## Atlas HQ enhancement contract for this dispatched instance\nREQUIRED OUTPUTS FOR ENHANCEMENTS\n');
 
   const db = getDb();
   db.exec(`
@@ -268,6 +271,9 @@ describe('routing rules API', () => {
         content: 'enhancements only {{taskId}}',
         inherited_from: null,
       }));
+
+      const qaResponse = await fetch(`${baseUrl}/api/v1/routing/agent-contract?sprint_type=qa`);
+      expect(qaResponse.status).toBe(404);
     } finally {
       await stopTestServer(server);
     }
