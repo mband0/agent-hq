@@ -1,6 +1,6 @@
 import type { TaskType } from './taskTypes';
 
-export type StarterSprintTypeKey = 'generic' | 'dev' | 'ops';
+export type StarterSprintTypeKey = 'generic' | 'dev' | 'ops' | 'bugs' | 'enhancements';
 
 export const STARTER_BACKLOG_SPRINT_NAME = 'Backlog';
 export const STARTER_ROUTING_PRIORITY = -100;
@@ -9,6 +9,8 @@ export const STARTER_SPRINT_TYPE_SEEDS: Array<{ key: StarterSprintTypeKey; name:
   { key: 'generic', name: 'Generic', description: 'Catch-all sprint profile for mixed delivery work and backlog management.' },
   { key: 'dev', name: 'Development', description: 'Implementation-focused sprint profile for product and software delivery work.' },
   { key: 'ops', name: 'Operations', description: 'Operational sprint profile for release, support, maintenance, and infra work.' },
+  { key: 'bugs', name: 'Bugs', description: 'Bug-fix sprint profile for reproduction, root-cause analysis, and validation-focused work.' },
+  { key: 'enhancements', name: 'Enhancements', description: 'Enhancement sprint profile for scoped feature delivery with clear implementation and handoff expectations.' },
 ];
 
 export const STARTER_FIELD_SCHEMA_SEEDS: Array<{ sprintType: StarterSprintTypeKey; schema: Record<string, unknown> }> = [
@@ -41,12 +43,34 @@ export const STARTER_FIELD_SCHEMA_SEEDS: Array<{ sprintType: StarterSprintTypeKe
       ],
     },
   },
+  {
+    sprintType: 'bugs',
+    schema: {
+      fields: [
+        { key: 'reproduction_steps', label: 'Reproduction Steps', type: 'textarea', required: false },
+        { key: 'expected_behavior', label: 'Expected Behavior', type: 'textarea', required: false },
+        { key: 'observed_behavior', label: 'Observed Behavior', type: 'textarea', required: false },
+      ],
+    },
+  },
+  {
+    sprintType: 'enhancements',
+    schema: {
+      fields: [
+        { key: 'target_surface', label: 'Target Surface', type: 'select', required: false, options: ['api', 'ui', 'fullstack', 'infra'] },
+        { key: 'success_criteria', label: 'Success Criteria', type: 'textarea', required: false },
+        { key: 'test_plan', label: 'Test Plan', type: 'textarea', required: false, help_text: 'How the enhancement should be verified before review.' },
+      ],
+    },
+  },
 ];
 
 export const STARTER_SPRINT_TYPE_TASK_TYPE_SEEDS: Array<{ sprintType: StarterSprintTypeKey; taskTypes: TaskType[] }> = [
   { sprintType: 'generic', taskTypes: ['adhoc', 'backend', 'frontend', 'fullstack', 'qa', 'other'] },
   { sprintType: 'dev', taskTypes: ['backend', 'frontend', 'fullstack', 'qa'] },
   { sprintType: 'ops', taskTypes: ['ops', 'adhoc', 'qa', 'other'] },
+  { sprintType: 'bugs', taskTypes: ['backend', 'frontend', 'fullstack', 'qa', 'ops', 'other'] },
+  { sprintType: 'enhancements', taskTypes: ['backend', 'frontend', 'fullstack', 'qa', 'other'] },
 ];
 
 export const STARTER_SPRINT_WORKFLOW_TEMPLATE_SEEDS: Array<{
@@ -111,7 +135,7 @@ export const STARTER_SPRINT_WORKFLOW_TEMPLATE_SEEDS: Array<{
 ];
 
 export function isStarterSprintTypeKey(value: string | null | undefined): value is StarterSprintTypeKey {
-  return value === 'generic' || value === 'dev' || value === 'ops';
+  return value === 'generic' || value === 'dev' || value === 'ops' || value === 'bugs' || value === 'enhancements';
 }
 
 export function getStarterTaskTypesForSprintType(sprintType: string | null | undefined): TaskType[] {

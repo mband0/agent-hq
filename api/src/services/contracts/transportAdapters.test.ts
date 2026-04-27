@@ -124,4 +124,14 @@ describe('transportAdapters sprint-type contract templates', () => {
     expect(repoTemplate).toContain('EVIDENCE EXPECTATIONS FOR ENHANCEMENTS');
     expect(repoTemplate).toContain('{{pipelineReference}}');
   });
+
+  it('ships the real bug template with root-cause and evidence guidance', () => {
+    reloadWithContractRoot(repoContractRoot);
+    const repoTemplate = fs.readFileSync(path.join(repoContractRoot, 'bugs.md'), 'utf-8');
+
+    expect(repoTemplate).toContain('## Atlas HQ bug-fix contract for this dispatched instance');
+    expect(repoTemplate).toContain('Sprint type: {{sprintType}}');
+    expect(repoTemplate).toContain('REQUIRED OUTPUTS FOR BUGS');
+    expect(repoTemplate).toContain('EVIDENCE EXPECTATIONS FOR BUGS');
+  });
 });
