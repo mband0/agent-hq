@@ -358,13 +358,21 @@ function normalizeSprintTypeForTemplate(value: string | null | undefined): strin
   return normalized.length > 0 ? normalized : 'generic';
 }
 
-function getContractTemplateCandidates(sprintType: string | null | undefined): string[] {
+function getSprintTemplateAliases(sprintType: string | null | undefined): string[] {
   const normalizedSprintType = normalizeSprintTypeForTemplate(sprintType);
-  const candidates = [
-    path.join(AGENT_CONTRACT_ROOT, `${normalizedSprintType}.md`),
-  ];
+  const aliases = new Set<string>([normalizedSprintType]);
 
-  if (normalizedSprintType !== 'generic') {
+  if (normalizedSprintType === 'dev') aliases.add('enhancements');
+  if (normalizedSprintType === 'ops') aliases.add('bugs');
+
+  return [...aliases];
+}
+
+function getContractTemplateCandidates(sprintType: string | null | undefined): string[] {
+  const aliases = getSprintTemplateAliases(sprintType);
+  const candidates = aliases.map((alias) => path.join(AGENT_CONTRACT_ROOT, `${alias}.md`));
+
+  if (!aliases.includes('generic')) {
     candidates.push(path.join(AGENT_CONTRACT_ROOT, 'generic.md'));
   }
 
