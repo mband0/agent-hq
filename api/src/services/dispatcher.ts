@@ -687,54 +687,12 @@ interface InstanceCallbackContractInput {
   transportMode?: 'local' | 'remote-direct' | 'proxy-managed';
 }
 
-// ── Agent contract file path ─────────────────────────────────────────────────
-// __dirname at runtime = api/dist/services → 3 levels up = repo root
-const AGENT_CONTRACT_PATH = process.env.AGENT_CONTRACT_PATH
-  ?? path.resolve(__dirname, '../../../agent-contract.md');
-
-/**
- * buildContractFromFile — reads agent-contract.md and interpolates placeholders.
- * Returns null if the file is missing (caller falls back to hardcoded string).
- */
-function buildContractFromFile(vars: {
-  instanceId: number;
-  taskId: number;
-  taskStatus: string;
-  agentSlug: string;
-  sessionKey: string;
-  suggestedOutcome: string;
-  validOutcomes: string[];
-  outcomeHelp: string[];
-  baseUrl: string;
-}): string | null {
-  try {
-    if (!fs.existsSync(AGENT_CONTRACT_PATH)) return null;
-    let template = fs.readFileSync(AGENT_CONTRACT_PATH, 'utf-8');
-    template = template
-      .replace(/\{\{baseUrl\}\}/g, vars.baseUrl)
-      .replace(/\{\{instanceId\}\}/g, String(vars.instanceId))
-      .replace(/\{\{taskId\}\}/g, String(vars.taskId))
-      .replace(/\{\{sessionKey\}\}/g, vars.sessionKey)
-      .replace(/\{\{agentSlug\}\}/g, vars.agentSlug)
-      .replace(/\{\{suggestedOutcome\}\}/g, vars.suggestedOutcome)
-      .replace(/\{\{validOutcomes\}\}/g, vars.validOutcomes.join(', '))
-      .replace(/\{\{outcomeHelp\}\}/g, vars.outcomeHelp.join('\n'))
-      .replace(/\{\{taskStatus\}\}/g, vars.taskStatus);
-    return template;
-  } catch {
-    return null;
-  }
-}
-
 /**
  * buildInstanceCallbackContract — build the full dispatch contract for an instance.
  *
- * Delegates to the contracts/ module (task #632) which separates shared
- * workflow semantics from runtime-specific transport. The transportMode
- * parameter determines whether the agent gets:
- *   - local: curl commands with localhost URLs + pm2/npm deploy instructions
- *   - remote-direct: HTTP endpoints with the configured base URL (no local commands)
- *   - proxy-managed: structured atlas_lifecycle JSON block instructions (no HTTP calls)
+ * Delegates to the contracts/ module which resolves the workflow lane and then
+ * loads the sprint-type-specific plain text contract template when available.
+ * Template placeholders are substituted at dispatch time.
  *
  * Falls back to 'local' transport when transportMode is not specified, preserving
  * backward compatibility with existing local agent dispatches.
