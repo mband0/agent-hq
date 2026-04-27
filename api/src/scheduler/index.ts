@@ -6,6 +6,7 @@ import {
   buildDispatchMessage, buildDispatchTaskNotesSection, buildInstanceCallbackContract,
   dispatchInstance, getDispatchTaskNotesContext,
 } from '../services/dispatcher';
+import { resolveTransportMode } from '../services/contracts';
 import { getAgentHqBaseUrl } from '../lib/agentHqBaseUrl';
 import { buildHookSessionKey, resolveRuntimeAgentSlug } from '../lib/sessionKeys';
 
@@ -187,6 +188,11 @@ function loadAndSchedule(): void {
           sprintType: taskContext?.sprint_type ?? null,
           agentSlug,
           sessionKey: runSessionKey,
+          transportMode: resolveTransportMode({
+            runtimeType: agent.runtime_type,
+            runtimeConfig: agent.runtime_config,
+            hooksUrl: agent.hooks_url,
+          }),
         });
         message += `\n\n${contract}`;
       } else {

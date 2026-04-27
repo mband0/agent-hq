@@ -8,6 +8,7 @@ import {
   buildDispatchMessage, buildDispatchTaskNotesSection, buildInstanceCallbackContract,
   dispatchInstance, getDispatchTaskNotesContext, type DispatchInstanceParams,
 } from '../services/dispatcher';
+import { resolveTransportMode } from '../services/contracts';
 import { backfillInstanceTokensAsync } from '../lib/tokenBackfill';
 import { writeTaskStatusChange } from '../lib/taskHistory';
 import { getNeedsAttentionEligibleStatuses } from '../lib/reconcilerConfig';
@@ -363,6 +364,11 @@ export async function reconcileReviewQaRouting(
           sprintType: sprint?.sprint_type ?? null,
           agentSlug,
           sessionKey: runSessionKey,
+          transportMode: resolveTransportMode({
+            runtimeType: agent.runtime_type,
+            runtimeConfig: agent.runtime_config,
+            hooksUrl: agent.hooks_url,
+          }),
         });
         message += `\n\n${contract}`;
 
