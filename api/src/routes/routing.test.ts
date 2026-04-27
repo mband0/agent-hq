@@ -238,12 +238,21 @@ describe('routing rules API', () => {
       expect(genericBody.inherited_from).toBeNull();
       expect(genericBody.content).toContain('Sprint type: {{sprintType}}');
 
+      const bugsResponse = await fetch(`${baseUrl}/api/v1/routing/agent-contract?sprint_type=bugs`);
+      expect(bugsResponse.status).toBe(200);
+      const bugsBody = await bugsResponse.json() as { sprint_type: string; content: string; inherited_from: string | null };
+      expect(bugsBody.sprint_type).toBe('bugs');
+      expect(bugsBody.inherited_from).toBeNull();
+      expect(bugsBody.content).toContain('## Atlas HQ bug-fix contract for this dispatched instance');
+      expect(bugsBody.content).toContain('REQUIRED OUTPUTS FOR BUGS');
+
       const sprintSpecificResponse = await fetch(`${baseUrl}/api/v1/routing/agent-contract?sprint_type=enhancements`);
       expect(sprintSpecificResponse.status).toBe(200);
       const sprintSpecificBody = await sprintSpecificResponse.json() as { sprint_type: string; content: string; inherited_from: string | null };
       expect(sprintSpecificBody.sprint_type).toBe('enhancements');
       expect(sprintSpecificBody.inherited_from).toBeNull();
       expect(sprintSpecificBody.content).toContain('## Atlas HQ enhancement contract for this dispatched instance');
+      expect(sprintSpecificBody.content).toContain('REQUIRED OUTPUTS FOR ENHANCEMENTS');
 
       const saveResponse = await fetch(`${baseUrl}/api/v1/routing/agent-contract`, {
         method: 'PUT',
