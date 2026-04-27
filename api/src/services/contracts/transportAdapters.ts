@@ -21,6 +21,7 @@
 import fs from 'fs';
 import path from 'path';
 import { getAgentHqBaseUrl } from '../../lib/agentHqBaseUrl';
+import { renderTemplate } from './templateRenderer';
 import {
   resolveWorkflowLane,
   getEvidenceRequirements,
@@ -392,19 +393,20 @@ function tryBuildFromFileTemplate(
     const baseUrl = ctx.baseUrl ?? getAgentHqBaseUrl();
     const loadedTemplate = readFirstExistingContractTemplate(ctx.sprintType);
     if (!loadedTemplate) return null;
-    let template = loadedTemplate;
-    template = template
-      .replace(/\{\{baseUrl\}\}/g, baseUrl)
-      .replace(/\{\{instanceId\}\}/g, String(ctx.instanceId))
-      .replace(/\{\{taskId\}\}/g, String(ctx.taskId))
-      .replace(/\{\{sessionKey\}\}/g, ctx.sessionKey)
-      .replace(/\{\{agentSlug\}\}/g, ctx.agentSlug)
-      .replace(/\{\{sprintType\}\}/g, normalizeSprintTypeForTemplate(ctx.sprintType))
-      .replace(/\{\{suggestedOutcome\}\}/g, workflow.suggestedOutcome)
-      .replace(/\{\{validOutcomes\}\}/g, workflow.validOutcomes.join(', '))
-      .replace(/\{\{outcomeHelp\}\}/g, workflow.outcomeHelp.map(h => `  ${h.outcome} — ${h.description}`).join('\n'))
-      .replace(/\{\{taskStatus\}\}/g, ctx.taskStatus);
-    return template;
+    return renderTemplate(loadedTemplate, {
+      baseUrl,
+      instanceId: ctx.instanceId,
+      taskId: ctx.taskId,
+      sessionKey: ctx.sessionKey,
+      agentSlug: ctx.agentSlug,
+      sprintType: normalizeSprintTypeForTemplate(ctx.sprintType),
+      suggestedOutcome: workflow.suggestedOutcome,
+      validOutcomes: workflow.validOutcomes.join(', '),
+      outcomeHelp: workflow.outcomeHelp.map(h => `  ${h.outcome} — ${h.description}`).join('\n'),
+      taskStatus: ctx.taskStatus,
+      lane: workflow.lane,
+      workflowTemplateKey: workflow.workflowTemplateKey ?? '',
+    });
   } catch {
     return null;
   }
