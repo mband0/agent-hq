@@ -3,6 +3,7 @@
      Placeholder substitution happens at dispatch time. Keep this plain text and easy to edit. -->
 ## Atlas HQ run contract for this dispatched instance
 Sprint type: {{sprintType}}
+Workflow lane: {{lane}}
 Instance ID: {{instanceId}}
 Task ID: {{taskId}}
 Session key: {{sessionKey}}

@@ -350,8 +350,6 @@ function buildProxyManagedTransport(
 
 const AGENT_CONTRACT_ROOT = process.env.AGENT_CONTRACT_ROOT
   ?? path.resolve(__dirname, '../../../../agent-contracts');
-const LEGACY_AGENT_CONTRACT_PATH = process.env.AGENT_CONTRACT_PATH
-  ?? path.resolve(__dirname, '../../../../agent-contract.md');
 
 function normalizeSprintTypeForTemplate(value: string | null | undefined): string {
   const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
@@ -368,7 +366,6 @@ function getContractTemplateCandidates(sprintType: string | null | undefined): s
     candidates.push(path.join(AGENT_CONTRACT_ROOT, 'generic.md'));
   }
 
-  candidates.push(LEGACY_AGENT_CONTRACT_PATH);
   return candidates;
 }
 
@@ -381,9 +378,12 @@ function readFirstExistingContractTemplate(sprintType: string | null | undefined
 }
 
 /**
- * tryBuildFromFileTemplate — attempt to read agent-contract.md and interpolate.
- * Used ONLY by the local transport adapter for backward compatibility.
- * Returns null if the file doesn't exist or can't be read.
+ * tryBuildFromFileTemplate — attempt to read the sprint-type contract template
+ * and interpolate its plain-text placeholders at dispatch time.
+ *
+ * v1 intentionally keeps this simple: one text template per sprint type,
+ * with generic.md as the fallback when no sprint-specific file exists.
+ * Returns null if no sprint-type template exists or a read/render error occurs.
  */
 function tryBuildFromFileTemplate(
   ctx: TransportContext,
@@ -413,6 +413,7 @@ function tryBuildFromFileTemplate(
       evidenceDescription: evidence.description,
       evidenceFields: evidence.fields.join(', '),
       evidenceFieldsBulleted: evidence.fields.map(field => `- ${field}`).join('\n'),
+      transportMode: ctx.transportMode,
     });
   } catch {
     return null;
