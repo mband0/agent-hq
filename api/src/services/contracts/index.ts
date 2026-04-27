@@ -21,6 +21,7 @@ export {
 
 export {
   buildContractInstructions,
+  getAvailableContractPlaceholders,
   resolveTransportMode,
   type TransportMode,
   type TransportContext,

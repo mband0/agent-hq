@@ -350,6 +350,8 @@ function buildProxyManagedTransport(
 
 const AGENT_CONTRACT_ROOT = process.env.AGENT_CONTRACT_ROOT
   ?? path.resolve(__dirname, '../../../../agent-contracts');
+const LEGACY_AGENT_CONTRACT_PATH = process.env.AGENT_CONTRACT_PATH
+  ?? path.resolve(__dirname, '../../../../agent-contract.md');
 
 function normalizeSprintTypeForTemplate(value: string | null | undefined): string {
   const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
@@ -374,6 +376,11 @@ function readFirstExistingContractTemplate(sprintType: string | null | undefined
     if (!fs.existsSync(candidate)) continue;
     return fs.readFileSync(candidate, 'utf-8');
   }
+
+  if (fs.existsSync(LEGACY_AGENT_CONTRACT_PATH)) {
+    return fs.readFileSync(LEGACY_AGENT_CONTRACT_PATH, 'utf-8');
+  }
+
   return null;
 }
 
@@ -418,6 +425,28 @@ function tryBuildFromFileTemplate(
   } catch {
     return null;
   }
+}
+
+export function getAvailableContractPlaceholders(): string[] {
+  return [
+    'agentSlug',
+    'baseUrl',
+    'evidenceDescription',
+    'evidenceFields',
+    'evidenceFieldsBulleted',
+    'instanceId',
+    'lane',
+    'outcomeHelp',
+    'pipelineReference',
+    'sessionKey',
+    'sprintType',
+    'suggestedOutcome',
+    'taskId',
+    'taskStatus',
+    'transportMode',
+    'validOutcomes',
+    'workflowTemplateKey',
+  ];
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────

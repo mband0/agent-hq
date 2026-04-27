@@ -236,10 +236,12 @@ describe('routing rules API', () => {
     try {
       const genericResponse = await fetch(`${baseUrl}/api/v1/routing/agent-contract?sprint_type=generic`);
       expect(genericResponse.status).toBe(200);
-      const genericBody = await genericResponse.json() as { sprint_type: string; content: string; inherited_from: string | null };
+      const genericBody = await genericResponse.json() as { sprint_type: string; content: string; inherited_from: string | null; placeholders: string[]; format: string };
       expect(genericBody.sprint_type).toBe('generic');
       expect(genericBody.inherited_from).toBeNull();
       expect(genericBody.content).toContain('Sprint type: {{sprintType}}');
+      expect(genericBody.placeholders).toEqual(expect.arrayContaining(['sprintType', 'taskId', 'validOutcomes', 'evidenceFieldsBulleted']));
+      expect(genericBody.format).toBe('plain_text_v1');
 
       const bugsResponse = await fetch(`${baseUrl}/api/v1/routing/agent-contract?sprint_type=bugs`);
       expect(bugsResponse.status).toBe(200);
@@ -270,6 +272,8 @@ describe('routing rules API', () => {
         sprint_type: 'enhancements',
         content: savedContent,
         inherited_from: null,
+        format: 'plain_text_v1',
+        placeholders: expect.arrayContaining(['agentSlug', 'taskStatus']),
       }));
 
       const qaResponse = await fetch(`${baseUrl}/api/v1/routing/agent-contract?sprint_type=qa`);
