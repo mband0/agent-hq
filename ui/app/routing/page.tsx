@@ -1627,10 +1627,13 @@ function MissingRulesWarning({ rules, projectName }: { rules: TaskRoutingRule[];
 // ─── Tab type ────────────────────────────────────────────────
 // ─── Agent Contract Editor ────────────────────────────────────
 function AgentContractSection() {
+  const [sprintTypes, setSprintTypes] = useState<Array<{ key: string; name: string }>>([]);
+  const [selectedSprintType, setSelectedSprintType] = useState('generic');
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [inheritedFrom, setInheritedFrom] = useState<string | null>(null);
 
   const showToast = (type: 'success' | 'error', message: string) => {
     setToast({ type, message });
@@ -1638,12 +1641,27 @@ function AgentContractSection() {
   };
 
   useEffect(() => {
+    apiFetch<{ sprint_types?: Array<{ key: string; name: string }> }>('/api/v1/sprints/config')
+      .then(data => {
+        const types = data.sprint_types ?? [];
+        setSprintTypes(types.map(type => ({ key: type.key, name: type.name })));
+        if (types.length > 0 && !types.some(type => type.key === selectedSprintType)) {
+          setSelectedSprintType(types[0]?.key ?? 'generic');
+        }
+      })
+      .catch(e => showToast('error', `Failed to load sprint types: ${e}`));
+  }, []);
+
+  useEffect(() => {
     setLoading(true);
-    apiFetch<{ content: string }>('/api/v1/routing/agent-contract')
-      .then(data => setContent(data.content ?? ''))
+    apiFetch<{ content: string; inherited_from?: string | null }>(`/api/v1/routing/agent-contract?sprint_type=${encodeURIComponent(selectedSprintType)}`)
+      .then(data => {
+        setContent(data.content ?? '');
+        setInheritedFrom(data.inherited_from ?? null);
+      })
       .catch(e => showToast('error', `Failed to load: ${e}`))
       .finally(() => setLoading(false));
-  }, []);
+  }, [selectedSprintType]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -1651,13 +1669,14 @@ function AgentContractSection() {
       const res = await fetch('/api/v1/routing/agent-contract', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ sprint_type: selectedSprintType, content }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText }));
         throw new Error(err.error ?? res.statusText);
       }
-      showToast('success', 'Agent contract saved.');
+      setInheritedFrom(null);
+      showToast('success', `Agent contract saved for ${selectedSprintType}.`);
     } catch (e) {
       showToast('error', `Save failed: ${e}`);
     } finally {
@@ -1671,7 +1690,7 @@ function AgentContractSection() {
         <div>
           <h2 className="text-lg font-semibold text-white">Agent Dispatch Contract</h2>
           <p className="text-slate-400 text-sm mt-0.5">
-            The SOP template injected into every dispatched agent run. Supports{' '}
+            One plain text contract template per sprint type, injected into dispatched agent runs. Supports{' '}
             <code className="text-amber-300 text-xs bg-slate-800 px-1 py-0.5 rounded">{'{{placeholder}}'}</code> syntax.
           </p>
         </div>
@@ -1698,6 +1717,26 @@ function AgentContractSection() {
         </div>
       )}
 
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="text-sm text-slate-300">
+          Sprint type
+          <select
+            value={selectedSprintType}
+            onChange={e => setSelectedSprintType(e.target.value)}
+            className="ml-2 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
+          >
+            {sprintTypes.map(type => (
+              <option key={type.key} value={type.key}>{type.name}</option>
+            ))}
+          </select>
+        </label>
+        {inheritedFrom && (
+          <p className="text-xs text-slate-400">
+            Using fallback template from <code className="text-amber-300">{inheritedFrom}</code> until this sprint type is saved explicitly.
+          </p>
+        )}
+      </div>
+
       {loading ? (
         <div className="flex items-center justify-center h-48">
           <div className="w-6 h-6 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
@@ -1719,6 +1758,7 @@ function AgentContractSection() {
             '{{instanceId}}',
             '{{taskId}}',
             '{{sessionKey}}',
+            '{{sprintType}}',
             '{{suggestedOutcome}}',
             '{{validOutcomes}}',
             '{{outcomeHelp}}',

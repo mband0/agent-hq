@@ -1563,39 +1563,95 @@ router.delete('/transition-requirements/:id', (req: Request, res: Response) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// AGENT CONTRACT — editable dispatch SOP template
+// AGENT CONTRACTS — editable sprint-type dispatch SOP templates
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // __dirname at runtime = api/dist/routes → 3 levels up = repo root
-const AGENT_CONTRACT_PATH = path.resolve(
+const AGENT_CONTRACT_ROOT = path.resolve(
+  process.env.AGENT_CONTRACT_ROOT ?? path.join(__dirname, '../../../agent-contracts')
+);
+const LEGACY_AGENT_CONTRACT_PATH = path.resolve(
   process.env.AGENT_CONTRACT_PATH ?? path.join(__dirname, '../../../agent-contract.md')
 );
 
-// GET /agent-contract — read the contract file
-router.get('/agent-contract', (_req: Request, res: Response) => {
+function normalizeSprintTypeKey(raw: unknown): string {
+  const value = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+  return value || 'generic';
+}
+
+function ensureSprintTypeExists(db: ReturnType<typeof getDb>, sprintTypeKey: string): void {
+  const row = db.prepare(`SELECT key FROM sprint_types WHERE key = ? LIMIT 1`).get(sprintTypeKey) as { key: string } | undefined;
+  if (!row) throw new Error(`Unknown sprint type "${sprintTypeKey}"`);
+}
+
+function getSprintTypeContractPath(sprintTypeKey: string): string {
+  return path.join(AGENT_CONTRACT_ROOT, `${sprintTypeKey}.md`);
+}
+
+function readSprintTypeContract(sprintTypeKey: string): { content: string; path: string; inheritedFrom: string | null } {
+  const directPath = getSprintTypeContractPath(sprintTypeKey);
+  if (fs.existsSync(directPath)) {
+    return { content: fs.readFileSync(directPath, 'utf-8'), path: directPath, inheritedFrom: null };
+  }
+
+  const genericPath = getSprintTypeContractPath('generic');
+  if (sprintTypeKey !== 'generic' && fs.existsSync(genericPath)) {
+    return {
+      content: fs.readFileSync(genericPath, 'utf-8'),
+      path: genericPath,
+      inheritedFrom: 'generic',
+    };
+  }
+
+  if (fs.existsSync(LEGACY_AGENT_CONTRACT_PATH)) {
+    return {
+      content: fs.readFileSync(LEGACY_AGENT_CONTRACT_PATH, 'utf-8'),
+      path: LEGACY_AGENT_CONTRACT_PATH,
+      inheritedFrom: 'legacy',
+    };
+  }
+
+  throw new Error(`No contract template found for sprint type "${sprintTypeKey}"`);
+}
+
+// GET /agent-contract — read the contract file for a sprint type
+router.get('/agent-contract', (req: Request, res: Response) => {
   try {
-    if (!fs.existsSync(AGENT_CONTRACT_PATH)) {
-      return res.status(404).json({ error: 'agent-contract.md not found', path: AGENT_CONTRACT_PATH });
-    }
-    const content = fs.readFileSync(AGENT_CONTRACT_PATH, 'utf-8');
-    res.json({ content, path: AGENT_CONTRACT_PATH });
+    const db = getDb();
+    const sprintTypeKey = normalizeSprintTypeKey(req.query.sprint_type ?? req.query.sprint_type_key);
+    ensureSprintTypeExists(db, sprintTypeKey);
+    const contract = readSprintTypeContract(sprintTypeKey);
+    res.json({
+      sprint_type: sprintTypeKey,
+      content: contract.content,
+      path: contract.path,
+      inherited_from: contract.inheritedFrom,
+    });
   } catch (err) {
-    res.status(500).json({ error: String(err) });
+    const message = err instanceof Error ? err.message : String(err);
+    const status = message.startsWith('Unknown sprint type') ? 404 : message.startsWith('No contract template found') ? 404 : 500;
+    res.status(status).json({ error: message });
   }
 });
 
-// PUT /agent-contract — write the contract file
+// PUT /agent-contract — write the contract file for a sprint type
 router.put('/agent-contract', (req: Request, res: Response) => {
   try {
+    const db = getDb();
+    const sprintTypeKey = normalizeSprintTypeKey(req.body?.sprint_type ?? req.body?.sprint_type_key);
+    ensureSprintTypeExists(db, sprintTypeKey);
     const { content } = req.body;
     if (typeof content !== 'string') {
       return res.status(400).json({ error: '`content` (string) is required' });
     }
-    fs.mkdirSync(path.dirname(AGENT_CONTRACT_PATH), { recursive: true });
-    fs.writeFileSync(AGENT_CONTRACT_PATH, content, 'utf-8');
-    res.json({ ok: true, path: AGENT_CONTRACT_PATH });
+    const targetPath = getSprintTypeContractPath(sprintTypeKey);
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    fs.writeFileSync(targetPath, content, 'utf-8');
+    res.json({ ok: true, sprint_type: sprintTypeKey, path: targetPath });
   } catch (err) {
-    res.status(500).json({ error: String(err) });
+    const message = err instanceof Error ? err.message : String(err);
+    const status = message.startsWith('Unknown sprint type') ? 404 : 500;
+    res.status(status).json({ error: message });
   }
 });
 

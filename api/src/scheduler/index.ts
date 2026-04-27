@@ -33,6 +33,12 @@ interface Agent {
   enabled: number;
 }
 
+interface TaskDispatchContextRow {
+  status: string;
+  task_type: string | null;
+  sprint_type: string | null;
+}
+
 const activeTasks = new Map<number, cron.ScheduledTask>();
 
 function loadAndSchedule(): void {
@@ -131,10 +137,18 @@ function loadAndSchedule(): void {
       attachInstanceToTask(db, instanceId, taskId);
 
       // Look up task status for lifecycle contract generation
-      let taskStatus: string | null = null;
+      let taskContext: TaskDispatchContextRow | null = null;
       if (taskId) {
-        const taskRow = db.prepare('SELECT status FROM tasks WHERE id = ?').get(taskId) as { status: string } | undefined;
-        taskStatus = taskRow?.status ?? null;
+        taskContext = db.prepare(`
+          SELECT
+            tasks.status,
+            tasks.task_type,
+            sprints.sprint_type
+          FROM tasks
+          LEFT JOIN sprints ON sprints.id = tasks.sprint_id
+          WHERE tasks.id = ?
+          LIMIT 1
+        `).get(taskId) as TaskDispatchContextRow | undefined ?? null;
       }
 
       db.prepare(`
@@ -168,7 +182,9 @@ function loadAndSchedule(): void {
         const contract = buildInstanceCallbackContract({
           instanceId,
           taskId,
-          taskStatus: taskStatus ?? 'ready',
+          taskStatus: taskContext?.status ?? 'ready',
+          taskType: taskContext?.task_type ?? null,
+          sprintType: taskContext?.sprint_type ?? null,
           agentSlug,
           sessionKey: runSessionKey,
         });

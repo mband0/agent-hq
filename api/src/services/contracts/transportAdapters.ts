@@ -347,8 +347,37 @@ function buildProxyManagedTransport(
 
 // ── File-based template support ──────────────────────────────────────────────
 
-const AGENT_CONTRACT_PATH = process.env.AGENT_CONTRACT_PATH
+const AGENT_CONTRACT_ROOT = process.env.AGENT_CONTRACT_ROOT
+  ?? path.resolve(__dirname, '../../../../agent-contracts');
+const LEGACY_AGENT_CONTRACT_PATH = process.env.AGENT_CONTRACT_PATH
   ?? path.resolve(__dirname, '../../../../agent-contract.md');
+
+function normalizeSprintTypeForTemplate(value: string | null | undefined): string {
+  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  return normalized.length > 0 ? normalized : 'generic';
+}
+
+function getContractTemplateCandidates(sprintType: string | null | undefined): string[] {
+  const normalizedSprintType = normalizeSprintTypeForTemplate(sprintType);
+  const candidates = [
+    path.join(AGENT_CONTRACT_ROOT, `${normalizedSprintType}.md`),
+  ];
+
+  if (normalizedSprintType !== 'generic') {
+    candidates.push(path.join(AGENT_CONTRACT_ROOT, 'generic.md'));
+  }
+
+  candidates.push(LEGACY_AGENT_CONTRACT_PATH);
+  return candidates;
+}
+
+function readFirstExistingContractTemplate(sprintType: string | null | undefined): string | null {
+  for (const candidate of getContractTemplateCandidates(sprintType)) {
+    if (!fs.existsSync(candidate)) continue;
+    return fs.readFileSync(candidate, 'utf-8');
+  }
+  return null;
+}
 
 /**
  * tryBuildFromFileTemplate — attempt to read agent-contract.md and interpolate.
@@ -360,15 +389,17 @@ function tryBuildFromFileTemplate(
   workflow: ResolvedWorkflowLane,
 ): string | null {
   try {
-    if (!fs.existsSync(AGENT_CONTRACT_PATH)) return null;
     const baseUrl = ctx.baseUrl ?? getAgentHqBaseUrl();
-    let template = fs.readFileSync(AGENT_CONTRACT_PATH, 'utf-8');
+    const loadedTemplate = readFirstExistingContractTemplate(ctx.sprintType);
+    if (!loadedTemplate) return null;
+    let template = loadedTemplate;
     template = template
       .replace(/\{\{baseUrl\}\}/g, baseUrl)
       .replace(/\{\{instanceId\}\}/g, String(ctx.instanceId))
       .replace(/\{\{taskId\}\}/g, String(ctx.taskId))
       .replace(/\{\{sessionKey\}\}/g, ctx.sessionKey)
       .replace(/\{\{agentSlug\}\}/g, ctx.agentSlug)
+      .replace(/\{\{sprintType\}\}/g, normalizeSprintTypeForTemplate(ctx.sprintType))
       .replace(/\{\{suggestedOutcome\}\}/g, workflow.suggestedOutcome)
       .replace(/\{\{validOutcomes\}\}/g, workflow.validOutcomes.join(', '))
       .replace(/\{\{outcomeHelp\}\}/g, workflow.outcomeHelp.map(h => `  ${h.outcome} — ${h.description}`).join('\n'))

@@ -86,6 +86,7 @@ interface SprintRow {
   name: string;
   goal: string;
   status: string;
+  sprint_type: string | null;
 }
 
 interface RoutingRuleRow {
@@ -358,6 +359,8 @@ export async function reconcileReviewQaRouting(
           instanceId,
           taskId: task.id,
           taskStatus: task.status,
+          taskType: task.task_type ?? null,
+          sprintType: sprint?.sprint_type ?? null,
           agentSlug,
           sessionKey: runSessionKey,
         });

@@ -15,6 +15,8 @@ function resetDb(): void {
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'routing-rules-'));
   dbPath = path.join(tempDir, 'agent-hq-test.db');
   process.env.AGENT_HQ_DB_PATH = dbPath;
+  process.env.AGENT_CONTRACT_ROOT = path.join(tempDir, 'agent-contracts');
+  fs.mkdirSync(process.env.AGENT_CONTRACT_ROOT, { recursive: true });
 
   const db = getDb();
   db.exec(`
@@ -25,7 +27,16 @@ function resetDb(): void {
     CREATE TABLE sprints (
       id INTEGER PRIMARY KEY,
       project_id INTEGER NOT NULL,
-      name TEXT NOT NULL
+      name TEXT NOT NULL,
+      sprint_type TEXT NOT NULL DEFAULT 'generic'
+    );
+    CREATE TABLE sprint_types (
+      key TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      is_system INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE TABLE agents (
       id INTEGER PRIMARY KEY,
@@ -91,7 +102,8 @@ function resetDb(): void {
   `);
 
   db.prepare(`INSERT INTO projects (id, name) VALUES (1, 'Agent HQ')`).run();
-  db.prepare(`INSERT INTO sprints (id, project_id, name) VALUES (10, 1, 'Bugs')`).run();
+  db.prepare(`INSERT INTO sprint_types (key, name, is_system) VALUES ('generic', 'Generic', 1), ('bugs', 'Bugs', 1), ('enhancements', 'Enhancements', 1)`).run();
+  db.prepare(`INSERT INTO sprints (id, project_id, name, sprint_type) VALUES (10, 1, 'Bugs', 'bugs')`).run();
   db.prepare(`INSERT INTO agents (id, name, job_title, enabled) VALUES (7, 'Cinder', 'Backend Engineer', 1)`).run();
 }
 
@@ -125,6 +137,7 @@ describe('routing rules API', () => {
   afterEach(() => {
     closeDb();
     delete process.env.AGENT_HQ_DB_PATH;
+    delete process.env.AGENT_CONTRACT_ROOT;
     if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
@@ -209,6 +222,38 @@ describe('routing rules API', () => {
         matched: true,
         rule: expect.objectContaining({ sprint_id: 10, agent_id: 7 }),
       });
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  it('reads and writes sprint-type-specific contract templates with fallback', async () => {
+    const { server, baseUrl } = await startTestServer();
+    try {
+      fs.writeFileSync(path.join(process.env.AGENT_CONTRACT_ROOT!, 'generic.md'), 'generic {{sprintType}}');
+
+      const inheritedResponse = await fetch(`${baseUrl}/api/v1/routing/agent-contract?sprint_type=bugs`);
+      expect(inheritedResponse.status).toBe(200);
+      await expect(inheritedResponse.json()).resolves.toEqual(expect.objectContaining({
+        sprint_type: 'bugs',
+        content: 'generic {{sprintType}}',
+        inherited_from: 'generic',
+      }));
+
+      const saveResponse = await fetch(`${baseUrl}/api/v1/routing/agent-contract`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sprint_type: 'bugs', content: 'bugs only {{taskId}}' }),
+      });
+      expect(saveResponse.status).toBe(200);
+
+      const directResponse = await fetch(`${baseUrl}/api/v1/routing/agent-contract?sprint_type=bugs`);
+      expect(directResponse.status).toBe(200);
+      await expect(directResponse.json()).resolves.toEqual(expect.objectContaining({
+        sprint_type: 'bugs',
+        content: 'bugs only {{taskId}}',
+        inherited_from: null,
+      }));
     } finally {
       await stopTestServer(server);
     }
