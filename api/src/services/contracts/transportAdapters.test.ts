@@ -54,13 +54,18 @@ describe('transportAdapters sprint-type contract templates', () => {
     expect(contract).toContain('http://localhost:3501/api/v1/tasks/369/outcome');
   });
 
-  it('renders the full placeholder surface exposed to sprint templates', () => {
+  it('renders the placeholders used by the sprint template fixture', () => {
     const contract = buildContractInstructions(buildContext());
 
     expect(contract).toContain('cinder-backend');
+    expect(contract).toContain('http://localhost:3501/api/v1/tasks/369/outcome');
+    expect(contract).toContain('Workflow lane: implementation');
+    expect(contract).toContain('Use ONE of these outcomes: completed_for_review, blocked, failed');
     expect(contract).not.toContain('{{agentSlug}}');
     expect(contract).not.toContain('{{baseUrl}}');
     expect(contract).not.toContain('{{lane}}');
+    expect(contract).not.toContain('{{taskId}}');
+    expect(contract).not.toContain('{{validOutcomes}}');
   });
 
   it('falls back to the generic text template for unknown sprint types', () => {
