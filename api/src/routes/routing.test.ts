@@ -8,6 +8,8 @@ import routingRouter from './routing';
 
 let tempDir: string;
 let dbPath: string;
+const originalContractRoot = process.env.AGENT_CONTRACT_ROOT;
+const originalDbPath = process.env.AGENT_HQ_DB_PATH;
 
 function resetDb(): void {
   closeDb();
@@ -140,8 +142,10 @@ describe('routing rules API', () => {
 
   afterEach(() => {
     closeDb();
-    delete process.env.AGENT_HQ_DB_PATH;
-    delete process.env.AGENT_CONTRACT_ROOT;
+    if (originalDbPath == null) delete process.env.AGENT_HQ_DB_PATH;
+    else process.env.AGENT_HQ_DB_PATH = originalDbPath;
+    if (originalContractRoot == null) delete process.env.AGENT_CONTRACT_ROOT;
+    else process.env.AGENT_CONTRACT_ROOT = originalContractRoot;
     if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
   });
 

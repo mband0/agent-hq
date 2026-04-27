@@ -7,7 +7,16 @@ let buildContractInstructions: typeof import('./transportAdapters').buildContrac
 type TransportContext = import('./transportAdapters').TransportContext;
 
 const originalRoot = process.env.AGENT_CONTRACT_ROOT;
+const originalCwd = process.cwd();
 let tempDir: string;
+
+function loadTransportAdapters() {
+  let loaded: typeof import('./transportAdapters');
+  jest.isolateModules(() => {
+    loaded = require('./transportAdapters');
+  });
+  return loaded!;
+}
 
 beforeEach(() => {
   jest.resetModules();
@@ -17,12 +26,13 @@ beforeEach(() => {
   fs.writeFileSync(path.join(tempDir, 'generic.md'), '## Atlas HQ run contract for this dispatched instance\nSprint type: {{sprintType}}\nWorkflow lane: {{lane}}\nAgent: {{agentSlug}}\nTask ID: {{taskId}}\nBase URL: {{baseUrl}}\nUse ONE of these outcomes: {{validOutcomes}}\n', 'utf-8');
   fs.writeFileSync(path.join(tempDir, 'enhancements.md'), '## Atlas HQ enhancement contract for this dispatched instance\nSprint type: {{sprintType}}\nWorkflow lane: {{lane}}\nUse ONE of these outcomes: {{validOutcomes}}\nREQUIRED OUTPUTS FOR ENHANCEMENTS\nPOST {{baseUrl}}/api/v1/tasks/{{taskId}}/outcome\nchanged_by={{agentSlug}}\n', 'utf-8');
 
-  ({ buildContractInstructions } = require('./transportAdapters'));
+  ({ buildContractInstructions } = loadTransportAdapters());
 });
 
 afterEach(() => {
   if (originalRoot == null) delete process.env.AGENT_CONTRACT_ROOT;
   else process.env.AGENT_CONTRACT_ROOT = originalRoot;
+  process.chdir(originalCwd);
   if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
 });
 
@@ -90,8 +100,9 @@ describe('transportAdapters sprint-type contract templates', () => {
 
   it('ships the real enhancement template with lane expectations and evidence guidance', () => {
     jest.resetModules();
-    delete process.env.AGENT_CONTRACT_ROOT;
-    ({ buildContractInstructions } = require('./transportAdapters'));
+    const repoContractRoot = path.resolve(__dirname, '../../../../agent-contracts');
+    process.env.AGENT_CONTRACT_ROOT = repoContractRoot;
+    ({ buildContractInstructions } = loadTransportAdapters());
 
     const contract = buildContractInstructions(buildContext({
       transportMode: 'local',
