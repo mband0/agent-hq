@@ -369,6 +369,10 @@ function getContractTemplateCandidates(sprintType: string | null | undefined): s
   return candidates;
 }
 
+function shouldUseFileTemplate(transportMode: TransportMode): boolean {
+  return transportMode === 'local' || transportMode === 'remote-direct';
+}
+
 function readFirstExistingContractTemplate(sprintType: string | null | undefined): string | null {
   for (const candidate of getContractTemplateCandidates(sprintType)) {
     if (!fs.existsSync(candidate)) continue;
@@ -395,6 +399,8 @@ function tryBuildFromFileTemplate(
   workflow: ResolvedWorkflowLane,
 ): string | null {
   try {
+    if (!shouldUseFileTemplate(ctx.transportMode)) return null;
+
     const baseUrl = ctx.baseUrl ?? getAgentHqBaseUrl();
     const loadedTemplate = readFirstExistingContractTemplate(ctx.sprintType);
     if (!loadedTemplate) return null;

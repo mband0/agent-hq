@@ -101,16 +101,16 @@ describe('transportAdapters sprint-type contract templates', () => {
     expect(devContract).toContain('Workflow lane: implementation');
   });
 
-  it('uses the sprint-type text template for proxy-managed dispatches too', () => {
+  it('keeps proxy-managed dispatches on the runtime-managed contract path', () => {
     const contract = buildContractInstructions(buildContext({
       sprintType: 'enhancements',
       transportMode: 'proxy-managed',
       baseUrl: undefined,
     }));
 
-    expect(contract).toContain('## Atlas HQ enhancement contract for this dispatched instance');
-    expect(contract).toContain('Workflow lane: implementation');
-    expect(contract).not.toContain('## Runtime: Proxy-Managed');
+    expect(contract).toContain('## Runtime: Proxy-Managed');
+    expect(contract).toContain('atlas_lifecycle');
+    expect(contract).not.toContain('## Atlas HQ enhancement contract for this dispatched instance');
   });
 
   it('ships the real enhancement template with lane expectations and evidence guidance', () => {
