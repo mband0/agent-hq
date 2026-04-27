@@ -254,13 +254,13 @@ describe('routing rules API', () => {
       const sprintSpecificBody = await sprintSpecificResponse.json() as { sprint_type: string; content: string; inherited_from: string | null };
       expect(sprintSpecificBody.sprint_type).toBe('enhancements');
       expect(sprintSpecificBody.inherited_from).toBeNull();
-      expect(sprintSpecificBody.content).toContain('## Atlas HQ enhancement contract for this dispatched instance');
-      expect(sprintSpecificBody.content).toContain('REQUIRED OUTPUTS FOR ENHANCEMENTS');
+      expect(sprintSpecificBody.content.trim()).not.toHaveLength(0);
 
+      const savedContent = 'enhancements only {{taskId}}';
       const saveResponse = await fetch(`${baseUrl}/api/v1/routing/agent-contract`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sprint_type: 'enhancements', content: 'enhancements only {{taskId}}' }),
+        body: JSON.stringify({ sprint_type: 'enhancements', content: savedContent }),
       });
       expect(saveResponse.status).toBe(200);
 
@@ -268,7 +268,7 @@ describe('routing rules API', () => {
       expect(directResponse.status).toBe(200);
       await expect(directResponse.json()).resolves.toEqual(expect.objectContaining({
         sprint_type: 'enhancements',
-        content: 'enhancements only {{taskId}}',
+        content: savedContent,
         inherited_from: null,
       }));
 

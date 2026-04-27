@@ -1755,14 +1755,23 @@ function AgentContractSection() {
         <p className="text-xs text-slate-500 font-mono leading-relaxed">
           Available placeholders:{' '}
           {[
+            '{{baseUrl}}',
             '{{instanceId}}',
             '{{taskId}}',
             '{{sessionKey}}',
+            '{{agentSlug}}',
             '{{sprintType}}',
+            '{{lane}}',
+            '{{workflowTemplateKey}}',
             '{{suggestedOutcome}}',
             '{{validOutcomes}}',
             '{{outcomeHelp}}',
             '{{taskStatus}}',
+            '{{pipelineReference}}',
+            '{{evidenceDescription}}',
+            '{{evidenceFields}}',
+            '{{evidenceFieldsBulleted}}',
+            '{{transportMode}}',
           ].map(p => (
             <span key={p} className="inline-block bg-slate-700 text-amber-300 px-1 py-0.5 rounded mr-1 mb-1">
               {p}
