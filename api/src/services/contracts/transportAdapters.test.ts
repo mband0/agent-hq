@@ -87,4 +87,22 @@ describe('transportAdapters sprint-type contract templates', () => {
     expect(contract).toContain('Workflow lane: implementation');
     expect(contract).not.toContain('## Runtime: Proxy-Managed');
   });
+
+  it('ships the real enhancement template with lane expectations and evidence guidance', () => {
+    jest.resetModules();
+    delete process.env.AGENT_CONTRACT_ROOT;
+    ({ buildContractInstructions } = require('./transportAdapters'));
+
+    const contract = buildContractInstructions(buildContext({
+      transportMode: 'local',
+    }));
+
+    expect(contract).toContain('## Atlas HQ enhancement contract for this dispatched instance');
+    expect(contract).toContain('Sprint type: enhancements');
+    expect(contract).toContain('Workflow lane: implementation');
+    expect(contract).toContain('REQUIRED OUTPUTS FOR ENHANCEMENTS');
+    expect(contract).toContain('EVIDENCE EXPECTATIONS FOR ENHANCEMENTS');
+    expect(contract).toContain('Current task status: in_progress');
+    expect(contract).toContain('Pipeline reference: todo → ready → dispatched → in_progress → review → qa_pass → ready_to_merge → deployed → done');
+  });
 });
