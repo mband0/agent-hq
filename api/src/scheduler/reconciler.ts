@@ -5,10 +5,10 @@ import { cleanupImpossibleTaskLifecycleStates, cleanupTaskExecutionLinkageForSta
 import { runEligibilityPass, type EligibilityResult } from '../services/eligibility';
 import {
   runDispatcher, type DispatchResult,
-  buildDispatchMessage, buildDispatchTaskNotesSection, buildInstanceCallbackContract,
+  buildDispatchMessage, buildDispatchTaskNotesSection,
   dispatchInstance, getDispatchTaskNotesContext, type DispatchInstanceParams,
 } from '../services/dispatcher';
-import { resolveTransportMode } from '../services/contracts';
+import { buildContractInstructions, resolveTransportMode } from '../services/contracts';
 import { backfillInstanceTokensAsync } from '../lib/tokenBackfill';
 import { writeTaskStatusChange } from '../lib/taskHistory';
 import { getNeedsAttentionEligibleStatuses } from '../lib/reconcilerConfig';
@@ -356,7 +356,7 @@ export async function reconcileReviewQaRouting(
         const agentSlug = resolveRuntimeAgentSlug(agent)
           ?? agent.session_key.replace(/[^a-z0-9-]/gi, '-').toLowerCase();
         const runSessionKey = buildHookSessionKey(instanceId);
-        const contract = buildInstanceCallbackContract({
+        const contract = buildContractInstructions({
           instanceId,
           taskId: task.id,
           taskStatus: task.status,
@@ -369,6 +369,7 @@ export async function reconcileReviewQaRouting(
             runtimeConfig: agent.runtime_config,
             hooksUrl: agent.hooks_url,
           }),
+          db,
         });
         message += `\n\n${contract}`;
 

@@ -3,10 +3,10 @@ import { getDb } from '../db/client';
 import { attachInstanceToTask, selectTaskForAgent } from '../lib/runObservability';
 import { writeTaskStatusChange } from '../lib/taskHistory';
 import {
-  buildDispatchMessage, buildDispatchTaskNotesSection, buildInstanceCallbackContract,
+  buildDispatchMessage, buildDispatchTaskNotesSection,
   dispatchInstance, getDispatchTaskNotesContext,
 } from '../services/dispatcher';
-import { resolveTransportMode } from '../services/contracts';
+import { buildContractInstructions, resolveTransportMode } from '../services/contracts';
 import { getAgentHqBaseUrl } from '../lib/agentHqBaseUrl';
 import { buildHookSessionKey, resolveRuntimeAgentSlug } from '../lib/sessionKeys';
 
@@ -180,7 +180,7 @@ function loadAndSchedule(): void {
         const agentSlug = resolveRuntimeAgentSlug(agent)
           ?? agent.session_key.replace(/[^a-z0-9-]/gi, '-').toLowerCase();
         const runSessionKey = buildHookSessionKey(instanceId);
-        const contract = buildInstanceCallbackContract({
+        const contract = buildContractInstructions({
           instanceId,
           taskId,
           taskStatus: taskContext?.status ?? 'ready',
@@ -193,6 +193,7 @@ function loadAndSchedule(): void {
             runtimeConfig: agent.runtime_config,
             hooksUrl: agent.hooks_url,
           }),
+          db,
         });
         message += `\n\n${contract}`;
       } else {
