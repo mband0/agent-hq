@@ -59,6 +59,8 @@ function buildContext(overrides: Partial<TransportContext> = {}): TransportConte
 }
 
 describe('transportAdapters sprint-type contract templates', () => {
+  const repoContractRoot = path.resolve(__dirname, '../../../../agent-contracts');
+
   it('uses the sprint-type text template for remote-direct dispatches', () => {
     const contract = buildContractInstructions(buildContext());
 
@@ -92,16 +94,11 @@ describe('transportAdapters sprint-type contract templates', () => {
     expect(contract).toContain('Use ONE of these outcomes: completed_for_review, blocked, failed');
   });
 
-  it('supports alias mapping so starter sprint types can use the new sprint-specific templates', () => {
+  it('falls back to generic when a sprint type has no dedicated template yet', () => {
     const devContract = buildContractInstructions(buildContext({ sprintType: 'dev' }));
-    expect(devContract).toContain('## Atlas HQ enhancement contract for this dispatched instance');
+    expect(devContract).toContain('## Atlas HQ run contract for this dispatched instance');
     expect(devContract).toContain('Sprint type: dev');
-
-    reloadWithContractRoot(tempDir);
-    fs.writeFileSync(path.join(tempDir, 'bugs.md'), '## Atlas HQ bug-fix contract for this dispatched instance\nSprint type: {{sprintType}}\n', 'utf-8');
-    const opsContract = buildContractInstructions(buildContext({ sprintType: 'ops' }));
-    expect(opsContract).toContain('## Atlas HQ bug-fix contract for this dispatched instance');
-    expect(opsContract).toContain('Sprint type: ops');
+    expect(devContract).toContain('Workflow lane: implementation');
   });
 
   it('uses the sprint-type text template for proxy-managed dispatches too', () => {
@@ -117,7 +114,7 @@ describe('transportAdapters sprint-type contract templates', () => {
   });
 
   it('ships the real enhancement template with lane expectations and evidence guidance', () => {
-    const repoContractRoot = path.resolve(__dirname, '../../../../agent-contracts');
+    reloadWithContractRoot(repoContractRoot);
     const repoTemplate = fs.readFileSync(path.join(repoContractRoot, 'enhancements.md'), 'utf-8');
 
     expect(repoTemplate).toContain('## Atlas HQ enhancement contract for this dispatched instance');

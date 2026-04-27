@@ -358,21 +358,11 @@ function normalizeSprintTypeForTemplate(value: string | null | undefined): strin
   return normalized.length > 0 ? normalized : 'generic';
 }
 
-function getSprintTemplateAliases(sprintType: string | null | undefined): string[] {
-  const normalizedSprintType = normalizeSprintTypeForTemplate(sprintType);
-  const aliases = new Set<string>([normalizedSprintType]);
-
-  if (normalizedSprintType === 'dev') aliases.add('enhancements');
-  if (normalizedSprintType === 'ops') aliases.add('bugs');
-
-  return [...aliases];
-}
-
 function getContractTemplateCandidates(sprintType: string | null | undefined): string[] {
-  const aliases = getSprintTemplateAliases(sprintType);
-  const candidates = aliases.map((alias) => path.join(AGENT_CONTRACT_ROOT, `${alias}.md`));
+  const normalizedSprintType = normalizeSprintTypeForTemplate(sprintType);
+  const candidates = [path.join(AGENT_CONTRACT_ROOT, `${normalizedSprintType}.md`)];
 
-  if (!aliases.includes('generic')) {
+  if (normalizedSprintType !== 'generic') {
     candidates.push(path.join(AGENT_CONTRACT_ROOT, 'generic.md'));
   }
 
@@ -397,7 +387,7 @@ function readFirstExistingContractTemplate(sprintType: string | null | undefined
  * and interpolate its plain-text placeholders at dispatch time.
  *
  * v1 intentionally keeps this simple: one text template per sprint type,
- * with generic.md as the fallback when no sprint-specific file exists.
+ * owned directly by that sprint type, with generic.md as the only fallback.
  * Returns null if no sprint-type template exists or a read/render error occurs.
  */
 function tryBuildFromFileTemplate(
