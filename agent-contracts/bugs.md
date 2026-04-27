@@ -43,7 +43,7 @@ Valid outcomes:
 - Call out regression risk or follow-up gaps if they remain.
 
 6. EVIDENCE EXPECTATIONS FOR BUGS
-- Record branch and commit for the fix.
+- Record branch, commit, and a non-production review URL such as the branch or PR link.
 - Provide the dev or test URL QA should use when relevant.
 - Include short notes about reproduction, validation, or edge cases when that matters.
 

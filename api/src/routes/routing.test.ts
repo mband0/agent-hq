@@ -3,14 +3,15 @@ import type { Server } from 'http';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import routingRouter from './routing';
 import { closeDb, getDb } from '../db/client';
+import routingRouter from './routing';
 
 let tempDir: string;
 let dbPath: string;
 
 function resetDb(): void {
   closeDb();
+  jest.resetModules();
   fs.rmSync(tempDir, { recursive: true, force: true });
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'routing-rules-'));
   dbPath = path.join(tempDir, 'agent-hq-test.db');
@@ -230,28 +231,32 @@ describe('routing rules API', () => {
   it('reads and writes sprint-type-specific contract templates with fallback', async () => {
     const { server, baseUrl } = await startTestServer();
     try {
-      fs.writeFileSync(path.join(process.env.AGENT_CONTRACT_ROOT!, 'generic.md'), 'generic {{sprintType}}');
+      const genericResponse = await fetch(`${baseUrl}/api/v1/routing/agent-contract?sprint_type=generic`);
+      expect(genericResponse.status).toBe(200);
+      const genericBody = await genericResponse.json() as { sprint_type: string; content: string; inherited_from: string | null };
+      expect(genericBody.sprint_type).toBe('generic');
+      expect(genericBody.inherited_from).toBeNull();
+      expect(genericBody.content).toContain('Sprint type: {{sprintType}}');
 
-      const inheritedResponse = await fetch(`${baseUrl}/api/v1/routing/agent-contract?sprint_type=bugs`);
-      expect(inheritedResponse.status).toBe(200);
-      await expect(inheritedResponse.json()).resolves.toEqual(expect.objectContaining({
-        sprint_type: 'bugs',
-        content: 'generic {{sprintType}}',
-        inherited_from: 'generic',
-      }));
+      const sprintSpecificResponse = await fetch(`${baseUrl}/api/v1/routing/agent-contract?sprint_type=enhancements`);
+      expect(sprintSpecificResponse.status).toBe(200);
+      const sprintSpecificBody = await sprintSpecificResponse.json() as { sprint_type: string; content: string; inherited_from: string | null };
+      expect(sprintSpecificBody.sprint_type).toBe('enhancements');
+      expect(sprintSpecificBody.inherited_from).toBeNull();
+      expect(sprintSpecificBody.content).toContain('## Atlas HQ enhancement contract for this dispatched instance');
 
       const saveResponse = await fetch(`${baseUrl}/api/v1/routing/agent-contract`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sprint_type: 'bugs', content: 'bugs only {{taskId}}' }),
+        body: JSON.stringify({ sprint_type: 'enhancements', content: 'enhancements only {{taskId}}' }),
       });
       expect(saveResponse.status).toBe(200);
 
-      const directResponse = await fetch(`${baseUrl}/api/v1/routing/agent-contract?sprint_type=bugs`);
+      const directResponse = await fetch(`${baseUrl}/api/v1/routing/agent-contract?sprint_type=enhancements`);
       expect(directResponse.status).toBe(200);
       await expect(directResponse.json()).resolves.toEqual(expect.objectContaining({
-        sprint_type: 'bugs',
-        content: 'bugs only {{taskId}}',
+        sprint_type: 'enhancements',
+        content: 'enhancements only {{taskId}}',
         inherited_from: null,
       }));
     } finally {
