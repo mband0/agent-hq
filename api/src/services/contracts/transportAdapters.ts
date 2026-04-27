@@ -393,6 +393,9 @@ function tryBuildFromFileTemplate(
     const baseUrl = ctx.baseUrl ?? getAgentHqBaseUrl();
     const loadedTemplate = readFirstExistingContractTemplate(ctx.sprintType);
     if (!loadedTemplate) return null;
+
+    const evidence = getEvidenceRequirements(workflow.lane);
+
     return renderTemplate(loadedTemplate, {
       baseUrl,
       instanceId: ctx.instanceId,
@@ -406,6 +409,10 @@ function tryBuildFromFileTemplate(
       taskStatus: ctx.taskStatus,
       lane: workflow.lane,
       workflowTemplateKey: workflow.workflowTemplateKey ?? '',
+      pipelineReference: PIPELINE_REFERENCE,
+      evidenceDescription: evidence.description,
+      evidenceFields: evidence.fields.join(', '),
+      evidenceFieldsBulleted: evidence.fields.map(field => `- ${field}`).join('\n'),
     });
   } catch {
     return null;
@@ -429,12 +436,12 @@ export function buildContractInstructions(ctx: TransportContext): string {
     db: ctx.db,
   });
 
+  const fromFile = tryBuildFromFileTemplate(ctx, workflow);
+  if (fromFile) return fromFile;
+
   switch (ctx.transportMode) {
-    case 'local': {
-      // Try file template first for local agents (backward compat)
-      const fromFile = tryBuildFromFileTemplate(ctx, workflow);
-      return fromFile ?? buildLocalTransport(ctx, workflow);
-    }
+    case 'local':
+      return buildLocalTransport(ctx, workflow);
     case 'remote-direct':
       return buildRemoteDirectTransport(ctx, workflow);
     case 'proxy-managed':
