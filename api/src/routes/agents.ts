@@ -21,6 +21,7 @@ import { getSkillMaterializationAdapter } from '../runtimes/skillMaterialization
 import { syncAssignedMcpForAgent } from '../runtimes/mcpMaterialization';
 import { VALID_TASK_TYPES } from '../lib/taskTypes';
 import { ensureOpenClawGatewayAvailable, requireOpenClawOutput, runOpenClawSync } from '../lib/openclawCli';
+import { syncAvailableOAuthProfilesToAuthFile } from '../lib/openclawOAuthProfiles';
 
 const router = Router();
 
@@ -263,97 +264,8 @@ function normalizeJsonArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }
 
-function createEmptyAuthProfilesDocument(): Record<string, unknown> {
-  return {
-    version: 1,
-    profiles: {},
-    lastGood: {},
-    usageStats: {},
-  };
-}
-
-function readJsonFile(filePath: string): Record<string, unknown> | null {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf-8')) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
-
-function upsertAgentAuthProfile(filePath: string, slug: string, profile: Record<string, unknown>): void {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  const data = fs.existsSync(filePath)
-    ? (readJsonFile(filePath) ?? createEmptyAuthProfilesDocument())
-    : createEmptyAuthProfilesDocument();
-  const profiles = (data.profiles && typeof data.profiles === 'object')
-    ? data.profiles as Record<string, unknown>
-    : {};
-  profiles[`${slug}:default`] = profile;
-  data.profiles = profiles;
-
-  const lastGood = (data.lastGood && typeof data.lastGood === 'object')
-    ? data.lastGood as Record<string, string>
-    : {};
-  lastGood[slug] = `${slug}:default`;
-  data.lastGood = lastGood;
-
-  if (!data.usageStats || typeof data.usageStats !== 'object') {
-    data.usageStats = {};
-  }
-
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2) + '\n', 'utf-8');
-}
-
 function syncStoredProviderAuthProfiles(agentDirPath: string): string[] {
-  const db = getDb();
-  const rows = db.prepare(`
-    SELECT slug, config
-    FROM provider_config
-    WHERE status = 'connected'
-  `).all() as Array<{ slug: string; config: string }>;
-
-  const synced: string[] = [];
-  const authFilePath = path.join(agentDirPath, 'auth-profiles.json');
-  for (const row of rows) {
-    let config: Record<string, unknown>;
-    try {
-      config = JSON.parse(row.config ?? '{}') as Record<string, unknown>;
-    } catch {
-      continue;
-    }
-
-    if (row.slug !== 'openai-codex' || config.auth_type !== 'oauth') {
-      continue;
-    }
-
-    const tokens = config.tokens && typeof config.tokens === 'object'
-      ? config.tokens as Record<string, unknown>
-      : null;
-    const accessToken = typeof tokens?.access_token === 'string' ? tokens.access_token.trim() : '';
-    const refreshToken = typeof tokens?.refresh_token === 'string' ? tokens.refresh_token.trim() : '';
-    if (!accessToken && !refreshToken) {
-      continue;
-    }
-
-    const expiresAt = typeof config.expires_at === 'number' && Number.isFinite(config.expires_at)
-      ? config.expires_at
-      : Date.now() + 3600_000;
-    const accountId = typeof config.account_id === 'string' && config.account_id.trim()
-      ? config.account_id.trim()
-      : null;
-
-    upsertAgentAuthProfile(authFilePath, row.slug, {
-      type: 'oauth',
-      provider: row.slug,
-      access: accessToken,
-      refresh: refreshToken,
-      expires: expiresAt,
-      ...(accountId ? { accountId } : {}),
-    });
-    synced.push(row.slug);
-  }
-
-  return synced;
+  return syncAvailableOAuthProfilesToAuthFile(agentDirPath);
 }
 
 function buildDefaultWorkspacePath(slug: string): string {

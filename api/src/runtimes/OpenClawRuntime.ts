@@ -24,6 +24,7 @@ import { getDb } from '../db/client';
 import { openClawGatewayWsOptions } from '../lib/openclawGatewayWs';
 import { startTranscriptCapture, stopTranscriptCapture } from '../lib/gatewayTranscriptCapture';
 import { recordRunCheckIn } from '../lib/runObservability';
+import { syncOAuthProviderForOpenClawAgent } from '../lib/openclawOAuthProfiles';
 
 function derivePostRuntimeInstanceStatus(
   status: string,
@@ -1002,6 +1003,26 @@ export class OpenClawRuntime implements AgentRuntime {
    * dispatch — fire an isolated agent turn via the OpenClaw gateway WebSocket path.
    */
   async dispatch(params: DispatchParams): Promise<{ runId: string }> {
+    const codexAuthSync = await syncOAuthProviderForOpenClawAgent({
+      provider: 'openai-codex',
+      agentSlug: params.agentSlug,
+    });
+    if (!codexAuthSync.ok) {
+      const requiresCodex = params.model?.startsWith('openai-codex/');
+      const message = `OpenAI Codex OAuth profile sync failed for agent "${params.agentSlug}": ${codexAuthSync.error ?? 'unknown error'}`;
+      if (requiresCodex) {
+        throw new Error(message);
+      }
+      if (!codexAuthSync.error?.includes('No OAuth profile')) {
+        console.warn(`[OpenClawRuntime] ${message}`);
+      }
+    } else if (codexAuthSync.refreshed || codexAuthSync.updatedPaths.length > 0) {
+      console.log(
+        `[OpenClawRuntime] Synced ${codexAuthSync.provider} OAuth profile for agent "${params.agentSlug}"` +
+        ` (${codexAuthSync.updatedPaths.length} auth file(s) updated${codexAuthSync.refreshed ? ', refreshed token' : ''})`,
+      );
+    }
+
     const routedSessionKey = params.sessionKey.startsWith('agent:')
       ? params.sessionKey
       : `agent:${params.agentSlug}:${params.sessionKey}`;

@@ -6,7 +6,13 @@ import * as http from 'http';
 import * as crypto from 'crypto';
 import { getDb } from '../db/client';
 import { OPENCLAW_BIN, OPENCLAW_CONFIG_PATH } from '../config';
-import { ATLAS_AGENT_SLUG } from '../lib/atlasAgent';
+import {
+  collectOAuthAuthProfilePaths,
+  getOAuthProfileKey,
+  oauthTokensToCredential,
+  syncOAuthCredentialToAllAuthProfiles,
+} from '../lib/openclawOAuthProfiles';
+import type { OAuthProviderSlug } from '../lib/openclawOAuthProfiles';
 
 const router = Router();
 
@@ -416,23 +422,6 @@ type OAuthTokenPayload = {
   id_token?: string;
 };
 
-function getOAuthProfileKey(slug: string): string {
-  return `${slug}:default`;
-}
-
-function buildAgentAuthProfilesPath(agentId: string): string {
-  return path.join(path.dirname(OPENCLAW_CONFIG_PATH), 'agents', agentId, 'agent', 'auth-profiles.json');
-}
-
-function createEmptyAuthProfilesDocument(): Record<string, unknown> {
-  return {
-    version: 1,
-    profiles: {},
-    lastGood: {},
-    usageStats: {},
-  };
-}
-
 function readJsonFile(filePath: string): Record<string, unknown> | null {
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf-8')) as Record<string, unknown>;
@@ -441,39 +430,9 @@ function readJsonFile(filePath: string): Record<string, unknown> | null {
   }
 }
 
-function collectOAuthAuthProfilePaths(): string[] {
-  const agentIds = new Set<string>([ATLAS_AGENT_SLUG]);
-  const db = getDb();
-  try {
-    const rows = db.prepare(`
-      SELECT DISTINCT openclaw_agent_id
-      FROM agents
-      WHERE openclaw_agent_id IS NOT NULL
-        AND trim(openclaw_agent_id) <> ''
-    `).all() as Array<{ openclaw_agent_id: string }>;
-    for (const row of rows) {
-      if (typeof row.openclaw_agent_id === 'string' && row.openclaw_agent_id.trim()) {
-        agentIds.add(row.openclaw_agent_id.trim());
-      }
-    }
-  } catch {
-    // Best effort — during bootstrap, the agents table may not be ready yet.
-  }
-
-  const agentsDir = path.join(path.dirname(OPENCLAW_CONFIG_PATH), 'agents');
-  if (fs.existsSync(agentsDir)) {
-    for (const agentId of fs.readdirSync(agentsDir)) {
-      if (agentId.trim()) {
-        agentIds.add(agentId.trim());
-      }
-    }
-  }
-
-  return Array.from(agentIds).map(buildAgentAuthProfilesPath);
-}
-
 function readOAuthProfile(slug: string): Record<string, unknown> | null {
-  const profileKey = getOAuthProfileKey(slug);
+  const provider = slug as OAuthProviderSlug;
+  const profileKey = getOAuthProfileKey(provider);
   for (const filePath of collectOAuthAuthProfilePaths()) {
     if (!fs.existsSync(filePath)) continue;
     const data = readJsonFile(filePath);
@@ -487,35 +446,12 @@ function readOAuthProfile(slug: string): Record<string, unknown> | null {
   return null;
 }
 
-function upsertOAuthProfile(filePath: string, slug: string, profile: Record<string, unknown>): void {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  const data = fs.existsSync(filePath)
-    ? (readJsonFile(filePath) ?? createEmptyAuthProfilesDocument())
-    : createEmptyAuthProfilesDocument();
-  const profiles = (data.profiles && typeof data.profiles === 'object')
-    ? data.profiles as Record<string, unknown>
-    : {};
-  profiles[getOAuthProfileKey(slug)] = profile;
-  data.profiles = profiles;
-
-  const lastGood = (data.lastGood && typeof data.lastGood === 'object')
-    ? data.lastGood as Record<string, string>
-    : {};
-  lastGood[slug] = getOAuthProfileKey(slug);
-  data.lastGood = lastGood;
-
-  if (!data.usageStats || typeof data.usageStats !== 'object') {
-    data.usageStats = {};
-  }
-
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2) + '\n');
-}
-
 function validateOAuthProvider(slug: string): { ok: boolean; error?: string } {
   try {
+    const provider = slug as OAuthProviderSlug;
     const profile = readOAuthProfile(slug);
     if (!profile || profile.type !== 'oauth' || profile.provider !== slug) {
-      return { ok: false, error: `No OAuth profile "${getOAuthProfileKey(slug)}" found. Click "Sign in" to authenticate.` };
+      return { ok: false, error: `No OAuth profile "${getOAuthProfileKey(provider)}" found. Click "Sign in" to authenticate.` };
     }
 
     const access = typeof profile.access === 'string' && profile.access.trim() ? profile.access.trim() : '';
@@ -542,11 +478,12 @@ function validateOAuthProvider(slug: string): { ok: boolean; error?: string } {
 function buildStoredOAuthConfig(slug: string, tokens: OAuthTokenPayload): Record<string, unknown> {
   const accountId = extractAccountIdFromJwt(tokens.access_token);
   const expiresAt = Date.now() + tokens.expires_in * 1000;
+  const provider = slug as OAuthProviderSlug;
   return {
     auth_type: 'oauth',
     managed_by: 'agent-hq',
     provider: slug,
-    profile_key: getOAuthProfileKey(slug),
+    profile_key: getOAuthProfileKey(provider),
     account_id: accountId,
     expires_at: expiresAt,
     last_refresh: new Date().toISOString(),
@@ -599,22 +536,10 @@ function extractAccountIdFromJwt(accessToken: string): string | null {
 }
 
 function writeTokensToAuthProfiles(slug: string, tokens: OAuthTokenPayload): void {
-  const accountId = extractAccountIdFromJwt(tokens.access_token);
-  const expiresAt = Date.now() + tokens.expires_in * 1000;
-  const profile = {
-    type: 'oauth',
-    provider: slug,
-    access: tokens.access_token,
-    refresh: tokens.refresh_token,
-    expires: expiresAt,
-    ...(accountId ? { accountId } : {}),
-  };
-
+  const credential = oauthTokensToCredential(slug as 'openai-codex', tokens);
   const authProfilePaths = collectOAuthAuthProfilePaths();
-  for (const authProfilePath of authProfilePaths) {
-    upsertOAuthProfile(authProfilePath, slug, profile);
-  }
-  console.log(`[providers] Wrote ${slug} OAuth tokens to ${authProfilePaths.length} OpenClaw agent auth profile(s)`);
+  const updatedPaths = syncOAuthCredentialToAllAuthProfiles(slug as 'openai-codex', credential);
+  console.log(`[providers] Wrote ${slug} OAuth tokens to ${authProfilePaths.length} OpenClaw agent auth profile(s); updated ${updatedPaths.length}`);
 }
 
 function persistOAuthTokens(slug: string, tokens: OAuthTokenPayload): Record<string, unknown> {
