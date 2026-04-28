@@ -39,11 +39,43 @@ jest.mock('../lib/agentHqBaseUrl', () => ({
 }));
 
 import { resolveRuntime } from '../runtimes';
-import { runDispatcher } from './dispatcher';
+import { dispatchInstance, resolveModelFromStoryPoints, runDispatcher } from './dispatcher';
 
 const mockedResolveRuntime = resolveRuntime as jest.MockedFunction<typeof resolveRuntime>;
 
 describe('runDispatcher thinking-level routing', () => {
+  it('resolveModelFromStoryPoints returns configured thinking_level', () => {
+    const db = new Database(':memory:');
+    db.exec(`
+      CREATE TABLE story_point_model_routing (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        max_points INTEGER NOT NULL,
+        provider TEXT,
+        model TEXT NOT NULL,
+        fallback_model TEXT,
+        max_turns INTEGER,
+        max_budget_usd REAL,
+        thinking_level TEXT,
+        label TEXT
+      );
+    `);
+
+    db.prepare(`
+      INSERT INTO story_point_model_routing (max_points, provider, model, thinking_level, label)
+      VALUES (5, 'anthropic', 'anthropic/claude-sonnet-4-6', 'medium', 'default route')
+    `).run();
+
+    expect(resolveModelFromStoryPoints(db, 3, 'anthropic')).toEqual({
+      model: 'anthropic/claude-sonnet-4-6',
+      max_turns: null,
+      max_budget_usd: null,
+      thinking_level: 'medium',
+      label: 'default route',
+    });
+
+    db.close();
+  });
+
   it('passes routed thinking_level into runtime dispatch and persists resolved output', async () => {
     const db = new Database(':memory:');
     db.exec(`
@@ -197,6 +229,90 @@ describe('runDispatcher thinking-level routing', () => {
       effective_model: 'anthropic/claude-sonnet-4-6',
       effective_thinking_level: 'high',
     });
+
+    db.close();
+  });
+
+  it('dispatchInstance passes routed thinking_level into runtime dispatch', async () => {
+    const db = new Database(':memory:');
+    db.exec(`
+      CREATE TABLE job_instances (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        agent_id INTEGER NOT NULL,
+        task_id INTEGER,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        dispatched_at TEXT,
+        payload_sent TEXT,
+        session_key TEXT,
+        response TEXT,
+        error TEXT,
+        completed_at TEXT,
+        run_id TEXT
+      );
+
+      CREATE TABLE logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        instance_id INTEGER,
+        agent_id INTEGER,
+        job_title TEXT,
+        level TEXT,
+        message TEXT
+      );
+
+      CREATE TABLE story_point_model_routing (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        max_points INTEGER NOT NULL,
+        provider TEXT,
+        model TEXT NOT NULL,
+        fallback_model TEXT,
+        max_turns INTEGER,
+        max_budget_usd REAL,
+        thinking_level TEXT,
+        label TEXT
+      );
+    `);
+
+    db.prepare(`
+      INSERT INTO job_instances (id, agent_id, task_id, status, created_at)
+      VALUES (11, 1, 382, 'queued', '2026-04-28T20:00:00.000Z')
+    `).run();
+
+    db.prepare(`
+      INSERT INTO story_point_model_routing (max_points, provider, model, thinking_level, label)
+      VALUES (8, NULL, 'openai-codex/gpt-5.4', 'adaptive', 'deeper route')
+    `).run();
+
+    const dispatchMock = jest.fn().mockResolvedValue({ runId: 'run-456' });
+    mockedResolveRuntime.mockReturnValue({
+      dispatch: dispatchMock,
+      abort: jest.fn().mockResolvedValue(undefined),
+    });
+
+    const dispatcherModule = jest.requireActual('./dispatcher') as typeof import('./dispatcher');
+    const getDbSpy = jest.spyOn(require('../db/client'), 'getDb').mockReturnValue(db);
+
+    try {
+      await dispatchInstance({
+        instanceId: 11,
+        agentId: 1,
+        sessionKey: 'hook:atlas:jobrun:11',
+        jobTitle: 'Backend Engineer',
+        message: 'Run the task',
+        storyPoints: 6,
+        model: null,
+        timeoutSeconds: 900,
+        runtimeType: 'openclaw',
+        runtimeConfig: '{}',
+      });
+    } finally {
+      getDbSpy.mockRestore();
+    }
+
+    expect(dispatchMock).toHaveBeenCalledWith(expect.objectContaining({
+      model: 'openai-codex/gpt-5.4',
+      thinking: 'adaptive',
+    }));
 
     db.close();
   });
