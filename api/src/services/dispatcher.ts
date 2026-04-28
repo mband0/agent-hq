@@ -179,6 +179,7 @@ interface StoryPointRoutingRule {
   model: string;
   max_turns: number | null;
   max_budget_usd: number | null;
+  thinking_level: string | null;
   label: string | null;
 }
 
@@ -186,6 +187,7 @@ interface ResolvedStoryPointModel {
   model: string;
   max_turns: number | null;
   max_budget_usd: number | null;
+  thinking_level: string | null;
   label: string | null;
 }
 
@@ -220,7 +222,7 @@ export function resolveModelFromStoryPoints(
     // ORDER BY max_points ASC (smallest bucket that covers the points),
     // then provider match first (CASE: 0 if matching, 1 if NULL).
     const row = db.prepare(`
-      SELECT max_points, model, max_turns, max_budget_usd, label
+      SELECT max_points, model, max_turns, max_budget_usd, thinking_level, label
       FROM story_point_model_routing
       WHERE max_points >= ?
         AND (provider = ? OR provider IS NULL)
@@ -234,6 +236,7 @@ export function resolveModelFromStoryPoints(
         model: row.model,
         max_turns: row.max_turns ?? null,
         max_budget_usd: row.max_budget_usd ?? null,
+        thinking_level: row.thinking_level ?? null,
         label: row.label ?? null,
       };
     }
@@ -1046,9 +1049,10 @@ async function fireAgentRun(
   const preferredProvider = job.preferred_provider ?? null;
   const spModel = isCustomRuntime ? null : resolveModelFromStoryPoints(db, storyPoints ?? null, preferredProvider);
   const model = isCustomRuntime ? null : (spModel?.model || job.model || job.agent_model || null);
+  const thinking = isCustomRuntime ? null : (spModel?.thinking_level ?? null);
   if (spModel) {
     console.log(
-      `[dispatcher] Story points=${storyPoints} preferred_provider=${preferredProvider ?? 'null'} → model=${spModel.model} (rule: ${spModel.label ?? 'unnamed'})`
+      `[dispatcher] Story points=${storyPoints} preferred_provider=${preferredProvider ?? 'null'} → model=${spModel.model} thinking=${spModel.thinking_level ?? 'default'} (rule: ${spModel.label ?? 'unnamed'})`
     );
   }
   console.log(
@@ -1058,8 +1062,8 @@ async function fireAgentRun(
   );
 
   // Persist the resolved effective_model on the instance so it's visible in the UI/audit log.
-  if (model) {
-    db.prepare(`UPDATE job_instances SET effective_model = ? WHERE id = ?`).run(model, instanceId);
+  if (model || thinking) {
+    db.prepare(`UPDATE job_instances SET effective_model = ?, effective_thinking_level = ? WHERE id = ?`).run(model ?? null, thinking ?? null, instanceId);
   }
 
   // Resolve the correct runtime for this agent (openclaw, claude-code, etc.)
@@ -1204,6 +1208,7 @@ async function fireAgentRun(
       timeoutSeconds: timeoutSec,
       name: `Atlas HQ: ${job.title}`,
       model,
+      thinking,
       // Extra context for runtimes that manage their own session lifecycle (e.g. ClaudeCodeRuntime)
       instanceId,
       taskId: taskId ?? null,
@@ -1693,9 +1698,10 @@ export async function dispatchInstance(params: DispatchInstanceParams): Promise<
   // Model precedence: story_points → caller-provided → gateway default
   const spModel = resolveModelFromStoryPoints(db, params.storyPoints ?? null);
   const effectiveModel = spModel?.model || params.model || null;
+  const effectiveThinking = spModel?.thinking_level ?? null;
   if (spModel) {
     console.log(
-      `[dispatchInstance] Story points=${params.storyPoints} → model=${spModel.model} (rule: ${spModel.label ?? 'unnamed'})`
+      `[dispatchInstance] Story points=${params.storyPoints} → model=${spModel.model} thinking=${spModel.thinking_level ?? 'default'} (rule: ${spModel.label ?? 'unnamed'})`
     );
   }
   console.log(
@@ -1734,6 +1740,7 @@ export async function dispatchInstance(params: DispatchInstanceParams): Promise<
       timeoutSeconds: params.timeoutSeconds ?? 900,
       name: `Atlas HQ: ${params.jobTitle}`,
       model: effectiveModel,
+      thinking: effectiveThinking,
       instanceId: params.instanceId,
       taskId: null,
       db,

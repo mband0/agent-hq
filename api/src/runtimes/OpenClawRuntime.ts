@@ -1069,8 +1069,10 @@ export async function gatewayWsSend(params: {
   sessionKey: string;
   message: string;
   timeoutMs?: number;
+  model?: string | null;
+  thinking?: string | null;
 }): Promise<{ ok: boolean; runId?: string; error?: string }> {
-  const { sessionKey, message, timeoutMs } = params;
+  const { sessionKey, message, timeoutMs, model, thinking } = params;
 
   return new Promise((resolve) => {
     const ws = new WebSocket(GATEWAY_WS_URL, openClawGatewayWsOptions(GATEWAY_WS_URL));
@@ -1175,6 +1177,8 @@ export async function gatewayWsSend(params: {
         const sendResult = await sendRpc('chat.send', {
           sessionKey,
           message,
+          ...(model ? { model } : {}),
+          ...(thinking ? { thinking } : {}),
           idempotencyKey: crypto.randomUUID(),
           timeoutMs: timeoutMs ?? 900_000,
         });
@@ -1238,6 +1242,8 @@ export class OpenClawRuntime implements AgentRuntime {
     const wsResult = await gatewayWsSend({
       sessionKey: routedSessionKey,
       message: params.message,
+      model: params.model ?? null,
+      thinking: params.thinking ?? null,
       timeoutMs: (params.timeoutSeconds ?? 900) * 1000,
     });
 

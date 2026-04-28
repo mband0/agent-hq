@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { getDb } from '../db/client';
 
 const router = Router();
+const ALLOWED_THINKING_LEVELS = new Set(['off', 'minimal', 'low', 'medium', 'high', 'adaptive']);
 
 function normalizeNullableText(value: unknown): string | null {
   if (value === undefined) return null;
@@ -30,6 +31,16 @@ function normalizeOptionalNumber(value: unknown): number | null | undefined {
   return num;
 }
 
+function normalizeOptionalThinkingLevel(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
+  const thinking = typeof value === 'string' ? value.trim().toLowerCase() : String(value).trim().toLowerCase();
+  if (!ALLOWED_THINKING_LEVELS.has(thinking)) {
+    throw new Error(`thinking_level must be one of: ${Array.from(ALLOWED_THINKING_LEVELS).join(', ')}`);
+  }
+  return thinking;
+}
+
 function normalizeModelRoutingPayload(body: Record<string, unknown>, mode: 'create' | 'update') {
   const minStoryPoints = normalizeOptionalPositiveInt(body.min_story_points);
   const maxStoryPoints = normalizeOptionalPositiveInt(body.max_story_points);
@@ -39,6 +50,7 @@ function normalizeModelRoutingPayload(body: Record<string, unknown>, mode: 'crea
   const fallbackModel = normalizeNullableText(body.fallback_model);
   const maxTurns = normalizeOptionalPositiveInt(body.max_turns);
   const maxBudgetUsd = normalizeOptionalNumber(body.max_budget_usd);
+  const thinkingLevel = normalizeOptionalThinkingLevel(body.thinking_level);
   const label = normalizeNullableText(body.label);
   const priority = normalizeOptionalPositiveInt(body.priority);
 
@@ -62,6 +74,7 @@ function normalizeModelRoutingPayload(body: Record<string, unknown>, mode: 'crea
     fallback_model: fallbackModel,
     max_turns: maxTurns,
     max_budget_usd: maxBudgetUsd,
+    thinking_level: thinkingLevel,
     label,
     priority,
   };
@@ -115,8 +128,8 @@ router.post('/', (req: Request, res: Response) => {
 
     const result = db.prepare(`
       INSERT INTO story_point_model_routing
-        (max_points, provider, model, fallback_model, max_turns, max_budget_usd, label)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+        (max_points, provider, model, fallback_model, max_turns, max_budget_usd, thinking_level, label)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       payload.max_points,
       payload.provider ?? 'anthropic',
@@ -124,6 +137,7 @@ router.post('/', (req: Request, res: Response) => {
       payload.fallback_model ?? null,
       payload.max_turns ?? null,
       payload.max_budget_usd ?? null,
+      payload.thinking_level ?? null,
       payload.label ?? null,
     );
 
@@ -152,6 +166,7 @@ router.put('/:id', (req: Request, res: Response) => {
         fallback_model = ?,
         max_turns      = ?,
         max_budget_usd = ?,
+        thinking_level = ?,
         label          = ?,
         updated_at     = datetime('now')
       WHERE id = ?
@@ -162,6 +177,7 @@ router.put('/:id', (req: Request, res: Response) => {
       payload.fallback_model !== undefined ? payload.fallback_model : existing.fallback_model,
       payload.max_turns      !== undefined ? payload.max_turns      : existing.max_turns,
       payload.max_budget_usd !== undefined ? payload.max_budget_usd : existing.max_budget_usd,
+      payload.thinking_level !== undefined ? payload.thinking_level : existing.thinking_level,
       payload.label          !== undefined ? payload.label          : existing.label,
       req.params.id,
     );

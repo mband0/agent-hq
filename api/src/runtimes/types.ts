@@ -19,6 +19,7 @@ export interface DispatchParams extends RuntimeEventCallbacks {
   timeoutSeconds: number;
   name: string;
   model?: string | null;
+  thinking?: string | null;
   /** Instance ID — required by runtimes that need to persist run state (e.g. ClaudeCodeRuntime). */
   instanceId?: number;
   /** Task ID — forwarded to runtimes that expose it to agents via env vars. */

@@ -26,6 +26,7 @@ function resetDb(): void {
       fallback_model TEXT,
       max_turns INTEGER,
       max_budget_usd REAL,
+      thinking_level TEXT,
       label TEXT,
       updated_at TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -72,12 +73,12 @@ describe('model-routing aliases', () => {
       const response = await fetch(`${baseUrl}/api/v1/model-routing`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ min_story_points: 1, max_story_points: 2, provider: 'openai', model: 'gpt-5.4', priority: 5 }),
+        body: JSON.stringify({ min_story_points: 1, max_story_points: 2, provider: 'openai', model: 'gpt-5.4', thinking_level: 'medium', priority: 5 }),
       });
       const body = await response.json();
 
       expect(response.status).toBe(201);
-      expect(body).toEqual(expect.objectContaining({ max_points: 2, max_story_points: 2, min_story_points: 1, provider: 'openai', model: 'gpt-5.4' }));
+      expect(body).toEqual(expect.objectContaining({ max_points: 2, max_story_points: 2, min_story_points: 1, provider: 'openai', model: 'gpt-5.4', thinking_level: 'medium' }));
     } finally {
       await stopTestServer(server);
     }
@@ -86,8 +87,8 @@ describe('model-routing aliases', () => {
   it('lists serialized story point aliases for existing rules', async () => {
     const db = getDb();
     db.prepare(`
-      INSERT INTO story_point_model_routing (max_points, provider, model, fallback_model, label)
-      VALUES (3, 'anthropic', 'claude-sonnet-4-5', NULL, 'small')
+      INSERT INTO story_point_model_routing (max_points, provider, model, fallback_model, thinking_level, label)
+      VALUES (3, 'anthropic', 'claude-sonnet-4-5', NULL, 'low', 'small')
     `).run();
 
     const { server, baseUrl } = await startTestServer();
@@ -96,8 +97,25 @@ describe('model-routing aliases', () => {
       const body = await response.json();
       expect(response.status).toBe(200);
       expect(body).toEqual([
-        expect.objectContaining({ max_points: 3, max_story_points: 3, min_story_points: 1, provider: 'anthropic' }),
+        expect.objectContaining({ max_points: 3, max_story_points: 3, min_story_points: 1, provider: 'anthropic', thinking_level: 'low' }),
       ]);
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  it('rejects unsupported thinking_level values', async () => {
+    const { server, baseUrl } = await startTestServer();
+    try {
+      const response = await fetch(`${baseUrl}/api/v1/model-routing`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ max_points: 2, provider: 'openai', model: 'gpt-5.4', thinking_level: 'turbo' }),
+      });
+      const body = await response.json() as { error: string };
+
+      expect(response.status).toBe(500);
+      expect(body.error).toContain('thinking_level must be one of');
     } finally {
       await stopTestServer(server);
     }

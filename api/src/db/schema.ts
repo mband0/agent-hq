@@ -1449,6 +1449,13 @@ export function initSchema(): void {
     console.log('[schema] Migrated: added effective_model to job_instances');
   } catch (_) { /* column already exists */ }
 
+  // Safe migration: add effective_thinking_level to job_instances
+  // Stores the resolved thinking level used at dispatch time for audit/debugging.
+  try {
+    db.exec(`ALTER TABLE job_instances ADD COLUMN effective_thinking_level TEXT`);
+    console.log('[schema] Migrated: added effective_thinking_level to job_instances');
+  } catch (_) { /* column already exists */ }
+
   // Safe migration: add worktree_path to job_instances (task #365)
   // Stores the git worktree path used by the agent for this run.
   // Enables cleanup on completion and orphan detection by the watchdog.
@@ -1476,12 +1483,18 @@ export function initSchema(): void {
       fallback_model  TEXT,
       max_turns       INTEGER,
       max_budget_usd  REAL,
+      thinking_level  TEXT,
       label           TEXT,
       created_at      TEXT DEFAULT (datetime('now')),
       updated_at      TEXT DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_spmr_provider_points ON story_point_model_routing(provider, max_points);
   `);
+
+  try {
+    db.exec(`ALTER TABLE story_point_model_routing ADD COLUMN thinking_level TEXT`);
+    console.log('[schema] Migrated: added thinking_level to story_point_model_routing');
+  } catch (_) { /* column already exists */ }
 
   // Seed default model routing rules (idempotent)
   const existingRoutes = (db.prepare(`SELECT COUNT(*) as n FROM story_point_model_routing`).get() as { n: number }).n;
