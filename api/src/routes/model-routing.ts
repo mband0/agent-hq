@@ -31,12 +31,18 @@ function normalizeOptionalNumber(value: unknown): number | null | undefined {
   return num;
 }
 
+function badRequest(message: string): Error & { status: number } {
+  const err = new Error(message) as Error & { status: number };
+  err.status = 400;
+  return err;
+}
+
 function normalizeOptionalThinkingLevel(value: unknown): string | null | undefined {
   if (value === undefined) return undefined;
   if (value === null || value === '') return null;
   const thinking = typeof value === 'string' ? value.trim().toLowerCase() : String(value).trim().toLowerCase();
   if (!ALLOWED_THINKING_LEVELS.has(thinking)) {
-    throw new Error(`thinking_level must be one of: ${Array.from(ALLOWED_THINKING_LEVELS).join(', ')}`);
+    throw badRequest(`thinking_level must be one of: ${Array.from(ALLOWED_THINKING_LEVELS).join(', ')}`);
   }
   return thinking;
 }
@@ -55,14 +61,12 @@ function normalizeModelRoutingPayload(body: Record<string, unknown>, mode: 'crea
   const priority = normalizeOptionalPositiveInt(body.priority);
 
   if (maxStoryPoints != null && minStoryPoints != null && maxStoryPoints < minStoryPoints) {
-    throw new Error('max_story_points must be greater than or equal to min_story_points');
+    throw badRequest('max_story_points must be greater than or equal to min_story_points');
   }
 
   const resolvedMaxPoints = maxPoints ?? maxStoryPoints;
   if (mode === 'create' && (resolvedMaxPoints == null || !model)) {
-    const err = new Error('max_points and model are required (aliases: max_story_points for max_points)');
-    (err as Error & { status?: number }).status = 400;
-    throw err;
+    throw badRequest('max_points and model are required (aliases: max_story_points for max_points)');
   }
 
   return {

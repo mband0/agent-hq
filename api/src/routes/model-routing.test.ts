@@ -114,7 +114,7 @@ describe('model-routing aliases', () => {
       });
       const body = await response.json() as { error: string };
 
-      expect(response.status).toBe(500);
+      expect(response.status).toBe(400);
       expect(body.error).toContain('thinking_level must be one of');
     } finally {
       await stopTestServer(server);
