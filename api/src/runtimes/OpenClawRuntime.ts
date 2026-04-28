@@ -12,6 +12,7 @@ import crypto from 'crypto';
 import path from 'path';
 import os from 'os';
 import { WebSocket } from 'ws';
+import type Database from 'better-sqlite3';
 import type { AgentRuntime, DispatchParams, RuntimeEndEvent } from './types';
 import {
   OPENCLAW_BIN,
@@ -31,11 +32,47 @@ function derivePostRuntimeInstanceStatus(
   runtimeEndedAt: string | null | undefined,
   lifecycleOutcomePostedAt: string | null | undefined,
   taskOutcome: string | null | undefined,
+  runtimeEndSuccess: boolean,
 ): string {
   if (runtimeEndedAt && !lifecycleOutcomePostedAt && !taskOutcome && (status === 'running' || status === 'dispatched' || status === 'queued')) {
-    return 'done';
+    return runtimeEndSuccess ? 'done' : 'failed';
   }
   return status;
+}
+
+function isOpenClawPreReplyFailure(content: string): boolean {
+  const haystack = content.toLowerCase();
+  if (haystack.includes('agent failed before reply')) return true;
+  return haystack.includes('all models failed')
+    && (
+      haystack.includes('no api key found')
+      || haystack.includes('oauth token refresh failed')
+      || haystack.includes('(auth)')
+    );
+}
+
+function trimRuntimeError(content: string): string {
+  const normalized = content.trim().replace(/\s+/g, ' ');
+  return normalized.length > 1200 ? `${normalized.slice(0, 1197)}...` : normalized;
+}
+
+function detectOpenClawPreReplyFailure(db: Database.Database, instanceId: number): string | null {
+  const rows = db.prepare(`
+    SELECT content
+    FROM chat_messages
+    WHERE instance_id = ?
+      AND role = 'assistant'
+    ORDER BY timestamp DESC
+    LIMIT 8
+  `).all(instanceId) as Array<{ content: string | null }>;
+
+  for (const row of rows) {
+    const content = row.content ?? '';
+    if (isOpenClawPreReplyFailure(content)) {
+      return trimRuntimeError(content);
+    }
+  }
+  return null;
 }
 
 // ── Config ───────────────────────────────────────────────────────────────────
@@ -256,6 +293,167 @@ function signPayload(privateKeyPem: string, payload: string): string {
   const key = crypto.createPrivateKey(privateKeyPem);
   const signature = crypto.sign(null, Buffer.from(payload, 'utf8'), key);
   return base64UrlEncode(signature as Buffer);
+}
+
+interface GatewayRpcCallResult {
+  ok: boolean;
+  payload?: unknown;
+  result?: unknown;
+  error?: string;
+}
+
+function formatGatewayRpcError(error: unknown): string {
+  if (typeof error === 'string') return error;
+  if (error && typeof error === 'object') return JSON.stringify(error);
+  return String(error ?? 'unknown error');
+}
+
+function gatewayRpcCall(params: {
+  method: string;
+  rpcParams?: Record<string, unknown>;
+  timeoutMs?: number;
+  displayName?: string;
+}): Promise<GatewayRpcCallResult> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const ws = new WebSocket(GATEWAY_WS_URL, openClawGatewayWsOptions(GATEWAY_WS_URL));
+    const pending = new Map<string, (frame: Record<string, unknown>) => void>();
+
+    const timeout = setTimeout(() => {
+      finish({ ok: false, error: 'Gateway WebSocket timeout' });
+    }, params.timeoutMs ?? 30_000);
+
+    function finish(result: GatewayRpcCallResult): void {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+        ws.close();
+      }
+      resolve(result);
+    }
+
+    function sendRpc(method: string, rpcParams: Record<string, unknown>): Promise<Record<string, unknown>> {
+      return new Promise((rpcResolve) => {
+        if (ws.readyState !== WebSocket.OPEN) {
+          rpcResolve({ error: 'WS not open' });
+          return;
+        }
+        const id = crypto.randomUUID();
+        pending.set(id, rpcResolve);
+        ws.send(JSON.stringify({ type: 'req', id, method, params: rpcParams }));
+      });
+    }
+
+    ws.on('error', (err) => {
+      finish({ ok: false, error: `WebSocket error: ${err.message}` });
+    });
+
+    ws.on('close', () => {
+      if (!settled) {
+        finish({ ok: false, error: 'Gateway WebSocket closed before response' });
+      }
+    });
+
+    ws.on('message', async (raw) => {
+      let frame: Record<string, unknown>;
+      try {
+        frame = JSON.parse(raw.toString());
+      } catch {
+        return;
+      }
+
+      if (frame.type === 'res' && typeof frame.id === 'string') {
+        const handler = pending.get(frame.id);
+        if (handler) {
+          pending.delete(frame.id);
+          handler(frame);
+        }
+        return;
+      }
+
+      if (frame.type !== 'event' || frame.event !== 'connect.challenge') return;
+
+      const payload = frame.payload as Record<string, unknown> | undefined;
+      const nonce = (payload?.nonce as string) ?? '';
+      const role = 'operator';
+      const scopes = ['operator.read', 'operator.write', 'operator.admin'];
+      const signedAtMs = Date.now();
+      const gatewayAuthToken = getGatewayAuthToken();
+      const deviceIdentity = loadDeviceIdentity();
+
+      let device: Record<string, unknown> | undefined;
+      if (deviceIdentity) {
+        const sigPayload = [
+          'v3', deviceIdentity.deviceId, 'gateway-client', 'ui',
+          role, scopes.join(','), String(signedAtMs),
+          gatewayAuthToken, nonce, process.platform, '',
+        ].join('|');
+        device = {
+          id: deviceIdentity.deviceId,
+          publicKey: publicKeyRawBase64Url(deviceIdentity.publicKeyPem),
+          signature: signPayload(deviceIdentity.privateKeyPem, sigPayload),
+          signedAt: signedAtMs,
+          nonce,
+        };
+      }
+
+      const connectResult = await sendRpc('connect', {
+        minProtocol: PROTOCOL_VERSION,
+        maxProtocol: PROTOCOL_VERSION,
+        client: {
+          id: 'gateway-client',
+          displayName: params.displayName ?? 'Agent HQ Runtime',
+          version: '1.0.0',
+          platform: process.platform,
+          mode: 'ui',
+          instanceId: crypto.randomUUID(),
+        },
+        caps: [],
+        role,
+        scopes,
+        auth: { token: gatewayAuthToken },
+        ...(device ? { device } : {}),
+      });
+
+      if (connectResult.error) {
+        finish({ ok: false, error: `Gateway connect failed: ${formatGatewayRpcError(connectResult.error)}` });
+        return;
+      }
+
+      const rpcResult = await sendRpc(params.method, params.rpcParams ?? {});
+      if (rpcResult.error) {
+        finish({ ok: false, error: `${params.method} failed: ${formatGatewayRpcError(rpcResult.error)}` });
+        return;
+      }
+
+      finish({
+        ok: true,
+        payload: rpcResult.payload,
+        result: rpcResult.result,
+      });
+    });
+  });
+}
+
+export async function reloadOpenClawSecretsRuntimeForAuthSync(): Promise<{ ok: boolean; message: string }> {
+  const result = await gatewayRpcCall({
+    method: 'secrets.reload',
+    timeoutMs: 30_000,
+    displayName: 'Agent HQ Auth Profile Reload',
+  });
+  if (!result.ok) {
+    return { ok: false, message: result.error ?? 'unknown error' };
+  }
+
+  const payload = (result.payload ?? result.result) as Record<string, unknown> | undefined;
+  const warningCount = typeof payload?.warningCount === 'number' ? payload.warningCount : null;
+  return {
+    ok: true,
+    message: warningCount === null
+      ? 'OpenClaw secrets runtime reloaded.'
+      : `OpenClaw secrets runtime reloaded (${warningCount} warning(s)).`,
+  };
 }
 
 const LIVE_TRANSCRIPT_POLL_MS = 2000;
@@ -1003,12 +1201,12 @@ export class OpenClawRuntime implements AgentRuntime {
    * dispatch — fire an isolated agent turn via the OpenClaw gateway WebSocket path.
    */
   async dispatch(params: DispatchParams): Promise<{ runId: string }> {
+    const requiresCodex = params.model?.startsWith('openai-codex/');
     const codexAuthSync = await syncOAuthProviderForOpenClawAgent({
       provider: 'openai-codex',
       agentSlug: params.agentSlug,
     });
     if (!codexAuthSync.ok) {
-      const requiresCodex = params.model?.startsWith('openai-codex/');
       const message = `OpenAI Codex OAuth profile sync failed for agent "${params.agentSlug}": ${codexAuthSync.error ?? 'unknown error'}`;
       if (requiresCodex) {
         throw new Error(message);
@@ -1021,6 +1219,16 @@ export class OpenClawRuntime implements AgentRuntime {
         `[OpenClawRuntime] Synced ${codexAuthSync.provider} OAuth profile for agent "${params.agentSlug}"` +
         ` (${codexAuthSync.updatedPaths.length} auth file(s) updated${codexAuthSync.refreshed ? ', refreshed token' : ''})`,
       );
+      const reload = await reloadOpenClawSecretsRuntimeForAuthSync();
+      if (reload.ok) {
+        console.log(`[OpenClawRuntime] ${reload.message} Agent: "${params.agentSlug}"`);
+      } else {
+        const message = `OpenClaw secrets runtime reload failed after OAuth profile sync for agent "${params.agentSlug}": ${reload.message}`;
+        if (requiresCodex) {
+          throw new Error(message);
+        }
+        console.warn(`[OpenClawRuntime] ${message}`);
+      }
     }
 
     const routedSessionKey = params.sessionKey.startsWith('agent:')
@@ -1140,10 +1348,6 @@ export class OpenClawRuntime implements AgentRuntime {
   private async handleTurnEnd(instanceId: number, event: RuntimeEndEvent, onRuntimeEnd?: DispatchParams['onRuntimeEnd']): Promise<void> {
     try {
       const db = getDb();
-      const runtimeEndSuccess = event.success ? 1 : 0;
-      const runtimeEndError = event.error ?? (event.success ? null : (event.reason ?? 'error'));
-      const runtimeEndSource = 'instance_complete';
-      const nowIso = new Date().toISOString();
       const existing = db.prepare(`
         SELECT status, lifecycle_outcome_posted_at, task_outcome
         FROM job_instances
@@ -1154,11 +1358,36 @@ export class OpenClawRuntime implements AgentRuntime {
         task_outcome: string | null;
       } | undefined;
       if (!existing) return;
+
+      let normalizedEvent = event;
+      if (event.success) {
+        const failureText = detectOpenClawPreReplyFailure(db, instanceId);
+        if (failureText) {
+          normalizedEvent = {
+            ...event,
+            success: false,
+            reason: 'error',
+            error: failureText,
+            metadata: {
+              ...(event.metadata ?? {}),
+              openclaw_pre_reply_failure_detected: true,
+              gateway_terminal_success: event.success,
+              gateway_terminal_reason: event.reason ?? null,
+            },
+          };
+        }
+      }
+
+      const runtimeEndSuccess = normalizedEvent.success ? 1 : 0;
+      const runtimeEndError = normalizedEvent.error ?? (normalizedEvent.success ? null : (normalizedEvent.reason ?? 'error'));
+      const runtimeEndSource = 'instance_complete';
+      const nowIso = new Date().toISOString();
       const nextStatus = derivePostRuntimeInstanceStatus(
         existing.status,
         nowIso,
         existing.lifecycle_outcome_posted_at,
         existing.task_outcome,
+        normalizedEvent.success,
       );
       const claim = db.prepare(`
         UPDATE job_instances
@@ -1199,16 +1428,16 @@ export class OpenClawRuntime implements AgentRuntime {
           event_meta = excluded.event_meta
       `).run(
         eventId,
-        `Run ${event.reason ?? (event.success ? 'completed' : 'ended')}`,
-        event.endedAt,
+        `Run ${normalizedEvent.reason ?? (normalizedEvent.success ? 'completed' : 'ended')}`,
+        normalizedEvent.endedAt,
         JSON.stringify({
-          runtime_end_type: event.type,
-          terminal_reason: event.reason ?? (event.success ? 'completed' : 'error'),
-          session_key: event.sessionKey,
-          run_id: event.runId ?? null,
-          success: event.success,
-          error: event.error ?? null,
-          ...(event.metadata ?? {}),
+          runtime_end_type: normalizedEvent.type,
+          terminal_reason: normalizedEvent.reason ?? (normalizedEvent.success ? 'completed' : 'error'),
+          session_key: normalizedEvent.sessionKey,
+          run_id: normalizedEvent.runId ?? null,
+          success: normalizedEvent.success,
+          error: normalizedEvent.error ?? null,
+          ...(normalizedEvent.metadata ?? {}),
         }),
         instanceId,
       );
@@ -1216,9 +1445,9 @@ export class OpenClawRuntime implements AgentRuntime {
       recordRunCheckIn(db, {
         instanceId,
         stage: 'completion',
-        summary: `OpenClaw runtime ${event.type} (${event.reason ?? (event.success ? 'completed' : 'error')})`,
-        outcome: event.reason ?? (event.success ? 'completed' : 'error'),
-        runtimeEndSuccess: event.success,
+        summary: `OpenClaw runtime ${normalizedEvent.type} (${normalizedEvent.reason ?? (normalizedEvent.success ? 'completed' : 'error')})`,
+        outcome: normalizedEvent.reason ?? (normalizedEvent.success ? 'completed' : 'error'),
+        runtimeEndSuccess: normalizedEvent.success,
         runtimeEndError,
         runtimeEndSource,
         meaningfulOutput: true,
@@ -1229,9 +1458,9 @@ export class OpenClawRuntime implements AgentRuntime {
         UPDATE job_instances
         SET response = json_set(COALESCE(response, '{}'), '$.runtimeEnd', json(?))
         WHERE id = ?
-      `).run(JSON.stringify(event), instanceId);
+      `).run(JSON.stringify(normalizedEvent), instanceId);
 
-      await onRuntimeEnd?.(event);
+      await onRuntimeEnd?.(normalizedEvent);
     } catch (err) {
       console.warn(
         `[OpenClawRuntime] Failed to persist turn-end event for instance #${instanceId}:`,
