@@ -395,6 +395,7 @@ describe('runDispatcher thinking-level routing', () => {
       workspaceRoot: '/parent/workspace',
       activeRepoRoot: '/Users/test/workspaces/task-375',
       runtimeConfig: expect.objectContaining({ workingDirectory: '/Users/test/workspaces/task-375' }),
+      message: expect.stringContaining('## Active Workspace Context'),
     }));
     expect(mockedGitHubIdentity.injectGitHubCredentials).toHaveBeenCalledWith(
       '/Users/test/workspaces/task-375',
@@ -406,6 +407,12 @@ describe('runDispatcher thinking-level routing', () => {
       }),
       '/Users/test/workspaces/task-375',
     );
+
+    const dispatchedMessage = dispatchMock.mock.calls[0]?.[0]?.message as string;
+    expect(dispatchedMessage).toContain('## Active Workspace Context');
+    expect(dispatchedMessage).toContain('- **Active repo root:** /Users/test/workspaces/task-375');
+    expect(dispatchedMessage).toContain('- **Workspace container root:** /parent/workspace');
+    expect(dispatchedMessage).toContain('- **Task worktree:** /Users/test/workspaces/task-375');
 
     const loggedMessages = logSpy.mock.calls.map(([message]) => String(message));
     expect(loggedMessages).toEqual(expect.arrayContaining([

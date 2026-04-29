@@ -1473,6 +1473,16 @@ function dispatchTaskToJob(
   if (ghIdentity && ghIdentityEffectiveWorkDir) {
     injectGitHubCredentials(ghIdentityEffectiveWorkDir, ghIdentity.identity);
   }
+  const pathContextSection = [
+    '## Active Workspace Context',
+    `- **Active repo root:** ${worktreePath ?? extractWorkingDirectoryFromRuntimeConfig(job.runtime_config) ?? job.workspace_path ?? 'unknown'}`,
+    `- **Workspace container root:** ${job.workspace_path ?? worktreePath ?? extractWorkingDirectoryFromRuntimeConfig(job.runtime_config) ?? 'unknown'}`,
+    `- **Task worktree:** ${worktreePath ?? 'none'}`,
+    '',
+    'Use the active repo root as the authoritative cwd for repo files, git commands, and task implementation work.',
+    'Treat the workspace container root as a broader container boundary only, not the repo root, when these differ.',
+    '',
+  ].join('\n');
   const ghIdentityContext = buildGitHubIdentityContext(ghIdentity, ghIdentityEffectiveWorkDir ?? '');
 
   // Resolve transport mode from agent runtime type and config (task #632)
@@ -1483,7 +1493,7 @@ function dispatchTaskToJob(
   });
 
   const fullMessage = appendInstanceInstructions(
-    baseMessage, instanceId, task.id, task.status, agentSlug, sessionKey,
+    [baseMessage, pathContextSection].filter(Boolean).join('\n\n'), instanceId, task.id, task.status, agentSlug, sessionKey,
     callbackBaseUrl, task.task_type, task.sprint_type, transportMode,
   ) + ghIdentityContext;
 
