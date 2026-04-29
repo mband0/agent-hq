@@ -1426,6 +1426,7 @@ router.put('/:id/qa-evidence', (req: Request, res: Response) => {
     const {
       qa_verified_commit,
       tested_url,
+      qa_tested_url,
       summary,
       changed_by = 'system',
       instance_id,
@@ -1433,11 +1434,14 @@ router.put('/:id/qa-evidence', (req: Request, res: Response) => {
     } = req.body as {
       qa_verified_commit?: string | null;
       tested_url?: string | null;
+      qa_tested_url?: string | null;
       summary?: string | null;
       changed_by?: string;
       instance_id?: number | string | null;
       force_clear?: boolean;
     };
+
+    const resolvedQaTestedUrl = qa_tested_url ?? tested_url;
 
     const db = getDb();
 
@@ -1467,7 +1471,10 @@ router.put('/:id/qa-evidence', (req: Request, res: Response) => {
       if (Object.prototype.hasOwnProperty.call(body, 'qa_verified_commit') && body.qa_verified_commit === null) {
         explicitClears.add('qa_verified_commit');
       }
-      if (Object.prototype.hasOwnProperty.call(body, 'tested_url') && body.tested_url === null) {
+      if (
+        (Object.prototype.hasOwnProperty.call(body, 'qa_tested_url') && body.qa_tested_url === null)
+        || (Object.prototype.hasOwnProperty.call(body, 'tested_url') && body.tested_url === null)
+      ) {
         explicitClears.add('qa_tested_url');
       }
     }
@@ -1480,7 +1487,7 @@ router.put('/:id/qa-evidence', (req: Request, res: Response) => {
     if (explicitClears.size === 0 && hasSubstantiveCommit) {
       const taskRow = db.prepare('SELECT review_commit FROM tasks WHERE id = ?').get(id) as { review_commit: string | null } | undefined;
       const qaValidation = validateQaEvidence(
-        { qa_verified_commit, qa_tested_url: tested_url },
+        { qa_verified_commit, qa_tested_url: resolvedQaTestedUrl },
         taskRow?.review_commit,
       );
       if (!qaValidation.valid) {
@@ -1493,7 +1500,7 @@ router.put('/:id/qa-evidence', (req: Request, res: Response) => {
 
     updateTaskEvidence(id, changed_by, {
       qa_verified_commit: qa_verified_commit ?? null,
-      qa_tested_url: tested_url ?? null,
+      qa_tested_url: resolvedQaTestedUrl ?? null,
     }, { explicitClears });
 
     // Build an informative note that distinguishes clears from normal writes
@@ -1502,7 +1509,7 @@ router.put('/:id/qa-evidence', (req: Request, res: Response) => {
       : (qa_verified_commit ?? '—');
     const urlDisplay = explicitClears.has('qa_tested_url')
       ? '[cleared]'
-      : (tested_url ?? '—');
+      : (resolvedQaTestedUrl ?? '—');
     const actionLabel = explicitClears.size > 0 ? 'QA evidence reset (intentional clear)' : 'QA evidence recorded';
 
     addTaskNote(
