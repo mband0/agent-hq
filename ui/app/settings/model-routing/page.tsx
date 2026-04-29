@@ -16,6 +16,8 @@ import {
 } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────
+type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'adaptive';
+
 interface ModelRoutingRule {
   id: number;
   label: string;
@@ -24,9 +26,23 @@ interface ModelRoutingRule {
   fallback_model: string | null;
   max_turns: number | null;
   max_budget_usd: number | null;
+  thinking_level: ThinkingLevel | null;
   provider: string | null;
   created_at: string;
   updated_at: string;
+}
+
+const THINKING_LEVEL_OPTIONS: Array<{ value: ThinkingLevel; label: string; description: string }> = [
+  { value: 'off', label: 'Off', description: 'No extra reasoning effort' },
+  { value: 'minimal', label: 'Minimal', description: 'Use the lightest reasoning pass' },
+  { value: 'low', label: 'Low', description: 'Use a small amount of extra reasoning' },
+  { value: 'medium', label: 'Medium', description: 'Balance speed and deeper reasoning' },
+  { value: 'high', label: 'High', description: 'Favor deeper reasoning over speed' },
+  { value: 'adaptive', label: 'Adaptive', description: 'Let the runtime adjust effort automatically' },
+];
+
+function formatThinkingLevel(level: ThinkingLevel | null | undefined) {
+  return THINKING_LEVEL_OPTIONS.find(option => option.value === level)?.label ?? 'Default';
 }
 
 // ─── Preview Legend ───────────────────────────────────────────
@@ -35,7 +51,7 @@ function PreviewLegend({ rules }: { rules: ModelRoutingRule[] }) {
 
   if (sorted.length === 0) return null;
 
-  const segments: { label: string; points: string; model: string }[] = [];
+  const segments: { label: string; points: string; model: string; thinkingLevel: ThinkingLevel | null }[] = [];
   let prev = 0;
   for (const rule of sorted) {
     const rangeStart = prev + 1;
@@ -44,6 +60,7 @@ function PreviewLegend({ rules }: { rules: ModelRoutingRule[] }) {
       label: rule.label,
       points: rangeStart === rangeEnd ? `${rangeStart} pt` : `${rangeStart}–${rangeEnd} pts`,
       model: rule.model,
+      thinkingLevel: rule.thinking_level,
     });
     prev = rule.max_points;
   }
@@ -62,6 +79,8 @@ function PreviewLegend({ rules }: { rules: ModelRoutingRule[] }) {
               <span className="text-amber-300 font-medium">{seg.label}</span>
               <span className="mx-1.5 text-slate-600">·</span>
               <span className="text-slate-400 font-mono">{seg.model}</span>
+              <span className="mx-1.5 text-slate-600">·</span>
+              <span className="text-slate-500">Thinking {formatThinkingLevel(seg.thinkingLevel)}</span>
             </span>
             {i < segments.length - 1 && (
               <ChevronRight className="w-3 h-3 text-slate-600 flex-shrink-0" />
@@ -89,6 +108,7 @@ function AddRuleForm({
     fallback_model: '',
     max_turns: '',
     max_budget_usd: '',
+    thinking_level: '',
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -111,6 +131,7 @@ function AddRuleForm({
           fallback_model: form.fallback_model.trim() || null,
           max_turns: form.max_turns ? Number(form.max_turns) : null,
           max_budget_usd: form.max_budget_usd ? Number(form.max_budget_usd) : null,
+          thinking_level: form.thinking_level || null,
         }),
       });
       onCreated();
@@ -161,6 +182,20 @@ function AddRuleForm({
           value={form.model}
           onChange={e => setForm({ ...form, model: e.target.value })}
         />
+      </td>
+      <td className="px-3 py-3">
+        <select
+          className="bg-slate-700 border border-slate-600 rounded px-2 py-1.5 text-white text-xs focus:outline-none focus:border-amber-500 w-full min-w-[140px]"
+          value={form.thinking_level}
+          onChange={e => setForm({ ...form, thinking_level: e.target.value })}
+        >
+          <option value="">Default runtime behavior</option>
+          {THINKING_LEVEL_OPTIONS.map(option => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
       </td>
       <td className="px-3 py-3">
         <input
@@ -216,6 +251,7 @@ function RuleRow({
     model: rule.model,
     max_turns: rule.max_turns != null ? String(rule.max_turns) : '',
     max_budget_usd: rule.max_budget_usd != null ? String(rule.max_budget_usd) : '',
+    thinking_level: rule.thinking_level ?? '',
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -239,6 +275,7 @@ function RuleRow({
           model: form.model.trim(),
           max_turns: form.max_turns ? Number(form.max_turns) : null,
           max_budget_usd: form.max_budget_usd ? Number(form.max_budget_usd) : null,
+          thinking_level: form.thinking_level || null,
         }),
       });
       setEditing(false);
@@ -258,6 +295,7 @@ function RuleRow({
       model: rule.model,
       max_turns: rule.max_turns != null ? String(rule.max_turns) : '',
       max_budget_usd: rule.max_budget_usd != null ? String(rule.max_budget_usd) : '',
+      thinking_level: rule.thinking_level ?? '',
     });
     setEditing(false);
     setError(null);
@@ -339,6 +377,33 @@ function RuleRow({
           />
         ) : (
           <code className="text-slate-300 text-xs">{rule.model}</code>
+        )}
+      </td>
+
+      {/* Thinking Level */}
+      <td className="px-3 py-3">
+        {editing ? (
+          <select
+            className="bg-slate-700 border border-slate-600 rounded px-2 py-1.5 text-white text-xs focus:outline-none focus:border-amber-500 w-full min-w-[140px]"
+            value={form.thinking_level}
+            onChange={e => setForm({ ...form, thinking_level: e.target.value })}
+          >
+            <option value="">Default runtime behavior</option>
+            {THINKING_LEVEL_OPTIONS.map(option => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <div className="space-y-0.5">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-700/50 border border-slate-600/50 text-slate-300 text-xs">
+              {formatThinkingLevel(rule.thinking_level)}
+            </span>
+            <p className="text-[10px] text-slate-500">
+              {rule.thinking_level ? 'Overrides runtime reasoning effort' : 'Uses runtime default'}
+            </p>
+          </div>
         )}
       </td>
 
@@ -527,6 +592,9 @@ export default function ModelRoutingPage() {
                   Model
                 </th>
                 <th className="px-3 py-2.5 text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                  Thinking Level
+                </th>
+                <th className="px-3 py-2.5 text-xs font-semibold text-slate-400 uppercase tracking-wider">
                   Max Turns
                 </th>
                 <th className="px-3 py-2.5 text-xs font-semibold text-slate-400 uppercase tracking-wider">
@@ -546,7 +614,7 @@ export default function ModelRoutingPage() {
               )}
               {loading && rules.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-3 py-12 text-center">
+                  <td colSpan={8} className="px-3 py-12 text-center">
                     <div className="flex items-center justify-center">
                       <div className="w-6 h-6 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
                     </div>
@@ -554,7 +622,7 @@ export default function ModelRoutingPage() {
                 </tr>
               ) : rules.length === 0 && !showAdd ? (
                 <tr>
-                  <td colSpan={7} className="px-3 py-12 text-center text-slate-500 text-sm">
+                  <td colSpan={8} className="px-3 py-12 text-center text-slate-500 text-sm">
                     No model routing rules yet. Click <strong>Add Rule</strong> to create one.
                   </td>
                 </tr>
@@ -582,6 +650,10 @@ export default function ModelRoutingPage() {
         </p>
         <p>
           Tasks exceeding all thresholds fall back to the highest-threshold rule.
+        </p>
+        <p>
+          <strong className="text-slate-400">Thinking level:</strong> Leave this unset to use the model runtime default,
+          or choose an override when a rule should use more or less reasoning effort.
         </p>
       </div>
     </div>
