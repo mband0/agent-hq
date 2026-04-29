@@ -6,11 +6,11 @@ const mockFetchAgentTools = jest.fn(() => []);
 const mockCreateAgentToolServer = jest.fn(() => null);
 
 jest.mock('@anthropic-ai/claude-agent-sdk', () => ({
-  query: (...args: unknown[]) => mockQuery(...args),
+  query: (...args: any[]) => mockQuery(...args),
 }));
 
 jest.mock('../lib/workspaceBoundary', () => ({
-  validateAndLogViolation: (...args: unknown[]) => mockValidateAndLogViolation(...args),
+  validateAndLogViolation: (...args: any[]) => mockValidateAndLogViolation(...args),
 }));
 
 jest.mock('../lib/agentHqBaseUrl', () => ({
@@ -18,11 +18,12 @@ jest.mock('../lib/agentHqBaseUrl', () => ({
 }));
 
 jest.mock('./toolInjection', () => ({
-  fetchAgentTools: (...args: unknown[]) => mockFetchAgentTools(...args),
-  createAgentToolServer: (...args: unknown[]) => mockCreateAgentToolServer(...args),
+  fetchAgentTools: mockFetchAgentTools,
+  createAgentToolServer: mockCreateAgentToolServer,
 }));
 
 import { ClaudeCodeRuntime } from './ClaudeCodeRuntime';
+import type { DispatchParams } from './types';
 
 function createEmptyAsyncIterable() {
   return {
@@ -33,6 +34,17 @@ function createEmptyAsyncIterable() {
 }
 
 describe('ClaudeCodeRuntime path handoff', () => {
+  function buildDispatchParams(overrides: Partial<DispatchParams> & { runtimeConfig?: Record<string, unknown> } = {}) {
+    return {
+      message: 'Implement task',
+      agentSlug: 'cinder-backend',
+      sessionKey: 'hook:atlas:jobrun:375',
+      timeoutSeconds: 900,
+      name: 'Cinder',
+      ...overrides,
+    } as DispatchParams & { runtimeConfig?: Record<string, unknown> };
+  }
+
   beforeEach(() => {
     mockQuery.mockReset();
     mockValidateAndLogViolation.mockReset();
@@ -50,18 +62,13 @@ describe('ClaudeCodeRuntime path handoff', () => {
   it('prefers activeRepoRoot over runtimeConfig.workingDirectory for cwd and workspace env', async () => {
     const runtime = new ClaudeCodeRuntime({ workingDirectory: '/agent/default' });
 
-    await runtime.dispatch({
-      message: 'Implement task',
-      agentSlug: 'cinder-backend',
-      sessionKey: 'hook:atlas:jobrun:375',
-      timeoutSeconds: 900,
-      name: 'Cinder',
+    await runtime.dispatch(buildDispatchParams({
       instanceId: 375,
       taskId: 375,
       workspaceRoot: '/parent/workspace',
       activeRepoRoot: '/parent/workspace/task-375',
       runtimeConfig: { workingDirectory: '/wrong/root' },
-    });
+    }));
 
     await new Promise((resolve) => setImmediate(resolve));
 
@@ -74,19 +81,16 @@ describe('ClaudeCodeRuntime path handoff', () => {
 
   it('keeps parent workspaceRoot as boundary while using activeRepoRoot as authoritative cwd', async () => {
     const runtime = new ClaudeCodeRuntime();
+    const db = {} as any;
 
-    await runtime.dispatch({
-      message: 'Implement task',
-      agentSlug: 'cinder-backend',
-      sessionKey: 'hook:atlas:jobrun:375',
-      timeoutSeconds: 900,
-      name: 'Cinder',
+    await runtime.dispatch(buildDispatchParams({
       instanceId: 376,
       taskId: 375,
+      db,
       workspaceRoot: '/parent/workspace',
       activeRepoRoot: '/parent/workspace/task-375',
       runtimeConfig: { workingDirectory: '/parent/workspace/task-375' },
-    });
+    }));
 
     await new Promise((resolve) => setImmediate(resolve));
 
