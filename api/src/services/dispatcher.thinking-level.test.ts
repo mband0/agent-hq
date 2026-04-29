@@ -544,10 +544,159 @@ describe('runDispatcher thinking-level routing', () => {
         active_repo_root: worktreeRoot,
         worktree_root: worktreeRoot,
       }));
+
+      expect(dispatchMock).toHaveBeenCalledWith(expect.objectContaining({
+        workspaceRoot: workspaceRoot,
+        activeRepoRoot: worktreeRoot,
+        runtimeConfig: expect.objectContaining({ workingDirectory: worktreeRoot }),
+      }));
     } finally {
       fs.rmSync(tempRoot, { recursive: true, force: true });
       db.close();
     }
+  });
+
+  it('uses activeRepoRoot as the dispatched runtime workingDirectory even when the stored runtime config is a stale parent root', async () => {
+    const db = new Database(':memory:');
+    db.exec(`
+      CREATE TABLE agents (
+        id INTEGER PRIMARY KEY,
+        job_title TEXT NOT NULL,
+        project_id INTEGER,
+        pre_instructions TEXT NOT NULL,
+        enabled INTEGER NOT NULL,
+        timeout_seconds INTEGER NOT NULL,
+        model TEXT,
+        skill_names TEXT,
+        session_key TEXT NOT NULL,
+        name TEXT,
+        runtime_type TEXT,
+        runtime_config TEXT,
+        hooks_url TEXT,
+        hooks_auth_header TEXT,
+        workspace_path TEXT,
+        preferred_provider TEXT,
+        repo_path TEXT,
+        os_user TEXT,
+        openclaw_agent_id TEXT,
+        sort_rules TEXT NOT NULL DEFAULT '[]'
+      );
+
+      CREATE TABLE tasks (
+        id INTEGER PRIMARY KEY,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        status TEXT NOT NULL,
+        priority TEXT NOT NULL,
+        agent_id INTEGER,
+        project_id INTEGER,
+        task_type TEXT,
+        sprint_id INTEGER,
+        created_at TEXT NOT NULL,
+        story_points INTEGER,
+        active_instance_id INTEGER,
+        paused_at TEXT,
+        dispatched_at TEXT,
+        claimed_at TEXT,
+        routing_reason TEXT,
+        retry_count INTEGER NOT NULL DEFAULT 0,
+        max_retries INTEGER NOT NULL DEFAULT 3,
+        updated_at TEXT
+      );
+
+      CREATE TABLE sprints (
+        id INTEGER PRIMARY KEY,
+        name TEXT,
+        sprint_type TEXT,
+        status TEXT
+      );
+
+      CREATE TABLE job_instances (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        agent_id INTEGER NOT NULL,
+        task_id INTEGER,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        dispatched_at TEXT,
+        payload_sent TEXT,
+        worktree_path TEXT,
+        session_key TEXT,
+        response TEXT,
+        error TEXT,
+        completed_at TEXT,
+        effective_model TEXT,
+        effective_thinking_level TEXT
+      );
+
+      CREATE TABLE dispatch_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER,
+        agent_id INTEGER,
+        routing_reason TEXT,
+        candidate_count INTEGER,
+        candidates_skipped TEXT
+      );
+
+      CREATE TABLE task_dependencies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        blocker_id INTEGER,
+        blocked_id INTEGER
+      );
+
+      CREATE TABLE task_notes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER,
+        author TEXT,
+        content TEXT,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        instance_id INTEGER,
+        agent_id INTEGER,
+        job_title TEXT,
+        level TEXT,
+        message TEXT
+      );
+    `);
+
+    db.prepare(`
+      INSERT INTO agents (id, job_title, project_id, pre_instructions, enabled, timeout_seconds, model, skill_names, session_key, name, runtime_type, runtime_config, workspace_path, preferred_provider, repo_path, sort_rules)
+      VALUES (1, 'Backend Engineer', 86, 'Do the task', 1, 900, 'anthropic/claude-sonnet-4-6', '[]', 'agent:backend:main', 'Cinder', 'openclaw', '{"workingDirectory":"/parent/workspace"}', '/parent/workspace', 'anthropic', '/repos/agent-hq', '[]')
+    `).run();
+
+    db.prepare(`
+      INSERT INTO tasks (id, title, description, status, priority, agent_id, project_id, task_type, sprint_id, created_at, story_points, updated_at)
+      VALUES (375, 'Fix worktree root handoff', 'Make worktree repo root authoritative', 'ready', 'high', 1, 86, 'backend', NULL, '2026-04-28T20:00:00.000Z', 3, '2026-04-28T20:00:00.000Z')
+    `).run();
+
+    const dispatchMock = jest.fn().mockResolvedValue({ runId: 'run-375' });
+    mockedResolveRuntime.mockReturnValue({
+      dispatch: dispatchMock,
+      abort: jest.fn().mockResolvedValue(undefined),
+    });
+
+    const { createTaskWorktree } = jest.requireMock('./worktreeManager') as { createTaskWorktree: jest.Mock };
+    createTaskWorktree.mockReturnValue({
+      created: true,
+      worktreePath: '/parent/workspace/task-375',
+      branch: 'task-375-fix',
+      error: null,
+    });
+
+    runDispatcher(db, 86);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(dispatchMock).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceRoot: '/parent/workspace',
+      activeRepoRoot: '/parent/workspace/task-375',
+      runtimeConfig: expect.objectContaining({
+        workingDirectory: '/parent/workspace/task-375',
+      }),
+    }));
+
+    db.close();
   });
 
   it('dispatchInstance passes routed thinking_level into runtime dispatch', async () => {

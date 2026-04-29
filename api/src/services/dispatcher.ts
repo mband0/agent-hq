@@ -350,6 +350,28 @@ function extractWorkingDirectoryFromRuntimeConfig(runtimeConfig: unknown): strin
   return null;
 }
 
+function buildDispatchRuntimeConfig(
+  runtimeConfig: unknown,
+  overrides: Record<string, unknown>,
+): Record<string, unknown> {
+  const baseConfig = typeof runtimeConfig === 'string'
+    ? (() => {
+        try {
+          return JSON.parse(runtimeConfig) as Record<string, unknown>;
+        } catch {
+          return {};
+        }
+      })()
+    : (runtimeConfig && typeof runtimeConfig === 'object'
+        ? runtimeConfig as Record<string, unknown>
+        : {});
+
+  return {
+    ...baseConfig,
+    ...overrides,
+  };
+}
+
 function getCandidates(db: Database.Database, agentId: number, _templateId: number | null, projectId: number | null): CandidateTask[] {
   const ownershipClause = 't.agent_id = ?';
   const ownershipParams: unknown[] = [agentId];
@@ -1207,16 +1229,22 @@ async function fireAgentRun(
     // Do not bypass AgentRuntime with direct /hooks/agent calls here.
 
     // Build runtimeConfig override from story-point rule (max_turns / max_budget_usd)
-    // and worktree path (task #365)
-    let runtimeConfigOverride: Record<string, unknown> = {};
+    // and resolved repo-root path. The active repo root must remain authoritative
+    // for the dispatched runtime cwd even if the stored runtime config still points
+    // at the parent workspace or another stale location.
+    const runtimeConfigOverride: Record<string, unknown> = {};
     if (spModel) {
       if (spModel.max_turns != null) runtimeConfigOverride.maxTurns = spModel.max_turns;
       if (spModel.max_budget_usd != null) runtimeConfigOverride.maxBudgetUsd = spModel.max_budget_usd;
     }
-    // Override workingDirectory with worktree path when available (task #365)
     if (activeRepoRoot) {
       runtimeConfigOverride.workingDirectory = activeRepoRoot;
     }
+    const dispatchRuntimeConfig = buildDispatchRuntimeConfig(job.runtime_config, runtimeConfigOverride);
+
+    console.log(
+      `[dispatcher] Instance #${instanceId} runtime config handoff: workingDirectory=${typeof dispatchRuntimeConfig.workingDirectory === 'string' ? dispatchRuntimeConfig.workingDirectory : 'null'} activeRepoRoot=${activeRepoRoot ?? 'null'} workspaceRoot=${workspaceContainerRoot ?? 'null'}`
+    );
 
     const { runId } = await runtime.dispatch({
       message,
@@ -1234,9 +1262,7 @@ async function fireAgentRun(
       // separate from the authoritative active repo root for this dispatched run.
       workspaceRoot: workspaceContainerRoot,
       activeRepoRoot,
-      runtimeConfig: Object.keys(runtimeConfigOverride).length > 0
-        ? { ...(typeof job.runtime_config === 'string' ? JSON.parse(job.runtime_config) : (job.runtime_config ?? {})), ...runtimeConfigOverride }
-        : job.runtime_config,
+      runtimeConfig: dispatchRuntimeConfig,
       hooksUrl: job.agent_hooks_url ?? null,
       hooksAuthHeader: job.agent_hooks_auth_header ?? null,
     } as Parameters<typeof runtime.dispatch>[0]);
