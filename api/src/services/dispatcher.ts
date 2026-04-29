@@ -1463,12 +1463,17 @@ function dispatchTaskToJob(
   // ── GitHub identity injection (task #613) ────────────────────────────────
   // Resolve and inject per-agent GitHub credentials so routed agents can
   // operate under distinct GitHub identities for PR open/approve/merge.
-  const effectiveWorkDir = worktreePath ?? job.workspace_path ?? null;
+  // When a task worktree exists, that active repo root must be authoritative
+  // for both dispatch-time cwd and any run-local credential/context files.
+  const ghIdentityEffectiveWorkDir = worktreePath
+    ?? extractWorkingDirectoryFromRuntimeConfig(job.runtime_config)
+    ?? job.workspace_path
+    ?? null;
   const ghIdentity = resolveGitHubIdentity(db, job.agent_id);
-  if (ghIdentity && effectiveWorkDir) {
-    injectGitHubCredentials(effectiveWorkDir, ghIdentity.identity);
+  if (ghIdentity && ghIdentityEffectiveWorkDir) {
+    injectGitHubCredentials(ghIdentityEffectiveWorkDir, ghIdentity.identity);
   }
-  const ghIdentityContext = buildGitHubIdentityContext(ghIdentity, effectiveWorkDir ?? '');
+  const ghIdentityContext = buildGitHubIdentityContext(ghIdentity, ghIdentityEffectiveWorkDir ?? '');
 
   // Resolve transport mode from agent runtime type and config (task #632)
   const transportMode = resolveTransportMode({

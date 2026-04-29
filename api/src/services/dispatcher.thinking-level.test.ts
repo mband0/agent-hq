@@ -37,6 +37,13 @@ jest.mock('../lib/githubIdentity', () => ({
   buildGitHubIdentityContext: jest.fn(() => ''),
 }));
 
+const mockedGitHubIdentity = jest.requireMock('../lib/githubIdentity') as {
+  resolveGitHubIdentity: jest.Mock;
+  injectGitHubCredentials: jest.Mock;
+  cleanupGitHubCredentials: jest.Mock;
+  buildGitHubIdentityContext: jest.Mock;
+};
+
 jest.mock('../lib/agentHqBaseUrl', () => ({
   getAgentHqBaseUrl: jest.fn(() => 'http://localhost:3501'),
 }));
@@ -359,6 +366,15 @@ describe('runDispatcher thinking-level routing', () => {
       dispatch: dispatchMock,
       abort: jest.fn().mockResolvedValue(undefined),
     });
+    mockedGitHubIdentity.resolveGitHubIdentity.mockReturnValue({
+      id: 7,
+      identity: {
+        githubUser: 'cinder-agent',
+        gitAuthorName: 'Cinder',
+        gitAuthorEmail: 'cinder@atlashq',
+        token: 'secret-token',
+      },
+    });
 
     const logSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
 
@@ -380,6 +396,16 @@ describe('runDispatcher thinking-level routing', () => {
       activeRepoRoot: '/Users/test/workspaces/task-375',
       runtimeConfig: expect.objectContaining({ workingDirectory: '/Users/test/workspaces/task-375' }),
     }));
+    expect(mockedGitHubIdentity.injectGitHubCredentials).toHaveBeenCalledWith(
+      '/Users/test/workspaces/task-375',
+      expect.objectContaining({ githubUser: 'cinder-agent' }),
+    );
+    expect(mockedGitHubIdentity.buildGitHubIdentityContext).toHaveBeenCalledWith(
+      expect.objectContaining({
+        identity: expect.objectContaining({ githubUser: 'cinder-agent' }),
+      }),
+      '/Users/test/workspaces/task-375',
+    );
 
     const loggedMessages = logSpy.mock.calls.map(([message]) => String(message));
     expect(loggedMessages).toEqual(expect.arrayContaining([

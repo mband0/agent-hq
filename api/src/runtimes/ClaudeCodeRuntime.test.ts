@@ -81,7 +81,12 @@ describe('ClaudeCodeRuntime path handoff', () => {
 
   it('keeps parent workspaceRoot as boundary while using activeRepoRoot as authoritative cwd', async () => {
     const runtime = new ClaudeCodeRuntime();
-    const db = {} as any;
+    const db = {
+      prepare: jest.fn(() => ({
+        get: jest.fn(() => undefined),
+        run: jest.fn(),
+      })),
+    } as any;
 
     await runtime.dispatch(buildDispatchParams({
       instanceId: 376,
