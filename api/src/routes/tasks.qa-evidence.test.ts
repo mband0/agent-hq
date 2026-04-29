@@ -5,6 +5,7 @@ import os from 'os';
 import path from 'path';
 import { closeDb, getDb } from '../db/client';
 import tasksRouter from './tasks';
+import { requireReleaseGate } from '../lib/taskRelease';
 
 let tempDir: string;
 let dbPath: string;
@@ -293,5 +294,31 @@ describe('tasks qa-evidence aliases', () => {
     } finally {
       await stopTestServer(server);
     }
+  });
+
+  it('allows qa_pass release-gate validation for the localhost:3501 review artifact URL', () => {
+    const db = getDb();
+    db.prepare(`UPDATE tasks SET qa_verified_commit = ?, qa_tested_url = ? WHERE id = ?`).run(
+      '6d614b3b104ae36d1dd75210b9f9fb0342673329',
+      'http://localhost:3501/review/task/383',
+      383,
+    );
+
+    const task = db.prepare(`
+      SELECT id, status, task_type, sprint_id, review_commit, qa_verified_commit, qa_tested_url
+      FROM tasks
+      WHERE id = ?
+    `).get(383) as {
+      id: number;
+      status: string;
+      task_type: string | null;
+      sprint_id: number | null;
+      review_commit: string | null;
+      qa_verified_commit: string | null;
+      qa_tested_url: string | null;
+    };
+
+    const result = requireReleaseGate(db, task, 'qa_pass', task.task_type);
+    expect(result.errors).toEqual([]);
   });
 });

@@ -76,7 +76,6 @@ function isProductionLikeUrl(url: string | null | undefined): boolean {
   const value = String(url ?? '').trim().toLowerCase();
   if (!value) return false;
   return value.includes(':3500')
-    || value.includes(':3501')
     || value.includes('atlas-hq-production')
     || value.includes('atlas-hq-prod')
     || value.includes('nordinitiatives.com');
