@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import { OpenClawRuntime } from './OpenClawRuntime';
+import { recordRunCheckIn } from '../lib/runObservability';
 import { applyTaskOutcome } from '../lib/taskOutcome';
 
 jest.mock('../db/client', () => ({
@@ -137,6 +138,13 @@ describe('OpenClawRuntime terminal failure handling', () => {
       endedAt: new Date().toISOString(),
     });
 
+    expect(recordRunCheckIn).toHaveBeenCalledWith(db, expect.objectContaining({
+      instanceId: 1757,
+      stage: 'completion',
+      runtimeEndSuccess: false,
+      outcome: 'failed',
+      summary: expect.stringContaining('rate limit exceeded'),
+    }));
     expect(applyTaskOutcome).toHaveBeenCalledWith(db, expect.objectContaining({
       taskId: 383,
       outcome: 'failed',

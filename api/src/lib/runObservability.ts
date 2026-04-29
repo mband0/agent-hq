@@ -205,14 +205,15 @@ export function resolveTaskIdForInstance(db: Database.Database, instanceId: numb
 
 function buildStructuredNote(input: Required<Pick<RunCheckInInput, 'stage'>> & Omit<RunCheckInInput, 'stage'>): string {
   const lines: string[] = [];
-  const label = {
-    dispatch: 'Run dispatched',
-    start: 'Run started',
-    heartbeat: 'Heartbeat',
-    progress: 'Progress update',
-    blocker: 'Blocked',
-    completion: 'Run completed',
-  }[input.stage];
+  const label = input.stage === 'completion'
+    ? (input.runtimeEndSuccess === false ? 'Run failed' : 'Run completed')
+    : {
+        dispatch: 'Run dispatched',
+        start: 'Run started',
+        heartbeat: 'Heartbeat',
+        progress: 'Progress update',
+        blocker: 'Blocked',
+      }[input.stage];
 
   lines.push(`Agent check-in: ${label}`);
 
