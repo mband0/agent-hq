@@ -353,7 +353,7 @@ describe('runDispatcher thinking-level routing', () => {
 
     db.prepare(`
       INSERT INTO agents (id, job_title, project_id, pre_instructions, enabled, timeout_seconds, model, skill_names, session_key, name, runtime_type, runtime_config, workspace_path, preferred_provider, repo_path, sort_rules)
-      VALUES (1, 'Backend Engineer', 86, 'Do the task', 1, 900, 'anthropic/claude-sonnet-4-6', '[]', 'agent:backend:main', 'Cinder', 'claude-code', '{"workingDirectory":"/parent/workspace"}', '/parent/workspace', 'anthropic', '/repos/agent-hq', '[]')
+      VALUES (1, 'Backend Engineer', 86, 'Do the task', 1, 900, 'anthropic/claude-sonnet-4-6', '[]', 'agent:backend:main', 'Cinder', 'claude-code', '{"workingDirectory":"  /parent/workspace/../workspace-root  "}', '/parent/workspace', 'anthropic', '/repos/agent-hq', '[]')
     `).run();
 
     db.prepare(`
@@ -416,8 +416,8 @@ describe('runDispatcher thinking-level routing', () => {
 
     const loggedMessages = logSpy.mock.calls.map(([message]) => String(message));
     expect(loggedMessages).toEqual(expect.arrayContaining([
-      '[dispatcher] Instance #1 path resolution: activeRepoRoot=/Users/test/workspaces/task-375 workspaceRoot=/parent/workspace worktreePath=/Users/test/workspaces/task-375 runtimeConfigWorkingDirectory=/parent/workspace',
-      '[dispatcher] Instance #1 runtime config handoff: workingDirectory=/Users/test/workspaces/task-375 activeRepoRoot=/Users/test/workspaces/task-375 workspaceRoot=/parent/workspace worktreePath=/Users/test/workspaces/task-375 runtimeConfigWorkingDirectory=/parent/workspace',
+      '[dispatcher] Instance #1 path resolution: activeRepoRoot=/Users/test/workspaces/task-375 workspaceRoot=/parent/workspace worktreePath=/Users/test/workspaces/task-375 runtimeConfigWorkingDirectory=/parent/workspace-root',
+      '[dispatcher] Instance #1 runtime config handoff: workingDirectory=/Users/test/workspaces/task-375 activeRepoRoot=/Users/test/workspaces/task-375 workspaceRoot=/parent/workspace worktreePath=/Users/test/workspaces/task-375 runtimeConfigWorkingDirectory=/parent/workspace-root',
     ]));
 
     logSpy.mockRestore();
@@ -599,7 +599,7 @@ describe('runDispatcher thinking-level routing', () => {
     }
   });
 
-  it('uses activeRepoRoot as the dispatched runtime workingDirectory even when the stored runtime config is a stale parent root', async () => {
+  it('normalizes dispatch path inputs before making the worktree authoritative', async () => {
     const db = new Database(':memory:');
     db.exec(`
       CREATE TABLE agents (
