@@ -910,7 +910,7 @@ export default function ChatWidget() {
     <>
       {/* ── Chat Panel ── */}
       {open && (
-        <div className="fixed bottom-36 md:bottom-24 right-4 md:right-6 w-[360px] max-w-[calc(100vw-2rem)] h-[500px] max-h-[calc(100dvh-10rem)] md:max-h-[calc(100dvh-8rem)] bg-slate-900 border border-slate-700/60 rounded-2xl shadow-2xl shadow-black/40 flex flex-col z-30 chat-widget-enter">
+        <div className="fixed inset-0 z-30 flex flex-col bg-slate-900 md:inset-auto md:right-6 md:bottom-6 md:h-[min(640px,calc(100dvh-3rem))] md:w-[400px] md:max-w-[calc(100vw-3rem)] md:rounded-[28px] md:border md:border-slate-700/60 md:shadow-2xl md:shadow-black/40 chat-widget-enter md:origin-bottom-right md:bg-slate-900">
           {/* Header */}
           <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-700/50 shrink-0">
             {isViewingHistory ? (
@@ -1048,7 +1048,7 @@ export default function ChatWidget() {
 
           {/* New Chat Confirmation */}
           {showNewChatConfirm && (
-            <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm z-10 flex items-center justify-center rounded-2xl">
+            <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm z-10 flex items-center justify-center md:rounded-[28px]">
               <div className="bg-slate-800 border border-slate-700/60 rounded-xl p-4 mx-4 max-w-[280px] text-center">
                 <p className="text-sm text-white mb-1">Start new chat?</p>
                 <p className="text-xs text-slate-400 mb-4">Current conversation will be cleared.</p>

@@ -51,9 +51,9 @@ body {
 
 /* Chat widget slide-up animation */
 @keyframes chat-widget-slide-up {
-  from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(20px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 .chat-widget-enter {
-  animation: chat-widget-slide-up 0.2s ease-out;
+  animation: chat-widget-slide-up 0.22s ease-out;
 }
