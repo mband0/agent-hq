@@ -26,6 +26,7 @@ import { openClawGatewayWsOptions } from '../lib/openclawGatewayWs';
 import { startTranscriptCapture, stopTranscriptCapture } from '../lib/gatewayTranscriptCapture';
 import { recordRunCheckIn } from '../lib/runObservability';
 import { syncOAuthProviderForOpenClawAgent } from '../lib/openclawOAuthProfiles';
+import { applyTaskOutcome } from '../lib/taskOutcome';
 
 function derivePostRuntimeInstanceStatus(
   status: string,
@@ -48,6 +49,11 @@ function isOpenClawPreReplyFailure(content: string): boolean {
       haystack.includes('no api key found')
       || haystack.includes('oauth token refresh failed')
       || haystack.includes('(auth)')
+      || haystack.includes('rate limit')
+      || haystack.includes('quota')
+      || haystack.includes('too many requests')
+      || haystack.includes('insufficient_quota')
+      || haystack.includes('billing')
     );
 }
 
@@ -73,6 +79,22 @@ function detectOpenClawPreReplyFailure(db: Database.Database, instanceId: number
     }
   }
   return null;
+}
+
+function classifyOpenClawRuntimeFailure(summary: string): 'infra_failure' | 'runtime_failure' {
+  const lower = summary.toLowerCase();
+  if (
+    lower.includes('rate limit')
+    || lower.includes('quota')
+    || lower.includes('too many requests')
+    || lower.includes('insufficient_quota')
+    || lower.includes('billing')
+    || lower.includes('credit balance')
+    || lower.includes('provider limit')
+  ) {
+    return 'infra_failure';
+  }
+  return 'runtime_failure';
 }
 
 // ── Config ───────────────────────────────────────────────────────────────────
@@ -1448,11 +1470,25 @@ export class OpenClawRuntime implements AgentRuntime {
         instanceId,
       );
 
+      const shouldPostTerminalFailureOutcome = !normalizedEvent.success
+        && !existing.lifecycle_outcome_posted_at
+        && !existing.task_outcome;
+
+      let failureSummary: string | null = null;
+      if (shouldPostTerminalFailureOutcome) {
+        failureSummary = normalizedEvent.error
+          ? `OpenClaw runtime failed: ${normalizedEvent.error}`
+          : `OpenClaw runtime failed (${normalizedEvent.reason ?? 'error'})`;
+      }
+
       recordRunCheckIn(db, {
         instanceId,
         stage: 'completion',
-        summary: `OpenClaw runtime ${normalizedEvent.type} (${normalizedEvent.reason ?? (normalizedEvent.success ? 'completed' : 'error')})`,
-        outcome: normalizedEvent.reason ?? (normalizedEvent.success ? 'completed' : 'error'),
+        summary: failureSummary
+          ?? `OpenClaw runtime ${normalizedEvent.type} (${normalizedEvent.reason ?? (normalizedEvent.success ? 'completed' : 'error')})`,
+        outcome: shouldPostTerminalFailureOutcome
+          ? 'failed'
+          : (normalizedEvent.reason ?? (normalizedEvent.success ? 'completed' : 'error')),
         runtimeEndSuccess: normalizedEvent.success,
         runtimeEndError,
         runtimeEndSource,
@@ -1465,6 +1501,24 @@ export class OpenClawRuntime implements AgentRuntime {
         SET response = json_set(COALESCE(response, '{}'), '$.runtimeEnd', json(?))
         WHERE id = ?
       `).run(JSON.stringify(normalizedEvent), instanceId);
+
+      if (shouldPostTerminalFailureOutcome) {
+        const taskRow = db.prepare(`SELECT task_id, agent_id FROM job_instances WHERE id = ?`).get(instanceId) as {
+          task_id: number | null;
+          agent_id: number | null;
+        } | undefined;
+        if (taskRow?.task_id) {
+          await applyTaskOutcome(db, {
+            taskId: taskRow.task_id,
+            outcome: 'failed',
+            changedBy: taskRow.agent_id ? `agent:${taskRow.agent_id}` : 'openclaw-runtime',
+            summary: failureSummary ?? 'OpenClaw runtime failed',
+            instanceId,
+            failureClass: classifyOpenClawRuntimeFailure(failureSummary ?? normalizedEvent.error ?? 'OpenClaw runtime failed'),
+            failureDetail: normalizedEvent.error ?? null,
+          });
+        }
+      }
 
       await onRuntimeEnd?.(normalizedEvent);
     } catch (err) {
