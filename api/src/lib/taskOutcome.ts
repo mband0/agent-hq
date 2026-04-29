@@ -240,6 +240,39 @@ function resolveOutcomeAuthority(
   );
 }
 
+function reloadTaskOutcomeTaskRow(db: Database.Database, taskId: number): TaskOutcomeTaskRow {
+  const reloaded = db.prepare(`
+    SELECT
+      id,
+      status,
+      project_id,
+      sprint_id,
+      task_type,
+      (SELECT sprint_type FROM sprints WHERE id = tasks.sprint_id) as sprint_type,
+      agent_id,
+      active_instance_id,
+      review_owner_agent_id,
+      review_branch,
+      review_commit,
+      review_url,
+      qa_verified_commit,
+      qa_tested_url,
+      merged_commit,
+      deployed_commit,
+      deployed_at,
+      live_verified_at,
+      live_verified_by,
+      deploy_target,
+      evidence_json,
+      previous_status
+    FROM tasks
+    WHERE id = ?
+  `).get(taskId) as TaskOutcomeTaskRow | undefined;
+
+  if (!reloaded) throw new Error('Task not found');
+  return reloaded;
+}
+
 export async function applyTaskOutcome(db: Database.Database, input: ApplyTaskOutcomeInput): Promise<ApplyTaskOutcomeResult> {
   const changedBy = input.changedBy ?? 'system';
   const existing = db.prepare(`
@@ -327,7 +360,8 @@ export async function applyTaskOutcome(db: Database.Database, input: ApplyTaskOu
     };
   }
 
-  const projectId = existing.project_id;
+  const reloadedExisting = reloadTaskOutcomeTaskRow(db, input.taskId);
+  const projectId = reloadedExisting.project_id;
 
   // ── Failure classification ────────────────────────────────────────────────
   // Unsuccessful exits must preserve lane-of-failure even when the task auto-
@@ -340,7 +374,7 @@ export async function applyTaskOutcome(db: Database.Database, input: ApplyTaskOu
   const isUnsuccessfulOutcome = input.outcome === 'failed' || input.outcome === 'blocked' || input.outcome === 'qa_fail';
 
   const hasConfiguredOutcomeRoute = (candidateOutcome: string): boolean => {
-    if (canonicalOutcomeRoute(db, routingBaseStatus, candidateOutcome, existing.task_type, existing.sprint_id, existing.sprint_type)) {
+    if (canonicalOutcomeRoute(db, routingBaseStatus, candidateOutcome, reloadedExisting.task_type, reloadedExisting.sprint_id, reloadedExisting.sprint_type)) {
       return true;
     }
 
@@ -351,7 +385,7 @@ export async function applyTaskOutcome(db: Database.Database, input: ApplyTaskOu
         AND (project_id = ? OR project_id IS NULL)
       ORDER BY CASE WHEN project_id = ? THEN 0 ELSE 1 END, id ASC
       LIMIT 1
-    `).get(routingBaseStatus, candidateOutcome, projectId, projectId) as { 1: number } | undefined;
+    `).get(routingBaseStatus, candidateOutcome, reloadedExisting.project_id, reloadedExisting.project_id) as { 1: number } | undefined;
 
     return Boolean(configuredRoute);
   };
@@ -407,22 +441,22 @@ export async function applyTaskOutcome(db: Database.Database, input: ApplyTaskOu
   try {
     sprintWorkflowRoute = resolveSprintWorkflowOutcome(db, {
       status: routingBaseStatus,
-      task_type: existing.task_type,
-      sprint_id: existing.sprint_id,
-      sprint_type: existing.sprint_type,
+      task_type: reloadedExisting.task_type,
+      sprint_id: reloadedExisting.sprint_id,
+      sprint_type: reloadedExisting.sprint_type,
     }, effectiveOutcome);
   } catch (error) {
     if (!(effectiveOutcome !== input.outcome && effectiveOutcome.startsWith('failed:'))) throw error;
     const fallbackValidation = resolveSprintWorkflowOutcome(db, {
       status: routingBaseStatus,
-      task_type: existing.task_type,
-      sprint_id: existing.sprint_id,
-      sprint_type: existing.sprint_type,
+      task_type: reloadedExisting.task_type,
+      sprint_id: reloadedExisting.sprint_id,
+      sprint_type: reloadedExisting.sprint_type,
     }, input.outcome);
     if (!fallbackValidation) throw error;
   }
 
-  const gateResult = requireReleaseGate(db, { ...existing, status: routingBaseStatus }, input.outcome, existing.task_type);
+  const gateResult = requireReleaseGate(db, { ...reloadedExisting, status: routingBaseStatus }, input.outcome, reloadedExisting.task_type);
   if (gateResult.errors.length > 0) {
     const refusal = gateResult.errors[0];
     resolveRefusedTaskOutcome(db, {
@@ -431,13 +465,13 @@ export async function applyTaskOutcome(db: Database.Database, input: ApplyTaskOu
       changedBy,
       reason: refusal,
       summary: input.summary ?? null,
-      instanceId: input.instanceId ?? existing.active_instance_id,
+      instanceId: input.instanceId ?? reloadedExisting.active_instance_id,
     });
     throw new RefusedTaskOutcomeError(refusal);
   }
 
   const canonicalNextStatus = sprintWorkflowRoute?.nextStatus
-    ?? canonicalOutcomeRoute(db, routingBaseStatus, effectiveOutcome, existing.task_type, existing.sprint_id, existing.sprint_type);
+    ?? canonicalOutcomeRoute(db, routingBaseStatus, effectiveOutcome, reloadedExisting.task_type, reloadedExisting.sprint_id, reloadedExisting.sprint_type);
 
   let route: { to_status: string; lane: string } | undefined;
   if (!canonicalNextStatus) {
@@ -491,14 +525,14 @@ export async function applyTaskOutcome(db: Database.Database, input: ApplyTaskOu
   }
 
   const nextStatus = canonicalNextStatus ?? route!.to_status;
-  const reviewOwnerAgentId = existing.review_owner_agent_id ?? existing.agent_id ?? null;
-  const routedAssignment = resolveTaskRoutingAssignment(db, existing.sprint_id, existing.project_id, existing.task_type, nextStatus);
+  const reviewOwnerAgentId = reloadedExisting.review_owner_agent_id ?? reloadedExisting.agent_id ?? null;
+  const routedAssignment = resolveTaskRoutingAssignment(db, reloadedExisting.sprint_id, reloadedExisting.project_id, reloadedExisting.task_type, nextStatus);
   const nextAgentId = input.outcome === 'qa_fail'
-    ? (reviewOwnerAgentId ?? existing.agent_id ?? null)
-    : (routedAssignment.agent_id ?? existing.agent_id);
+    ? (reviewOwnerAgentId ?? reloadedExisting.agent_id ?? null)
+    : (routedAssignment.agent_id ?? reloadedExisting.agent_id);
   const nextReviewOwnerAgentId = input.outcome === 'qa_fail'
     ? reviewOwnerAgentId
-    : (input.outcome === 'completed_for_review' ? reviewOwnerAgentId : existing.review_owner_agent_id ?? null);
+    : (input.outcome === 'completed_for_review' ? reviewOwnerAgentId : reloadedExisting.review_owner_agent_id ?? null);
 
   // Store failure classification on the task when failing.
   // Also capture previous_status so retry/reopen can restore workflow position
@@ -547,8 +581,8 @@ export async function applyTaskOutcome(db: Database.Database, input: ApplyTaskOu
           lifecycle_outcome_posted_at = COALESCE(lifecycle_outcome_posted_at, datetime('now'))
       WHERE id = ?
     `).run(input.outcome, resolvedFailureClass, input.instanceId);
-  } else if (existing.active_instance_id != null) {
-    const runtimeState = db.prepare(`SELECT runtime_ended_at FROM job_instances WHERE id = ?`).get(existing.active_instance_id) as { runtime_ended_at: string | null } | undefined;
+  } else if (reloadedExisting.active_instance_id != null) {
+    const runtimeState = db.prepare(`SELECT runtime_ended_at FROM job_instances WHERE id = ?`).get(reloadedExisting.active_instance_id) as { runtime_ended_at: string | null } | undefined;
     runtimeEndedBeforeOutcome = Boolean(runtimeState?.runtime_ended_at);
     db.prepare(`
       UPDATE job_instances
@@ -556,7 +590,7 @@ export async function applyTaskOutcome(db: Database.Database, input: ApplyTaskOu
           failure_class = ?,
           lifecycle_outcome_posted_at = COALESCE(lifecycle_outcome_posted_at, datetime('now'))
       WHERE id = ?
-    `).run(input.outcome, resolvedFailureClass, existing.active_instance_id);
+    `).run(input.outcome, resolvedFailureClass, reloadedExisting.active_instance_id);
   }
 
   cleanupTaskExecutionLinkageForStatus(db, input.taskId, nextStatus);
@@ -565,28 +599,28 @@ export async function applyTaskOutcome(db: Database.Database, input: ApplyTaskOu
     postedAt: lifecyclePostedAt,
     postedAfterRuntimeEnd: runtimeEndedBeforeOutcome,
   });
-  if (nextAgentId !== existing.agent_id) {
+  if (nextAgentId !== reloadedExisting.agent_id) {
     logHistory(
       db,
       input.taskId,
       changedBy,
       'agent_id',
-      resolveAgentName(db, existing.agent_id),
+      resolveAgentName(db, reloadedExisting.agent_id),
       resolveAgentName(db, nextAgentId),
     );
   }
 
   // ── Emit task_event for this outcome-driven status transition (#586) ─────
   writeTaskStatusChange(db, input.taskId, changedBy, priorStatus, nextStatus, {
-    instanceId: input.instanceId ?? existing.active_instance_id,
+    instanceId: input.instanceId ?? reloadedExisting.active_instance_id,
     reason: input.summary ?? null,
-    projectId: existing.project_id,
-    agentId: existing.agent_id,
+    projectId: reloadedExisting.project_id,
+    agentId: reloadedExisting.agent_id,
   });
 
   // ── Record failure_stage on instance (#586) ──────────────────────────────
   if (isUnsuccessfulOutcome || input.outcome.startsWith('failed:')) {
-    const failInstanceId = input.instanceId ?? existing.active_instance_id;
+    const failInstanceId = input.instanceId ?? reloadedExisting.active_instance_id;
     if (failInstanceId != null) {
       try {
         db.prepare(`UPDATE job_instances SET failure_stage = ? WHERE id = ?`)
@@ -596,11 +630,12 @@ export async function applyTaskOutcome(db: Database.Database, input: ApplyTaskOu
   }
 
   // ── Integrity anomaly detection (#586) ───────────────────────────────────
-  const iProjectId = existing.project_id;
-  const iInstanceId = input.instanceId ?? existing.active_instance_id;
-  const iAgentId = existing.agent_id;
+  const finalTaskState = reloadTaskOutcomeTaskRow(db, input.taskId);
+  const iProjectId = finalTaskState.project_id;
+  const iInstanceId = input.instanceId ?? finalTaskState.active_instance_id;
+  const iAgentId = finalTaskState.agent_id;
 
-  if (nextStatus === 'review' && !existing.review_branch && !existing.review_commit) {
+  if (nextStatus === 'review' && !finalTaskState.review_branch && !finalTaskState.review_commit) {
     emitIntegrityEvent(db, {
       taskId: input.taskId, anomalyType: 'missing_review_evidence',
       detail: `Task moved to review (outcome: ${input.outcome}) with no review_branch or review_commit`,
@@ -608,7 +643,7 @@ export async function applyTaskOutcome(db: Database.Database, input: ApplyTaskOu
     });
   }
 
-  if (nextStatus === 'qa_pass' && !existing.qa_verified_commit) {
+  if (nextStatus === 'qa_pass' && !finalTaskState.qa_verified_commit) {
     emitIntegrityEvent(db, {
       taskId: input.taskId, anomalyType: 'missing_qa_evidence',
       detail: `Task moved to qa_pass (outcome: ${input.outcome}) with no qa_verified_commit`,
@@ -616,16 +651,16 @@ export async function applyTaskOutcome(db: Database.Database, input: ApplyTaskOu
     });
   }
 
-  if (nextStatus === 'qa_pass' && existing.review_commit && existing.qa_verified_commit
-    && existing.review_commit !== existing.qa_verified_commit) {
+  if (nextStatus === 'qa_pass' && finalTaskState.review_commit && finalTaskState.qa_verified_commit
+    && finalTaskState.review_commit !== finalTaskState.qa_verified_commit) {
     emitIntegrityEvent(db, {
       taskId: input.taskId, anomalyType: 'commit_mismatch',
-      detail: `review_commit=${existing.review_commit} ≠ qa_verified_commit=${existing.qa_verified_commit}`,
+      detail: `review_commit=${finalTaskState.review_commit} ≠ qa_verified_commit=${finalTaskState.qa_verified_commit}`,
       instanceId: iInstanceId, projectId: iProjectId, agentId: iAgentId,
     });
   }
 
-  if (nextStatus === 'done' && existing.deployed_at && !existing.live_verified_at) {
+  if (nextStatus === 'done' && finalTaskState.deployed_at && !finalTaskState.live_verified_at) {
     emitIntegrityEvent(db, {
       taskId: input.taskId, anomalyType: 'deployed_not_verified',
       detail: `Task reached done without live_verified_at being set`,
@@ -634,7 +669,7 @@ export async function applyTaskOutcome(db: Database.Database, input: ApplyTaskOu
   }
 
   const failureInfo = resolvedFailureClass ? `, failure_class="${resolvedFailureClass}"${autoRecovered ? ' (auto-recovered)' : ''}` : '';
-  const message = `Outcome transition: task #${input.taskId} (${priorStatus} → ${nextStatus}), outcome="${input.outcome}"${failureInfo}, actor="${changedBy}"${existing.agent_id ? `, agent_id=${existing.agent_id}` : ''}${input.instanceId != null ? `, instance_id=${input.instanceId}` : ''}${input.summary ? `, summary: ${input.summary}` : ''}`;
+  const message = `Outcome transition: task #${input.taskId} (${priorStatus} → ${nextStatus}), outcome="${input.outcome}"${failureInfo}, actor="${changedBy}"${finalTaskState.agent_id ? `, agent_id=${finalTaskState.agent_id}` : ''}${input.instanceId != null ? `, instance_id=${input.instanceId}` : ''}${input.summary ? `, summary: ${input.summary}` : ''}`;
   insertAuditLog(db, message);
 
   if (input.summary) {
@@ -659,7 +694,7 @@ export async function applyTaskOutcome(db: Database.Database, input: ApplyTaskOu
   // deployment-stage workflows and the instance must stay open until
   // live_verified (Step B) is posted.
   let instanceClosed = false;
-  const authoritativeInstanceId = input.instanceId ?? existing.active_instance_id;
+  const authoritativeInstanceId = input.instanceId ?? finalTaskState.active_instance_id;
   if (authoritativeInstanceId != null && isTerminalOutcome(input.outcome)) {
     const instanceStatus = input.outcome === 'failed' ? 'failed' : 'done';
     try {

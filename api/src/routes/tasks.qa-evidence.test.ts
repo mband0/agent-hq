@@ -134,6 +134,7 @@ function resetDb(): void {
     CREATE TABLE agents (
       id INTEGER PRIMARY KEY,
       name TEXT NOT NULL,
+      job_title TEXT,
       enabled INTEGER NOT NULL DEFAULT 1
     );
     CREATE TABLE jobs (
@@ -291,6 +292,135 @@ describe('tasks qa-evidence aliases', () => {
         throw new Error(`Expected 200, received ${response.status}: ${JSON.stringify(body)}`);
       }
       expect(body.qa_tested_url).toBe('http://localhost:3501/api/v1/tasks/383?legacy=1');
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
+  it('refreshes review evidence to the latest commit on re-submission for review', async () => {
+    const db = getDb();
+    db.exec(`
+      ALTER TABLE tasks ADD COLUMN review_branch TEXT;
+      ALTER TABLE tasks ADD COLUMN review_url TEXT;
+      ALTER TABLE tasks ADD COLUMN review_owner_agent_id INTEGER;
+      ALTER TABLE tasks ADD COLUMN previous_status TEXT;
+      ALTER TABLE tasks ADD COLUMN merged_commit TEXT;
+      ALTER TABLE tasks ADD COLUMN deployed_commit TEXT;
+      ALTER TABLE tasks ADD COLUMN deployed_at TEXT;
+      ALTER TABLE tasks ADD COLUMN live_verified_at TEXT;
+      ALTER TABLE tasks ADD COLUMN live_verified_by TEXT;
+      ALTER TABLE tasks ADD COLUMN deploy_target TEXT;
+      ALTER TABLE tasks ADD COLUMN evidence_json TEXT;
+      ALTER TABLE tasks ADD COLUMN failure_class TEXT;
+      ALTER TABLE tasks ADD COLUMN failure_detail TEXT;
+      ALTER TABLE job_instances ADD COLUMN failure_class TEXT;
+      ALTER TABLE job_instances ADD COLUMN failure_stage TEXT;
+      CREATE TABLE logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        agent_id INTEGER,
+        job_title TEXT,
+        level TEXT,
+        message TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE TABLE routing_config (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        from_status TEXT NOT NULL,
+        outcome TEXT NOT NULL,
+        to_status TEXT NOT NULL,
+        lane TEXT NOT NULL DEFAULT 'default',
+        enabled INTEGER NOT NULL DEFAULT 1,
+        project_id INTEGER
+      );
+      CREATE TABLE integrity_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER,
+        project_id INTEGER,
+        agent_id INTEGER,
+        instance_id INTEGER,
+        anomaly_type TEXT,
+        detail TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE TABLE task_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER,
+        project_id INTEGER,
+        agent_id INTEGER,
+        from_status TEXT,
+        to_status TEXT,
+        moved_by TEXT,
+        move_type TEXT,
+        instance_id INTEGER,
+        reason TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
+
+    db.prepare(`UPDATE tasks SET status = ?, review_branch = ?, review_url = ? WHERE id = ?`).run(
+      'in_progress',
+      'feature/task-383-old',
+      'http://localhost:3510/review/task-383?attempt=1',
+      383,
+    );
+    db.prepare(`INSERT INTO routing_config (from_status, outcome, to_status, lane, enabled, project_id) VALUES (?, ?, ?, 'default', 1, ?)`).run(
+      'in_progress',
+      'completed_for_review',
+      'review',
+      1,
+    );
+
+    const { server, baseUrl } = await startTestServer();
+    try {
+      const newCommit = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      const response = await fetch(`${baseUrl}/api/v1/tasks/383/outcome`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          outcome: 'completed_for_review',
+          summary: 'Re-submitting after QA fixes.',
+          changed_by: 'cinder-backend',
+          instance_id: 1784,
+          review_branch: 'feature/task-383-rereview',
+          review_commit: newCommit,
+          review_url: 'http://localhost:3510/review/task-383?attempt=2',
+        }),
+      });
+      const body = await response.json() as { task?: { review_branch?: string | null; review_commit?: string | null; review_url?: string | null; status?: string }; error?: string };
+
+      if (response.status !== 200) {
+        throw new Error(`Expected 200, received ${response.status}: ${JSON.stringify(body)}`);
+      }
+
+      expect(body.task?.status).toBe('review');
+      expect(body.task?.review_branch).toBe('feature/task-383-rereview');
+      expect(body.task?.review_commit).toBe(newCommit);
+      expect(body.task?.review_url).toBe('http://localhost:3510/review/task-383?attempt=2');
+
+      const row = db.prepare(`SELECT review_branch, review_commit, review_url, status FROM tasks WHERE id = ?`).get(383) as {
+        review_branch: string | null;
+        review_commit: string | null;
+        review_url: string | null;
+        status: string;
+      };
+      expect(row).toEqual({
+        review_branch: 'feature/task-383-rereview',
+        review_commit: newCommit,
+        review_url: 'http://localhost:3510/review/task-383?attempt=2',
+        status: 'review',
+      });
+
+      const reviewHistory = db.prepare(`
+        SELECT field, old_value, new_value
+        FROM task_history
+        WHERE task_id = ? AND field IN ('review_branch', 'review_commit', 'review_url')
+        ORDER BY id ASC
+      `).all(383) as Array<{ field: string; old_value: string | null; new_value: string | null }>;
+      expect(reviewHistory).toEqual([
+        { field: 'review_branch', old_value: 'feature/task-383-old', new_value: 'feature/task-383-rereview' },
+        { field: 'review_commit', old_value: '6d614b3b104ae36d1dd75210b9f9fb0342673329', new_value: newCommit },
+        { field: 'review_url', old_value: 'http://localhost:3510/review/task-383?attempt=1', new_value: 'http://localhost:3510/review/task-383?attempt=2' },
+      ]);
     } finally {
       await stopTestServer(server);
     }
