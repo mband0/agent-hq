@@ -489,6 +489,63 @@ function normalizeOpenClawModel(model: string | null | undefined): string | null
   return normalized || null;
 }
 
+function normalizeRepoContextValue(value: string | null | undefined): string | null {
+  const normalized = value?.trim();
+  return normalized || null;
+}
+
+function buildOpenClawRepoContextSection(params: {
+  activeRepoRoot?: string | null;
+  workspaceRoot?: string | null;
+  repoAccessMode?: DispatchParams['repoAccessMode'];
+  repoSource?: string | null;
+  repoWorkspacePath?: string | null;
+  repoBranch?: string | null;
+  pathMetadata?: DispatchParams['pathMetadata'];
+}): string | null {
+  const activeRepoRoot = normalizeRepoContextValue(params.activeRepoRoot);
+  const workspaceRoot = normalizeRepoContextValue(params.workspaceRoot);
+  const repoWorkspacePath = normalizeRepoContextValue(params.repoWorkspacePath);
+  const repoSource = normalizeRepoContextValue(params.repoSource);
+  const repoBranch = normalizeRepoContextValue(params.repoBranch);
+  const worktreeRoot = normalizeRepoContextValue(params.pathMetadata?.worktreeRoot);
+  const runtimeConfigWorkingDirectory = normalizeRepoContextValue(params.pathMetadata?.runtimeConfigWorkingDirectory);
+  const repoRootSource = params.pathMetadata?.repoRootSource ?? null;
+  const workspaceRootSource = params.pathMetadata?.workspaceRootSource ?? null;
+  const pathMode = params.pathMetadata?.pathMode
+    ?? (activeRepoRoot ? 'active-repo-root' : workspaceRoot ? 'workspace-root' : null);
+  const effectiveRepoRoot = activeRepoRoot ?? repoWorkspacePath ?? workspaceRoot;
+  if (!effectiveRepoRoot) return null;
+
+  const lines = [
+    '## Active Repo Context',
+    'Use this path as the current working directory for repo, file, and git operations:',
+    effectiveRepoRoot,
+    '',
+  ];
+
+  if (params.repoAccessMode) lines.push(`Repo access mode: ${params.repoAccessMode}`);
+  if (pathMode) lines.push(`Path mode: ${pathMode}`);
+  if (repoSource) lines.push(`Repo source: ${repoSource}`);
+  if (repoWorkspacePath) lines.push(`Prepared repo workspace: ${repoWorkspacePath}`);
+  if (repoBranch) lines.push(`Branch: ${repoBranch}`);
+  if (activeRepoRoot) lines.push(`Active repo root: ${activeRepoRoot}`);
+  if (workspaceRoot) lines.push(`Parent workspace root: ${workspaceRoot}`);
+  if (worktreeRoot) lines.push(`Worktree root: ${worktreeRoot}`);
+  if (runtimeConfigWorkingDirectory) lines.push(`Runtime config working directory: ${runtimeConfigWorkingDirectory}`);
+  if (repoRootSource) lines.push(`Repo root source: ${repoRootSource}`);
+  if (workspaceRootSource) lines.push(`Workspace root source: ${workspaceRootSource}`);
+  lines.push('', 'Do not use the parent workspace for implementation work unless explicitly instructed.');
+
+  return lines.join('\n');
+}
+
+function appendOpenClawRepoContext(message: string, repoContextSection: string | null): string {
+  if (!repoContextSection) return message;
+  if (message.includes('## Active Repo Context')) return message;
+  return `${message.trimEnd()}\n\n${repoContextSection}`;
+}
+
 export async function gatewayWsPatchSession(params: {
   sessionKey: string;
   model?: string | null;
@@ -1131,10 +1188,8 @@ export async function gatewayWsSend(params: {
   sessionKey: string;
   message: string;
   timeoutMs?: number;
-  cwd?: string | null;
-  metadata?: Record<string, unknown> | null;
 }): Promise<{ ok: boolean; runId?: string; error?: string }> {
-  const { sessionKey, message, timeoutMs, cwd, metadata } = params;
+  const { sessionKey, message, timeoutMs } = params;
 
   return new Promise((resolve) => {
     const ws = new WebSocket(GATEWAY_WS_URL, openClawGatewayWsOptions(GATEWAY_WS_URL));
@@ -1242,8 +1297,6 @@ export async function gatewayWsSend(params: {
           idempotencyKey: crypto.randomUUID(),
           timeoutMs: timeoutMs ?? 900_000,
         };
-        if (typeof cwd === 'string' && cwd.trim()) sendParams.cwd = cwd.trim();
-        if (metadata && Object.keys(metadata).length > 0) sendParams.metadata = metadata;
 
         const sendResult = await sendRpc('chat.send', sendParams);
 
@@ -1324,30 +1377,29 @@ export class OpenClawRuntime implements AgentRuntime {
       );
     }
 
-    const dispatchCwd = activeRepoRoot ?? workspaceRoot;
+    const dispatchMessage = appendOpenClawRepoContext(
+      params.message,
+      buildOpenClawRepoContextSection({
+        activeRepoRoot,
+        workspaceRoot,
+        repoAccessMode: params.repoAccessMode ?? null,
+        repoSource: params.repoSource ?? null,
+        repoWorkspacePath: params.repoWorkspacePath ?? null,
+        repoBranch: params.repoBranch ?? null,
+        pathMetadata,
+      }),
+    );
     const wsResult = await gatewayWsSend({
       sessionKey: routedSessionKey,
-      message: params.message,
+      message: dispatchMessage,
       timeoutMs: (params.timeoutSeconds ?? 900) * 1000,
-      cwd: dispatchCwd,
-      metadata: activeRepoRoot || workspaceRoot
-        ? {
-            activeRepoRoot,
-            workspaceRoot,
-            pathMode: pathMetadata?.pathMode ?? null,
-            repoRootSource: pathMetadata?.repoRootSource ?? null,
-            workspaceRootSource: pathMetadata?.workspaceRootSource ?? null,
-            worktreeRoot: pathMetadata?.worktreeRoot ?? null,
-            runtimeConfigWorkingDirectory: pathMetadata?.runtimeConfigWorkingDirectory ?? null,
-          }
-        : null,
     });
 
     if (!wsResult.ok) {
       throw new Error(wsResult.error ?? 'WebSocket dispatch failed');
     }
 
-    this.persistUserPrompt(params);
+    this.persistUserPrompt(params, dispatchMessage);
     this.startCapture(params, wsResult.runId, routedSessionKey);
     return { runId: wsResult.runId ?? '' };
   }
@@ -1404,7 +1456,7 @@ export class OpenClawRuntime implements AgentRuntime {
    * persistUserPrompt — write the dispatched prompt as a user-role chat_messages
    * row so the Chats tab shows what was sent to the agent.
    */
-  private persistUserPrompt(params: DispatchParams): number | null {
+  private persistUserPrompt(params: DispatchParams, promptContent = params.message): number | null {
     try {
       if (params.instanceId == null) return null;
       const db = getDb();
@@ -1417,7 +1469,7 @@ export class OpenClawRuntime implements AgentRuntime {
       db.prepare(`
         INSERT OR IGNORE INTO chat_messages (id, agent_id, instance_id, role, content, timestamp)
         VALUES (?, ?, ?, 'user', ?, ?)
-      `).run(`oc-user-${params.instanceId}`, agentId, params.instanceId, params.message, now);
+      `).run(`oc-user-${params.instanceId}`, agentId, params.instanceId, promptContent, now);
       return agentId;
     } catch (err) {
       console.warn(
