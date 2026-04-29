@@ -1322,11 +1322,12 @@ export class OpenClawRuntime implements AgentRuntime {
       );
     }
 
+    const dispatchCwd = activeRepoRoot ?? workspaceRoot;
     const wsResult = await gatewayWsSend({
       sessionKey: routedSessionKey,
       message: params.message,
       timeoutMs: (params.timeoutSeconds ?? 900) * 1000,
-      cwd: activeRepoRoot,
+      cwd: dispatchCwd,
       metadata: activeRepoRoot || workspaceRoot
         ? {
             activeRepoRoot,

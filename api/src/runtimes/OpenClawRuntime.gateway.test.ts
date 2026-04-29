@@ -220,4 +220,22 @@ describe('OpenClawRuntime gateway dispatch', () => {
       },
     }));
   });
+
+  it('falls back to workspaceRoot as chat cwd when no activeRepoRoot is provided', async () => {
+    const runtime = new OpenClawRuntime();
+
+    await runtime.dispatch(dispatchParams({
+      workspaceRoot: '/parent/workspace',
+      activeRepoRoot: null,
+    }));
+
+    const send = mockSentRequests.find((request) => request.method === 'chat.send');
+    expect(send?.params).toEqual(expect.objectContaining({
+      cwd: '/parent/workspace',
+      metadata: {
+        activeRepoRoot: null,
+        workspaceRoot: '/parent/workspace',
+      },
+    }));
+  });
 });
