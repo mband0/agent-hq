@@ -52,11 +52,21 @@ jest.mock('ws', () => {
         delete response.payload;
         response.error = { code: 'INVALID_REQUEST', message: 'bad runtime config' };
       } else if (frame.method === 'chat.send') {
-        response.payload = {
-          runId: 'run-123',
-          cwd: frame.params.cwd,
-          metadata: frame.params.metadata,
-        };
+        const metadata = frame.params.metadata as Record<string, unknown> | undefined;
+        if (
+          typeof frame.params.cwd === 'string' &&
+          typeof metadata?.activeRepoRoot === 'string' &&
+          frame.params.cwd !== metadata.activeRepoRoot
+        ) {
+          delete response.payload;
+          response.error = { code: 'INVALID_REQUEST', message: 'cwd must match activeRepoRoot' };
+        } else {
+          response.payload = {
+            runId: 'run-123',
+            cwd: frame.params.cwd,
+            metadata: frame.params.metadata,
+          };
+        }
       }
 
       setImmediate(() => {
