@@ -201,6 +201,10 @@ describe('OpenClawRuntime gateway dispatch', () => {
         workspaceRoot: '/Users/nordini/.openclaw/workspace-agent-hq-backend',
       },
     }));
+
+    expect(logSpy).toHaveBeenCalledWith(
+      '[OpenClawRuntime] dispatch path resolution: sessionKey=agent:cinder-backend:hook:atlas:jobrun:383 activeRepoRoot=/Users/nordini/.openclaw/workspace-agent-hq-backend/task-375 workspaceRoot=/Users/nordini/.openclaw/workspace-agent-hq-backend',
+    );
   });
 
   it('keeps chat cwd on activeRepoRoot even when workspaceRoot points at the parent workspace', async () => {
