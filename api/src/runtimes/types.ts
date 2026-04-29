@@ -27,12 +27,17 @@ export interface DispatchParams extends RuntimeEventCallbacks {
   /** Database handle — required by runtimes that write directly to the DB (e.g. ClaudeCodeRuntime). */
   db?: Database.Database;
   /**
-   * Workspace root for this agent (from agents.workspace_path).
-   * Runtimes that launch subprocesses set the working directory to this path
-   * and pass it as ATLAS_WORKSPACE_ROOT so the agent runtime can enforce
-   * path boundaries on its own file operations.
+   * Parent workspace container root for this agent (normally agents.workspace_path).
+   * This remains the boundary root when the active repo is a task worktree nested
+   * under a broader workspace container.
    */
   workspaceRoot?: string | null;
+  /**
+   * Authoritative active repo root for this dispatched run.
+   * When a task worktree exists, this must point at the worktree repo root so the
+   * runtime cwd, prompt context, and run metadata all agree on the same path.
+   */
+  activeRepoRoot?: string | null;
   /**
    * Legacy container hook metadata.
    * OpenClawRuntime ignores hook transport and dispatches via the runtime WS path.
