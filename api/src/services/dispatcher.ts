@@ -101,17 +101,24 @@ function resolveDispatchPathContext(params: {
   workspaceContainerRoot: string | null;
   worktreeRoot: string | null;
   runtimeConfigWorkingDirectory: string | null;
+  pathMode: 'worktree' | 'runtime-config' | 'workspace';
 } {
   const worktreeRoot = normalizePathOrNull(params.worktreePath);
   const runtimeConfigWorkingDirectory = normalizePathOrNull(params.runtimeConfigWorkingDirectory);
   const workspacePath = normalizePathOrNull(params.workspacePath);
   const activeRepoRoot = worktreeRoot ?? runtimeConfigWorkingDirectory ?? workspacePath;
   const workspaceContainerRoot = workspacePath ?? activeRepoRoot;
+  const pathMode: 'worktree' | 'runtime-config' | 'workspace' = worktreeRoot
+    ? 'worktree'
+    : runtimeConfigWorkingDirectory
+      ? 'runtime-config'
+      : 'workspace';
   return {
     activeRepoRoot,
     workspaceContainerRoot,
     worktreeRoot,
     runtimeConfigWorkingDirectory,
+    pathMode,
   };
 }
 
@@ -1114,10 +1121,11 @@ async function fireAgentRun(
     workspaceContainerRoot,
     worktreeRoot,
     runtimeConfigWorkingDirectory,
+    pathMode,
   } = pathContext;
 
   console.log(
-    `[dispatcher] Instance #${instanceId} path resolution: activeRepoRoot=${activeRepoRoot ?? 'null'} workspaceRoot=${workspaceContainerRoot ?? 'null'} worktreePath=${worktreeRoot ?? 'null'} runtimeConfigWorkingDirectory=${runtimeConfigWorkingDirectory ?? 'null'}`
+    `[dispatcher] Instance #${instanceId} path resolution: mode=${pathMode} activeRepoRoot=${activeRepoRoot ?? 'null'} workspaceRoot=${workspaceContainerRoot ?? 'null'} worktreePath=${worktreeRoot ?? 'null'} runtimeConfigWorkingDirectory=${runtimeConfigWorkingDirectory ?? 'null'}`
   );
 
   // Store the deterministic session key on the instance BEFORE dispatch
@@ -1282,7 +1290,7 @@ async function fireAgentRun(
     const dispatchRuntimeConfig = buildDispatchRuntimeConfig(job.runtime_config, runtimeConfigOverride);
 
     console.log(
-      `[dispatcher] Instance #${instanceId} runtime config handoff: workingDirectory=${typeof dispatchRuntimeConfig.workingDirectory === 'string' ? dispatchRuntimeConfig.workingDirectory : 'null'} activeRepoRoot=${activeRepoRoot ?? 'null'} workspaceRoot=${workspaceContainerRoot ?? 'null'} worktreePath=${worktreeRoot ?? 'null'} runtimeConfigWorkingDirectory=${runtimeConfigWorkingDirectory ?? 'null'}`
+      `[dispatcher] Instance #${instanceId} runtime config handoff: mode=${pathMode} workingDirectory=${typeof dispatchRuntimeConfig.workingDirectory === 'string' ? dispatchRuntimeConfig.workingDirectory : 'null'} activeRepoRoot=${activeRepoRoot ?? 'null'} workspaceRoot=${workspaceContainerRoot ?? 'null'} worktreePath=${worktreeRoot ?? 'null'} runtimeConfigWorkingDirectory=${runtimeConfigWorkingDirectory ?? 'null'}`
     );
 
     const { runId } = await runtime.dispatch({
@@ -1515,11 +1523,13 @@ function dispatchTaskToJob(
   }
   const pathContextSection = [
     '## Active Workspace Context',
+    `- **Path mode:** ${dispatchPathContext.pathMode}`,
     `- **Active repo root:** ${dispatchPathContext.activeRepoRoot ?? 'unknown'}`,
     `- **Workspace container root:** ${dispatchPathContext.workspaceContainerRoot ?? 'unknown'}`,
     `- **Task worktree:** ${dispatchPathContext.worktreeRoot ?? 'none'}`,
     '',
     'Use the active repo root as the authoritative cwd for repo files, git commands, and task implementation work.',
+    'Do not treat the workspace container root as the repo root when a task worktree or other active repo root is present.',
     'Treat the workspace container root as a broader container boundary only, not the repo root, when these differ.',
     '',
   ].join('\n');

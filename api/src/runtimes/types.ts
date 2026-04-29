@@ -28,14 +28,16 @@ export interface DispatchParams extends RuntimeEventCallbacks {
   db?: Database.Database;
   /**
    * Parent workspace container root for this agent (normally agents.workspace_path).
-   * This remains the boundary root when the active repo is a task worktree nested
-   * under a broader workspace container.
+   * This remains the broader allowed container boundary when the active repo is a
+   * task worktree nested under a larger workspace.
+   * Never treat this value as the repo cwd when activeRepoRoot is present.
    */
   workspaceRoot?: string | null;
   /**
    * Authoritative active repo root for this dispatched run.
    * When a task worktree exists, this must point at the worktree repo root so the
-   * runtime cwd, prompt context, and run metadata all agree on the same path.
+   * runtime cwd, prompt context, metadata, and any repo-file assumptions all agree
+   * on the same path.
    */
   activeRepoRoot?: string | null;
   /**

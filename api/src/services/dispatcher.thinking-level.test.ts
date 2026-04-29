@@ -410,14 +410,16 @@ describe('runDispatcher thinking-level routing', () => {
 
     const dispatchedMessage = dispatchMock.mock.calls[0]?.[0]?.message as string;
     expect(dispatchedMessage).toContain('## Active Workspace Context');
+    expect(dispatchedMessage).toContain('- **Path mode:** worktree');
     expect(dispatchedMessage).toContain('- **Active repo root:** /Users/test/workspaces/task-375');
     expect(dispatchedMessage).toContain('- **Workspace container root:** /parent/workspace');
     expect(dispatchedMessage).toContain('- **Task worktree:** /Users/test/workspaces/task-375');
+    expect(dispatchedMessage).toContain('Do not treat the workspace container root as the repo root when a task worktree or other active repo root is present.');
 
     const loggedMessages = logSpy.mock.calls.map(([message]) => String(message));
     expect(loggedMessages).toEqual(expect.arrayContaining([
-      '[dispatcher] Instance #1 path resolution: activeRepoRoot=/Users/test/workspaces/task-375 workspaceRoot=/parent/workspace worktreePath=/Users/test/workspaces/task-375 runtimeConfigWorkingDirectory=/parent/workspace-root',
-      '[dispatcher] Instance #1 runtime config handoff: workingDirectory=/Users/test/workspaces/task-375 activeRepoRoot=/Users/test/workspaces/task-375 workspaceRoot=/parent/workspace worktreePath=/Users/test/workspaces/task-375 runtimeConfigWorkingDirectory=/parent/workspace-root',
+      '[dispatcher] Instance #1 path resolution: mode=worktree activeRepoRoot=/Users/test/workspaces/task-375 workspaceRoot=/parent/workspace worktreePath=/Users/test/workspaces/task-375 runtimeConfigWorkingDirectory=/parent/workspace-root',
+      '[dispatcher] Instance #1 runtime config handoff: mode=worktree workingDirectory=/Users/test/workspaces/task-375 activeRepoRoot=/Users/test/workspaces/task-375 workspaceRoot=/parent/workspace worktreePath=/Users/test/workspaces/task-375 runtimeConfigWorkingDirectory=/parent/workspace-root',
     ]));
 
     logSpy.mockRestore();

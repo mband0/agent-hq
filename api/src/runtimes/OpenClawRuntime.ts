@@ -1317,8 +1317,9 @@ export class OpenClawRuntime implements AgentRuntime {
     const activeRepoRoot = params.activeRepoRoot ?? null;
     const workspaceRoot = params.workspaceRoot ?? null;
     if (activeRepoRoot || workspaceRoot) {
+      const pathMode = activeRepoRoot ? 'active-repo-root' : 'workspace-root';
       console.log(
-        `[OpenClawRuntime] dispatch path resolution: sessionKey=${routedSessionKey} cwd=${activeRepoRoot ?? workspaceRoot ?? 'null'} activeRepoRoot=${activeRepoRoot ?? 'null'} workspaceRoot=${workspaceRoot ?? 'null'}`,
+        `[OpenClawRuntime] dispatch path resolution: sessionKey=${routedSessionKey} mode=${pathMode} cwd=${activeRepoRoot ?? workspaceRoot ?? 'null'} activeRepoRoot=${activeRepoRoot ?? 'null'} workspaceRoot=${workspaceRoot ?? 'null'}`,
       );
     }
 
