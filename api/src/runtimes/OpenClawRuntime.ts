@@ -456,6 +456,46 @@ export async function reloadOpenClawSecretsRuntimeForAuthSync(): Promise<{ ok: b
   };
 }
 
+function normalizeOpenClawThinkingLevel(thinking: string | null | undefined): string | null {
+  const normalized = thinking?.trim();
+  if (!normalized || normalized === 'adaptive') return null;
+  return normalized;
+}
+
+function normalizeOpenClawModel(model: string | null | undefined): string | null {
+  const normalized = model?.trim();
+  return normalized || null;
+}
+
+export async function gatewayWsPatchSession(params: {
+  sessionKey: string;
+  model?: string | null;
+  thinking?: string | null;
+  timeoutMs?: number;
+}): Promise<{ ok: boolean; error?: string; skipped?: boolean }> {
+  const model = normalizeOpenClawModel(params.model);
+  const thinkingLevel = normalizeOpenClawThinkingLevel(params.thinking);
+  if (!model && !thinkingLevel) {
+    return { ok: true, skipped: true };
+  }
+
+  const result = await gatewayRpcCall({
+    method: 'sessions.patch',
+    rpcParams: {
+      key: params.sessionKey,
+      ...(model ? { model } : {}),
+      ...(thinkingLevel ? { thinkingLevel } : {}),
+    },
+    timeoutMs: params.timeoutMs ?? 30_000,
+    displayName: 'Agent HQ Runtime Config',
+  });
+
+  if (!result.ok) {
+    return { ok: false, error: result.error ?? 'sessions.patch failed' };
+  }
+  return { ok: true };
+}
+
 const LIVE_TRANSCRIPT_POLL_MS = 2000;
 const LIVE_TRANSCRIPT_MAX_RUNTIME_MS = 30 * 60 * 1000;
 const activeTranscriptLoops = new Map<number, NodeJS.Timeout>();
@@ -1069,10 +1109,8 @@ export async function gatewayWsSend(params: {
   sessionKey: string;
   message: string;
   timeoutMs?: number;
-  model?: string | null;
-  thinking?: string | null;
 }): Promise<{ ok: boolean; runId?: string; error?: string }> {
-  const { sessionKey, message, timeoutMs, model, thinking } = params;
+  const { sessionKey, message, timeoutMs } = params;
 
   return new Promise((resolve) => {
     const ws = new WebSocket(GATEWAY_WS_URL, openClawGatewayWsOptions(GATEWAY_WS_URL));
@@ -1177,8 +1215,6 @@ export async function gatewayWsSend(params: {
         const sendResult = await sendRpc('chat.send', {
           sessionKey,
           message,
-          ...(model ? { model } : {}),
-          ...(thinking ? { thinking } : {}),
           idempotencyKey: crypto.randomUUID(),
           timeoutMs: timeoutMs ?? 900_000,
         });
@@ -1239,11 +1275,20 @@ export class OpenClawRuntime implements AgentRuntime {
       ? params.sessionKey
       : `agent:${params.agentSlug}:${params.sessionKey}`;
 
+    const patchResult = await gatewayWsPatchSession({
+      sessionKey: routedSessionKey,
+      model: params.model ?? null,
+      thinking: params.thinking ?? null,
+    });
+    if (!patchResult.ok) {
+      console.warn(
+        `[OpenClawRuntime] Failed to apply runtime routing overrides for session "${routedSessionKey}"; dispatching with existing OpenClaw session settings: ${patchResult.error ?? 'unknown error'}`,
+      );
+    }
+
     const wsResult = await gatewayWsSend({
       sessionKey: routedSessionKey,
       message: params.message,
-      model: params.model ?? null,
-      thinking: params.thinking ?? null,
       timeoutMs: (params.timeoutSeconds ?? 900) * 1000,
     });
 
