@@ -1529,6 +1529,8 @@ function dispatchTaskToJob(
     `- **Task worktree:** ${dispatchPathContext.worktreeRoot ?? 'none'}`,
     '',
     'Use the active repo root as the authoritative cwd for repo files, git commands, and task implementation work.',
+    'Start all file inspection, searches, edits, and git commands from the active repo root first.',
+    'Do not begin by probing the workspace container root for repo files when the active repo root differs.',
     'Do not treat the workspace container root as the repo root when a task worktree or other active repo root is present.',
     'Treat the workspace container root as a broader container boundary only, not the repo root, when these differ.',
     '',

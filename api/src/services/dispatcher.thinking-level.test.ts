@@ -414,6 +414,8 @@ describe('runDispatcher thinking-level routing', () => {
     expect(dispatchedMessage).toContain('- **Active repo root:** /Users/test/workspaces/task-375');
     expect(dispatchedMessage).toContain('- **Workspace container root:** /parent/workspace');
     expect(dispatchedMessage).toContain('- **Task worktree:** /Users/test/workspaces/task-375');
+    expect(dispatchedMessage).toContain('Start all file inspection, searches, edits, and git commands from the active repo root first.');
+    expect(dispatchedMessage).toContain('Do not begin by probing the workspace container root for repo files when the active repo root differs.');
     expect(dispatchedMessage).toContain('Do not treat the workspace container root as the repo root when a task worktree or other active repo root is present.');
 
     const loggedMessages = logSpy.mock.calls.map(([message]) => String(message));
