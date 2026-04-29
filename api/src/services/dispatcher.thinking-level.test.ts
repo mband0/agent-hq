@@ -369,6 +369,12 @@ describe('runDispatcher thinking-level routing', () => {
       runtimeConfig: expect.objectContaining({ workingDirectory: '/Users/test/workspaces/task-375' }),
     }));
 
+    const payloadSent = db.prepare(`SELECT payload_sent FROM job_instances LIMIT 1`).get() as { payload_sent: string | null };
+    expect(JSON.parse(payloadSent.payload_sent ?? '{}')).toEqual(expect.objectContaining({
+      mode: 'runtime-dispatch',
+      transport: 'ws.send',
+    }));
+
     const instance = db.prepare(`SELECT worktree_path FROM job_instances LIMIT 1`).get() as { worktree_path: string | null };
     expect(instance.worktree_path).toBe('/Users/test/workspaces/task-375');
 

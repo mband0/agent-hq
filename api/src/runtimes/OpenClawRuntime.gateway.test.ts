@@ -202,4 +202,22 @@ describe('OpenClawRuntime gateway dispatch', () => {
       },
     }));
   });
+
+  it('keeps chat cwd on activeRepoRoot even when workspaceRoot points at the parent workspace', async () => {
+    const runtime = new OpenClawRuntime();
+
+    await runtime.dispatch(dispatchParams({
+      workspaceRoot: '/parent/workspace',
+      activeRepoRoot: '/parent/workspace/task-375',
+    }));
+
+    const send = mockSentRequests.find((request) => request.method === 'chat.send');
+    expect(send?.params).toEqual(expect.objectContaining({
+      cwd: '/parent/workspace/task-375',
+      metadata: {
+        activeRepoRoot: '/parent/workspace/task-375',
+        workspaceRoot: '/parent/workspace',
+      },
+    }));
+  });
 });

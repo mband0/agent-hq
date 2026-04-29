@@ -158,8 +158,10 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     const baseUrl = getAgentHqBaseUrl();
 
     // Determine the effective working directory.
-    // Priority: config.workingDirectory (dispatcher override) → activeRepoRoot → workspaceRoot.
-    const effectiveCwd: string | undefined = config.workingDirectory ?? activeRepoRoot ?? workspaceRoot ?? undefined;
+    // activeRepoRoot is authoritative for the dispatched repo root. The runtime
+    // config may still carry the same value as a compatibility override, but it
+    // must not outrank the resolved active repo root when both are present.
+    const effectiveCwd: string | undefined = activeRepoRoot ?? config.workingDirectory ?? workspaceRoot ?? undefined;
 
     if (effectiveCwd) {
       if (workspaceRoot && db) {
