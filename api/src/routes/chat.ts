@@ -1562,16 +1562,23 @@ export function setupChatProxy(wss: WebSocketServer) {
         const gatewaySessionKey = toGatewaySessionKey(msg.sessionKey as string | null | undefined, resolveAgentRowForSessionKey(msg.sessionKey as string | null | undefined));
         const reqId = randomUUID();
         pending.set(reqId, 'chat.send');
+        const chatSendParams: Record<string, unknown> = {
+          sessionKey: gatewaySessionKey ?? msg.sessionKey,
+          message: fullMessage || msg.message,
+          deliver: false,
+          idempotencyKey: msg.idempotencyKey ?? randomUUID(),
+        };
+        if (typeof msg.cwd === 'string' && msg.cwd.trim()) {
+          chatSendParams.cwd = msg.cwd.trim();
+        }
+        if (msg.metadata && typeof msg.metadata === 'object' && !Array.isArray(msg.metadata)) {
+          chatSendParams.metadata = msg.metadata;
+        }
         gatewayWs.send(JSON.stringify({
           type: 'req',
           id: reqId,
           method: 'chat.send',
-          params: {
-            sessionKey: gatewaySessionKey ?? msg.sessionKey,
-            message: fullMessage || msg.message,
-            deliver: false,
-            idempotencyKey: msg.idempotencyKey ?? randomUUID(),
-          },
+          params: chatSendParams,
         }));
         return;
       }
