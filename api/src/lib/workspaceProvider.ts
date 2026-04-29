@@ -416,6 +416,8 @@ interface CustomFileEntry {
 }
 
 interface CustomTreeResponse {
+  active_repo_root?: string;
+  repo_root?: string;
   workspace_root?: string;
   root?: string;
   files?: CustomFileEntry[];
@@ -424,11 +426,15 @@ interface CustomTreeResponse {
 
 function normalizeRemoteTreeResponse(data: unknown): { root: string; children: TreeNode[] } {
   const payload = (data && typeof data === 'object' ? data : {}) as CustomTreeResponse;
-  const root = typeof payload.workspace_root === 'string'
-    ? payload.workspace_root
-    : typeof payload.root === 'string'
-      ? payload.root
-      : '/workspace';
+  const root = typeof payload.active_repo_root === 'string'
+    ? payload.active_repo_root
+    : typeof payload.repo_root === 'string'
+      ? payload.repo_root
+      : typeof payload.workspace_root === 'string'
+        ? payload.workspace_root
+        : typeof payload.root === 'string'
+          ? payload.root
+          : '/workspace';
 
   if (Array.isArray(payload.children)) {
     return { root, children: payload.children as TreeNode[] };
