@@ -448,7 +448,8 @@ The base URL is derived from `runtime_config.baseUrl`.
 
 Local agents have workspace boundaries enforced via `workspaceBoundary.ts`:
 - `safePath()` prevents path traversal
-- `ATLAS_WORKSPACE_ROOT` env var tells the agent process its boundary
+- `ATLAS_WORKSPACE_ROOT` env var tells the agent process its broader allowed workspace boundary
+- `ATLAS_ACTIVE_REPO_ROOT` env var tells the agent process the authoritative repo root for the current dispatched run
 - Violations are logged to `boundary_violations` table
 
 Remote agents rely on the remote platform's own access controls — Atlas does

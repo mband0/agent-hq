@@ -241,8 +241,10 @@ export class ClaudeCodeRuntime implements AgentRuntime {
             ATLAS_CALLBACK_START: `${baseUrl}/api/v1/instances/${instanceId}/start`,
             ATLAS_CALLBACK_CHECKIN: `${baseUrl}/api/v1/instances/${instanceId}/check-in`,
             ATLAS_CALLBACK_COMPLETE: `${baseUrl}/api/v1/instances/${instanceId}/complete`,
-            // Workspace boundary: agent runtime uses this to validate file operation paths
-            ...(effectiveCwd ? { ATLAS_WORKSPACE_ROOT: effectiveCwd } : {}),
+            // Workspace boundary remains the broader allowed container root when present.
+            ...(workspaceRoot ? { ATLAS_WORKSPACE_ROOT: workspaceRoot } : effectiveCwd ? { ATLAS_WORKSPACE_ROOT: effectiveCwd } : {}),
+            // Active repo root is the authoritative repo cwd for this dispatched run.
+            ...(effectiveCwd ? { ATLAS_ACTIVE_REPO_ROOT: effectiveCwd } : {}),
           } as Record<string, string>,
         },
       })) {
