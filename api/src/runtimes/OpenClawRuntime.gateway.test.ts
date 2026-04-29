@@ -52,21 +52,7 @@ jest.mock('ws', () => {
         delete response.payload;
         response.error = { code: 'INVALID_REQUEST', message: 'bad runtime config' };
       } else if (frame.method === 'chat.send') {
-        const metadata = frame.params.metadata as Record<string, unknown> | undefined;
-        if (
-          typeof frame.params.cwd === 'string' &&
-          typeof metadata?.activeRepoRoot === 'string' &&
-          frame.params.cwd !== metadata.activeRepoRoot
-        ) {
-          delete response.payload;
-          response.error = { code: 'INVALID_REQUEST', message: 'cwd must match activeRepoRoot' };
-        } else {
-          response.payload = {
-            runId: 'run-123',
-            cwd: frame.params.cwd,
-            metadata: frame.params.metadata,
-          };
-        }
+        response.payload = { runId: 'run-123' };
       }
 
       setImmediate(() => {
@@ -159,6 +145,8 @@ describe('OpenClawRuntime gateway dispatch', () => {
     expect(send?.params).not.toHaveProperty('model');
     expect(send?.params).not.toHaveProperty('thinking');
     expect(send?.params).not.toHaveProperty('thinkingLevel');
+    expect(send?.params).not.toHaveProperty('cwd');
+    expect(send?.params).not.toHaveProperty('metadata');
   });
 
   it('treats adaptive thinking as the OpenClaw default and omits thinkingLevel', async () => {
@@ -195,14 +183,20 @@ describe('OpenClawRuntime gateway dispatch', () => {
       message: 'Implement task',
     }));
     expect(send?.params).not.toHaveProperty('model');
+    expect(send?.params).not.toHaveProperty('cwd');
+    expect(send?.params).not.toHaveProperty('metadata');
   });
 
-  it('passes the task worktree repo root as chat cwd and records both path roots in metadata', async () => {
+  it('adds active repo context to the initial message without chat.send cwd metadata', async () => {
     const runtime = new OpenClawRuntime();
 
     const result = await runtime.dispatch(dispatchParams({
       workspaceRoot: '/Users/nordini/.openclaw/workspace-agent-hq-backend',
       activeRepoRoot: '/Users/nordini/.openclaw/workspace-agent-hq-backend/task-375',
+      repoAccessMode: 'worktree',
+      repoSource: 'worktree:/Users/nordini/agent-hq',
+      repoWorkspacePath: '/Users/nordini/.openclaw/workspace-agent-hq-backend/task-375',
+      repoBranch: 'prism-frontend/task-386-bug-atlas-chat-panel-opens-with-floating',
       pathMetadata: {
         pathMode: 'worktree',
         repoRootSource: 'worktree',
@@ -215,27 +209,34 @@ describe('OpenClawRuntime gateway dispatch', () => {
     expect(result).toEqual({ runId: 'run-123' });
 
     const send = mockSentRequests.find((request) => request.method === 'chat.send');
+    expect(send).toBeDefined();
     expect(send?.params).toEqual(expect.objectContaining({
       sessionKey: 'agent:cinder-backend:hook:atlas:jobrun:383',
-      message: 'Implement task',
-      cwd: '/Users/nordini/.openclaw/workspace-agent-hq-backend/task-375',
-      metadata: {
-        activeRepoRoot: '/Users/nordini/.openclaw/workspace-agent-hq-backend/task-375',
-        workspaceRoot: '/Users/nordini/.openclaw/workspace-agent-hq-backend',
-        pathMode: 'worktree',
-        repoRootSource: 'worktree',
-        workspaceRootSource: 'workspace',
-        worktreeRoot: '/Users/nordini/.openclaw/workspace-agent-hq-backend/task-375',
-        runtimeConfigWorkingDirectory: '/Users/nordini/.openclaw/workspace-agent-hq-backend',
-      },
+      timeoutMs: 900_000,
     }));
+    expect(send?.params).not.toHaveProperty('cwd');
+    expect(send?.params).not.toHaveProperty('metadata');
+
+    const message = String(send?.params.message);
+    expect(message).toContain('Implement task');
+    expect(message).toContain('## Active Repo Context');
+    expect(message).toContain('Use this path as the current working directory for repo, file, and git operations:');
+    expect(message).toContain('/Users/nordini/.openclaw/workspace-agent-hq-backend/task-375');
+    expect(message).toContain('Repo access mode: worktree');
+    expect(message).toContain('Path mode: worktree');
+    expect(message).toContain('Repo source: worktree:/Users/nordini/agent-hq');
+    expect(message).toContain('Prepared repo workspace: /Users/nordini/.openclaw/workspace-agent-hq-backend/task-375');
+    expect(message).toContain('Branch: prism-frontend/task-386-bug-atlas-chat-panel-opens-with-floating');
+    expect(message).toContain('Parent workspace root: /Users/nordini/.openclaw/workspace-agent-hq-backend');
+    expect(message).toContain('Repo root source: worktree');
+    expect(message).toContain('Workspace root source: workspace');
 
     expect(logSpy).toHaveBeenCalledWith(
       '[OpenClawRuntime] dispatch path resolution: sessionKey=agent:cinder-backend:hook:atlas:jobrun:383 mode=worktree cwd=/Users/nordini/.openclaw/workspace-agent-hq-backend/task-375 activeRepoRoot=/Users/nordini/.openclaw/workspace-agent-hq-backend/task-375 workspaceRoot=/Users/nordini/.openclaw/workspace-agent-hq-backend worktreeRoot=/Users/nordini/.openclaw/workspace-agent-hq-backend/task-375 runtimeConfigWorkingDirectory=/Users/nordini/.openclaw/workspace-agent-hq-backend repoRootSource=worktree workspaceRootSource=workspace',
     );
   });
 
-  it('keeps chat cwd on activeRepoRoot even when workspaceRoot points at the parent workspace', async () => {
+  it('uses activeRepoRoot in prompt context when workspaceRoot points at the parent workspace', async () => {
     const runtime = new OpenClawRuntime();
 
     await runtime.dispatch(dispatchParams({
@@ -251,21 +252,17 @@ describe('OpenClawRuntime gateway dispatch', () => {
     }));
 
     const send = mockSentRequests.find((request) => request.method === 'chat.send');
-    expect(send?.params).toEqual(expect.objectContaining({
-      cwd: '/parent/workspace/task-375',
-      metadata: {
-        activeRepoRoot: '/parent/workspace/task-375',
-        workspaceRoot: '/parent/workspace',
-        pathMode: 'worktree',
-        repoRootSource: 'worktree',
-        workspaceRootSource: 'workspace',
-        worktreeRoot: '/parent/workspace/task-375',
-        runtimeConfigWorkingDirectory: '/parent/workspace',
-      },
-    }));
+    expect(send).toBeDefined();
+    expect(send?.params).not.toHaveProperty('cwd');
+    expect(send?.params).not.toHaveProperty('metadata');
+
+    const message = String(send?.params.message);
+    expect(message).toContain('Use this path as the current working directory for repo, file, and git operations:\n/parent/workspace/task-375');
+    expect(message).toContain('Active repo root: /parent/workspace/task-375');
+    expect(message).toContain('Parent workspace root: /parent/workspace');
   });
 
-  it('falls back to workspaceRoot as chat cwd when no activeRepoRoot is provided', async () => {
+  it('falls back to workspaceRoot in prompt context when no activeRepoRoot is provided', async () => {
     const runtime = new OpenClawRuntime();
 
     await runtime.dispatch(dispatchParams({
@@ -274,17 +271,28 @@ describe('OpenClawRuntime gateway dispatch', () => {
     }));
 
     const send = mockSentRequests.find((request) => request.method === 'chat.send');
+    expect(send).toBeDefined();
+    expect(send?.params).not.toHaveProperty('cwd');
+    expect(send?.params).not.toHaveProperty('metadata');
+
+    const message = String(send?.params.message);
+    expect(message).toContain('Use this path as the current working directory for repo, file, and git operations:\n/parent/workspace');
+    expect(message).toContain('Path mode: workspace-root');
+    expect(message).toContain('Parent workspace root: /parent/workspace');
+  });
+
+  it('does not add repo context when no repo roots are provided', async () => {
+    const runtime = new OpenClawRuntime();
+
+    await runtime.dispatch(dispatchParams());
+
+    const send = mockSentRequests.find((request) => request.method === 'chat.send');
+    expect(send).toBeDefined();
     expect(send?.params).toEqual(expect.objectContaining({
-      cwd: '/parent/workspace',
-      metadata: {
-        activeRepoRoot: null,
-        workspaceRoot: '/parent/workspace',
-        pathMode: null,
-        repoRootSource: null,
-        workspaceRootSource: null,
-        worktreeRoot: null,
-        runtimeConfigWorkingDirectory: null,
-      },
+      message: 'Implement task',
     }));
+    expect(send?.params).not.toHaveProperty('cwd');
+    expect(send?.params).not.toHaveProperty('metadata');
+    expect(String(send?.params.message)).not.toContain('## Active Repo Context');
   });
 });
