@@ -1316,10 +1316,11 @@ export class OpenClawRuntime implements AgentRuntime {
 
     const activeRepoRoot = params.activeRepoRoot ?? null;
     const workspaceRoot = params.workspaceRoot ?? null;
+    const pathMetadata = params.pathMetadata ?? null;
     if (activeRepoRoot || workspaceRoot) {
-      const pathMode = activeRepoRoot ? 'active-repo-root' : 'workspace-root';
+      const pathMode = pathMetadata?.pathMode ?? (activeRepoRoot ? 'active-repo-root' : 'workspace-root');
       console.log(
-        `[OpenClawRuntime] dispatch path resolution: sessionKey=${routedSessionKey} mode=${pathMode} cwd=${activeRepoRoot ?? workspaceRoot ?? 'null'} activeRepoRoot=${activeRepoRoot ?? 'null'} workspaceRoot=${workspaceRoot ?? 'null'}`,
+        `[OpenClawRuntime] dispatch path resolution: sessionKey=${routedSessionKey} mode=${pathMode} cwd=${activeRepoRoot ?? workspaceRoot ?? 'null'} activeRepoRoot=${activeRepoRoot ?? 'null'} workspaceRoot=${workspaceRoot ?? 'null'} worktreeRoot=${pathMetadata?.worktreeRoot ?? 'null'} runtimeConfigWorkingDirectory=${pathMetadata?.runtimeConfigWorkingDirectory ?? 'null'} repoRootSource=${pathMetadata?.repoRootSource ?? 'unknown'} workspaceRootSource=${pathMetadata?.workspaceRootSource ?? 'unknown'}`,
       );
     }
 
@@ -1333,6 +1334,11 @@ export class OpenClawRuntime implements AgentRuntime {
         ? {
             activeRepoRoot,
             workspaceRoot,
+            pathMode: pathMetadata?.pathMode ?? null,
+            repoRootSource: pathMetadata?.repoRootSource ?? null,
+            workspaceRootSource: pathMetadata?.workspaceRootSource ?? null,
+            worktreeRoot: pathMetadata?.worktreeRoot ?? null,
+            runtimeConfigWorkingDirectory: pathMetadata?.runtimeConfigWorkingDirectory ?? null,
           }
         : null,
     });

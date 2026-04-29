@@ -199,11 +199,16 @@ describe('OpenClawRuntime gateway dispatch', () => {
       metadata: {
         activeRepoRoot: '/Users/nordini/.openclaw/workspace-agent-hq-backend/task-375',
         workspaceRoot: '/Users/nordini/.openclaw/workspace-agent-hq-backend',
+        pathMode: null,
+        repoRootSource: null,
+        workspaceRootSource: null,
+        worktreeRoot: null,
+        runtimeConfigWorkingDirectory: null,
       },
     }));
 
     expect(logSpy).toHaveBeenCalledWith(
-      '[OpenClawRuntime] dispatch path resolution: sessionKey=agent:cinder-backend:hook:atlas:jobrun:383 mode=active-repo-root cwd=/Users/nordini/.openclaw/workspace-agent-hq-backend/task-375 activeRepoRoot=/Users/nordini/.openclaw/workspace-agent-hq-backend/task-375 workspaceRoot=/Users/nordini/.openclaw/workspace-agent-hq-backend',
+      '[OpenClawRuntime] dispatch path resolution: sessionKey=agent:cinder-backend:hook:atlas:jobrun:383 mode=active-repo-root cwd=/Users/nordini/.openclaw/workspace-agent-hq-backend/task-375 activeRepoRoot=/Users/nordini/.openclaw/workspace-agent-hq-backend/task-375 workspaceRoot=/Users/nordini/.openclaw/workspace-agent-hq-backend worktreeRoot=null runtimeConfigWorkingDirectory=null repoRootSource=unknown workspaceRootSource=unknown',
     );
   });
 
@@ -221,6 +226,11 @@ describe('OpenClawRuntime gateway dispatch', () => {
       metadata: {
         activeRepoRoot: '/parent/workspace/task-375',
         workspaceRoot: '/parent/workspace',
+        pathMode: null,
+        repoRootSource: null,
+        workspaceRootSource: null,
+        worktreeRoot: null,
+        runtimeConfigWorkingDirectory: null,
       },
     }));
   });
@@ -239,6 +249,11 @@ describe('OpenClawRuntime gateway dispatch', () => {
       metadata: {
         activeRepoRoot: null,
         workspaceRoot: '/parent/workspace',
+        pathMode: null,
+        repoRootSource: null,
+        workspaceRootSource: null,
+        worktreeRoot: null,
+        runtimeConfigWorkingDirectory: null,
       },
     }));
   });

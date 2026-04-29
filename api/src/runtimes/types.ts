@@ -41,6 +41,18 @@ export interface DispatchParams extends RuntimeEventCallbacks {
    */
   activeRepoRoot?: string | null;
   /**
+   * Optional dispatch metadata describing how the active repo root and workspace
+   * boundary were resolved. This is for observability only and must not be used
+   * to override activeRepoRoot/workspaceRoot semantics.
+   */
+  pathMetadata?: {
+    pathMode?: 'worktree' | 'runtime-config' | 'workspace';
+    repoRootSource?: 'worktree' | 'runtime-config' | 'workspace' | 'none';
+    workspaceRootSource?: 'workspace' | 'active-repo-root' | 'none';
+    worktreeRoot?: string | null;
+    runtimeConfigWorkingDirectory?: string | null;
+  } | null;
+  /**
    * Legacy container hook metadata.
    * OpenClawRuntime ignores hook transport and dispatches via the runtime WS path.
    * Kept here for compatibility with existing dispatcher/job records.

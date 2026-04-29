@@ -102,6 +102,8 @@ function resolveDispatchPathContext(params: {
   worktreeRoot: string | null;
   runtimeConfigWorkingDirectory: string | null;
   pathMode: 'worktree' | 'runtime-config' | 'workspace';
+  repoRootSource: 'worktree' | 'runtime-config' | 'workspace' | 'none';
+  workspaceContainerSource: 'workspace' | 'active-repo-root' | 'none';
 } {
   const worktreeRoot = normalizePathOrNull(params.worktreePath);
   const runtimeConfigWorkingDirectory = normalizePathOrNull(params.runtimeConfigWorkingDirectory);
@@ -113,12 +115,26 @@ function resolveDispatchPathContext(params: {
     : runtimeConfigWorkingDirectory
       ? 'runtime-config'
       : 'workspace';
+  const repoRootSource: 'worktree' | 'runtime-config' | 'workspace' | 'none' = worktreeRoot
+    ? 'worktree'
+    : runtimeConfigWorkingDirectory
+      ? 'runtime-config'
+      : workspacePath
+        ? 'workspace'
+        : 'none';
+  const workspaceContainerSource: 'workspace' | 'active-repo-root' | 'none' = workspacePath
+    ? 'workspace'
+    : activeRepoRoot
+      ? 'active-repo-root'
+      : 'none';
   return {
     activeRepoRoot,
     workspaceContainerRoot,
     worktreeRoot,
     runtimeConfigWorkingDirectory,
     pathMode,
+    repoRootSource,
+    workspaceContainerSource,
   };
 }
 
@@ -1122,10 +1138,12 @@ async function fireAgentRun(
     worktreeRoot,
     runtimeConfigWorkingDirectory,
     pathMode,
+    repoRootSource,
+    workspaceContainerSource,
   } = pathContext;
 
   console.log(
-    `[dispatcher] Instance #${instanceId} path resolution: mode=${pathMode} activeRepoRoot=${activeRepoRoot ?? 'null'} workspaceRoot=${workspaceContainerRoot ?? 'null'} worktreePath=${worktreeRoot ?? 'null'} runtimeConfigWorkingDirectory=${runtimeConfigWorkingDirectory ?? 'null'}`
+    `[dispatcher] Instance #${instanceId} path resolution: mode=${pathMode} activeRepoRoot=${activeRepoRoot ?? 'null'} workspaceRoot=${workspaceContainerRoot ?? 'null'} worktreePath=${worktreeRoot ?? 'null'} runtimeConfigWorkingDirectory=${runtimeConfigWorkingDirectory ?? 'null'} repoRootSource=${repoRootSource} workspaceRootSource=${workspaceContainerSource}`
   );
 
   // Store the deterministic session key on the instance BEFORE dispatch
@@ -1290,7 +1308,7 @@ async function fireAgentRun(
     const dispatchRuntimeConfig = buildDispatchRuntimeConfig(job.runtime_config, runtimeConfigOverride);
 
     console.log(
-      `[dispatcher] Instance #${instanceId} runtime config handoff: mode=${pathMode} workingDirectory=${typeof dispatchRuntimeConfig.workingDirectory === 'string' ? dispatchRuntimeConfig.workingDirectory : 'null'} activeRepoRoot=${activeRepoRoot ?? 'null'} workspaceRoot=${workspaceContainerRoot ?? 'null'} worktreePath=${worktreeRoot ?? 'null'} runtimeConfigWorkingDirectory=${runtimeConfigWorkingDirectory ?? 'null'}`
+      `[dispatcher] Instance #${instanceId} runtime config handoff: mode=${pathMode} workingDirectory=${typeof dispatchRuntimeConfig.workingDirectory === 'string' ? dispatchRuntimeConfig.workingDirectory : 'null'} activeRepoRoot=${activeRepoRoot ?? 'null'} workspaceRoot=${workspaceContainerRoot ?? 'null'} worktreePath=${worktreeRoot ?? 'null'} runtimeConfigWorkingDirectory=${runtimeConfigWorkingDirectory ?? 'null'} repoRootSource=${repoRootSource} workspaceRootSource=${workspaceContainerSource}`
     );
 
     const { runId } = await runtime.dispatch({
@@ -1309,6 +1327,13 @@ async function fireAgentRun(
       // separate from the authoritative active repo root for this dispatched run.
       workspaceRoot: workspaceContainerRoot,
       activeRepoRoot,
+      pathMetadata: {
+        pathMode,
+        repoRootSource,
+        workspaceRootSource: workspaceContainerSource,
+        worktreeRoot,
+        runtimeConfigWorkingDirectory,
+      },
       runtimeConfig: dispatchRuntimeConfig,
       hooksUrl: job.agent_hooks_url ?? null,
       hooksAuthHeader: job.agent_hooks_auth_header ?? null,

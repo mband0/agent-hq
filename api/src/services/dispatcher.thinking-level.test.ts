@@ -394,6 +394,13 @@ describe('runDispatcher thinking-level routing', () => {
     expect(dispatchMock).toHaveBeenCalledWith(expect.objectContaining({
       workspaceRoot: '/parent/workspace',
       activeRepoRoot: '/Users/test/workspaces/task-375',
+      pathMetadata: {
+        pathMode: 'worktree',
+        repoRootSource: 'worktree',
+        workspaceRootSource: 'workspace',
+        worktreeRoot: '/Users/test/workspaces/task-375',
+        runtimeConfigWorkingDirectory: '/parent/workspace-root',
+      },
       runtimeConfig: expect.objectContaining({ workingDirectory: '/Users/test/workspaces/task-375' }),
       message: expect.stringContaining('## Active Workspace Context'),
     }));
@@ -420,8 +427,8 @@ describe('runDispatcher thinking-level routing', () => {
 
     const loggedMessages = logSpy.mock.calls.map(([message]) => String(message));
     expect(loggedMessages).toEqual(expect.arrayContaining([
-      '[dispatcher] Instance #1 path resolution: mode=worktree activeRepoRoot=/Users/test/workspaces/task-375 workspaceRoot=/parent/workspace worktreePath=/Users/test/workspaces/task-375 runtimeConfigWorkingDirectory=/parent/workspace-root',
-      '[dispatcher] Instance #1 runtime config handoff: mode=worktree workingDirectory=/Users/test/workspaces/task-375 activeRepoRoot=/Users/test/workspaces/task-375 workspaceRoot=/parent/workspace worktreePath=/Users/test/workspaces/task-375 runtimeConfigWorkingDirectory=/parent/workspace-root',
+      '[dispatcher] Instance #1 path resolution: mode=worktree activeRepoRoot=/Users/test/workspaces/task-375 workspaceRoot=/parent/workspace worktreePath=/Users/test/workspaces/task-375 runtimeConfigWorkingDirectory=/parent/workspace-root repoRootSource=worktree workspaceRootSource=workspace',
+      '[dispatcher] Instance #1 runtime config handoff: mode=worktree workingDirectory=/Users/test/workspaces/task-375 activeRepoRoot=/Users/test/workspaces/task-375 workspaceRoot=/parent/workspace worktreePath=/Users/test/workspaces/task-375 runtimeConfigWorkingDirectory=/parent/workspace-root repoRootSource=worktree workspaceRootSource=workspace',
     ]));
 
     logSpy.mockRestore();
@@ -595,6 +602,13 @@ describe('runDispatcher thinking-level routing', () => {
       expect(dispatchMock).toHaveBeenCalledWith(expect.objectContaining({
         workspaceRoot: workspaceRoot,
         activeRepoRoot: worktreeRoot,
+        pathMetadata: {
+          pathMode: 'worktree',
+          repoRootSource: 'worktree',
+          workspaceRootSource: 'workspace',
+          worktreeRoot: worktreeRoot,
+          runtimeConfigWorkingDirectory: '/stale/root',
+        },
         runtimeConfig: expect.objectContaining({ workingDirectory: worktreeRoot }),
       }));
     } finally {
@@ -738,6 +752,13 @@ describe('runDispatcher thinking-level routing', () => {
     expect(dispatchMock).toHaveBeenCalledWith(expect.objectContaining({
       workspaceRoot: '/parent/workspace',
       activeRepoRoot: '/parent/workspace/task-375',
+      pathMetadata: {
+        pathMode: 'worktree',
+        repoRootSource: 'worktree',
+        workspaceRootSource: 'workspace',
+        worktreeRoot: '/parent/workspace/task-375',
+        runtimeConfigWorkingDirectory: '/parent/workspace',
+      },
       runtimeConfig: expect.objectContaining({
         workingDirectory: '/parent/workspace/task-375',
       }),
