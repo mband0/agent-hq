@@ -182,4 +182,24 @@ describe('OpenClawRuntime gateway dispatch', () => {
     }));
     expect(send?.params).not.toHaveProperty('model');
   });
+
+  it('passes the task worktree repo root as chat cwd and records both path roots in metadata', async () => {
+    const runtime = new OpenClawRuntime();
+
+    await runtime.dispatch(dispatchParams({
+      workspaceRoot: '/Users/nordini/.openclaw/workspace-agent-hq-backend',
+      activeRepoRoot: '/Users/nordini/.openclaw/workspace-agent-hq-backend/task-375',
+    }));
+
+    const send = mockSentRequests.find((request) => request.method === 'chat.send');
+    expect(send?.params).toEqual(expect.objectContaining({
+      sessionKey: 'agent:cinder-backend:hook:atlas:jobrun:383',
+      message: 'Implement task',
+      cwd: '/Users/nordini/.openclaw/workspace-agent-hq-backend/task-375',
+      metadata: {
+        activeRepoRoot: '/Users/nordini/.openclaw/workspace-agent-hq-backend/task-375',
+        workspaceRoot: '/Users/nordini/.openclaw/workspace-agent-hq-backend',
+      },
+    }));
+  });
 });
