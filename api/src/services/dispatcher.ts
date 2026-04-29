@@ -20,6 +20,7 @@ import { notifyTaskStatusChange } from '../lib/taskNotifications';
 import { writeTaskStatusChange } from '../lib/taskHistory';
 import { resolveRuntime } from '../runtimes';
 import { createTaskWorktree } from './worktreeManager';
+import { ensureTaskClone, type RepoAccessMode } from './repoWorkspaceManager';
 import {
   OPENCLAW_CONFIG_PATH as OPENCLAW_CONFIG_PATH_DISPATCHER,
   OPENCLAW_GATEWAY_URL,
@@ -142,8 +143,12 @@ interface JobRow {
   skill_names?: string | null;
   /** Preferred AI provider for model routing (e.g. 'anthropic', 'openai'). */
   preferred_provider?: string | null;
-  /** Canonical git repo path for worktree isolation (task #365). */
+  /** Canonical local git repo path for worktree isolation. */
   repo_path?: string | null;
+  /** Remote git URL for clone-backed task workspaces. */
+  repo_url?: string | null;
+  /** Explicit repo access mode for dispatch/runtime. */
+  repo_access_mode?: RepoAccessMode | null;
   /** Dedicated macOS OS user for filesystem isolation (task #377). */
   os_user?: string | null;
 }
@@ -455,7 +460,7 @@ function getMatchingRoutingRules(db: Database.Database, task: CandidateTask): Ro
              a.session_key as agent_session_key, a.name as agent_name, a.model as agent_model,
              a.openclaw_agent_id, a.runtime_type, a.runtime_config, a.hooks_url as agent_hooks_url,
              a.hooks_auth_header as agent_hooks_auth_header,
-             a.workspace_path, a.preferred_provider, a.repo_path, a.os_user
+             a.workspace_path, a.preferred_provider, a.repo_path, a.repo_url, a.repo_access_mode, a.os_user
       FROM ${tableName} rr
       JOIN agents a ON a.id = rr.agent_id AND a.enabled = 1
       WHERE ${scopeCondition}
@@ -483,7 +488,7 @@ function getMatchingRoutingRules(db: Database.Database, task: CandidateTask): Ro
                a.session_key as agent_session_key, a.name as agent_name, a.model as agent_model,
                a.openclaw_agent_id, a.runtime_type, a.runtime_config, a.hooks_url as agent_hooks_url,
                a.hooks_auth_header as agent_hooks_auth_header,
-               a.workspace_path, a.preferred_provider, a.repo_path, a.os_user
+               a.workspace_path, a.preferred_provider, a.repo_path, a.repo_url, a.repo_access_mode, a.os_user
         FROM sprint_task_routing_rules rr
         JOIN agents a ON a.id = rr.agent_id AND a.enabled = 1
         WHERE rr.sprint_id = ?
@@ -1027,6 +1032,12 @@ async function fireAgentRun(
   taskId?: number | null,
   storyPoints?: number | null,
   worktreePath?: string | null,
+  repoContext?: {
+    repoAccessMode: RepoAccessMode | null;
+    repoSource: string | null;
+    repoWorkspacePath: string | null;
+    repoBranch: string | null;
+  },
 ): Promise<void> {
   const timeoutSec = job.timeout_seconds || 900;
   const sessionKey = buildSessionKey(instanceId);
@@ -1213,15 +1224,19 @@ async function fireAgentRun(
       instanceId,
       taskId: taskId ?? null,
       db,
+      repoAccessMode: repoContext?.repoAccessMode ?? null,
+      repoSource: repoContext?.repoSource ?? null,
+      repoWorkspacePath: repoContext?.repoWorkspacePath ?? null,
+      repoBranch: repoContext?.repoBranch ?? null,
       // Workspace boundary (task #364): pass the agent's workspace root so the
       // runtime can set cwd and expose ATLAS_WORKSPACE_ROOT to the agent process.
-      workspaceRoot: job.workspace_path ?? null,
+      workspaceRoot: repoContext?.repoWorkspacePath ?? job.workspace_path ?? null,
       runtimeConfig: Object.keys(runtimeConfigOverride).length > 0
-        ? { ...(typeof job.runtime_config === 'string' ? JSON.parse(job.runtime_config) : (job.runtime_config ?? {})), ...runtimeConfigOverride }
+        ? { ...(typeof job.runtime_config === 'string' ? JSON.parse(job.runtime_config) as Record<string, unknown> : (job.runtime_config ?? {})), ...runtimeConfigOverride }
         : job.runtime_config,
       hooksUrl: job.agent_hooks_url ?? null,
       hooksAuthHeader: job.agent_hooks_auth_header ?? null,
-    } as Parameters<typeof runtime.dispatch>[0]);
+    });
 
     console.log(
       `[dispatcher] Instance #${instanceId} dispatched via ${job.runtime_type ?? 'openclaw'} runtime` +
@@ -1315,7 +1330,7 @@ async function fireAgentRun(
  * Used by both the new task-first path and the legacy per-job fallback.
  * Returns true if dispatch succeeded.
  */
-function dispatchTaskToJob(
+export function dispatchTaskToJob(
   db: Database.Database,
   job: JobRow,
   task: CandidateTask,
@@ -1335,39 +1350,73 @@ function dispatchTaskToJob(
     name: job.agent_name ?? null,
   }) ?? String(job.agent_id);
 
-  // ── Worktree isolation (task #365, #377) ─────────────────────────────────
-  // If the agent has a repo_path, create an isolated worktree for this task.
-  // The worktree becomes the agent's working directory instead of workspace_path.
-  // When os_user is set (task #377), worktrees go under /Users/<os_user>/workspaces/
-  // instead of the agent's workspace_path, ensuring per-user filesystem isolation.
-  let worktreePath: string | null = null;
-  if (job.repo_path && job.workspace_path) {
-    const basePath = job.os_user
-      ? `/Users/${job.os_user}/workspaces`
-      : job.workspace_path;
-    const wtResult = createTaskWorktree({
-      repoPath: job.repo_path,
-      basePath,
-      taskId: task.id,
-      taskTitle: task.title,
-      agentSlug,
-    });
-    if (wtResult.created || !wtResult.error) {
-      worktreePath = wtResult.worktreePath;
-      console.log(`[dispatcher] Worktree for task #${task.id}: ${worktreePath} (branch: ${wtResult.branch})`);
-    } else {
-      console.warn(`[dispatcher] Worktree creation failed for task #${task.id}: ${wtResult.error} — falling back to workspace_path`);
+  const repoAccessMode: RepoAccessMode | null = job.repo_access_mode ?? (job.repo_path ? 'worktree' : null);
+  let repoWorkspacePath: string | null = null;
+  let repoBranch: string | null = null;
+  let repoSourceDescriptor: string | null = null;
+
+  if (repoAccessMode === 'worktree') {
+    if (!job.workspace_path || !job.repo_path) {
+      const reason = `Agent repo_access_mode=worktree requires workspace_path and repo_path (workspace_path=${job.workspace_path ? 'set' : 'missing'}, repo_path=${job.repo_path ? 'set' : 'missing'})`;
+      console.warn(`[dispatcher] Blocking task #${task.id}: ${reason}`);
+      db.prepare(`UPDATE tasks SET status = 'ready', active_instance_id = NULL, updated_at = datetime('now') WHERE id = ?`).run(task.id);
+      db.prepare(`INSERT INTO task_notes (task_id, author, content) VALUES (?, ?, ?)`).run(task.id, 'Atlas HQ', `Agent check-in: Blocked\nSummary: Dispatch blocked before run start\nBlocker: ${reason}\nNext action: Configure a valid local repo_path for worktree mode or switch the agent to repo_access_mode=clone with repo_url.\nNext owner: dev`);
+      return false;
     }
+
+    const basePath = job.os_user ? `/Users/${job.os_user}/workspaces` : job.workspace_path;
+    const wtResult = createTaskWorktree({ repoPath: job.repo_path, basePath, taskId: task.id, taskTitle: task.title, agentSlug });
+    if (wtResult.error) {
+      const reason = `Worktree creation failed for task #${task.id}: ${wtResult.error}`;
+      console.warn(`[dispatcher] ${reason}`);
+      db.prepare(`UPDATE tasks SET status = 'ready', active_instance_id = NULL, updated_at = datetime('now') WHERE id = ?`).run(task.id);
+      db.prepare(`INSERT INTO task_notes (task_id, author, content) VALUES (?, ?, ?)`).run(task.id, 'Atlas HQ', `Agent check-in: Blocked\nSummary: Dispatch blocked before run start\nBlocker: ${reason}\nNext action: Fix repo_path/worktree access for this agent, then redispatch.\nNext owner: dev`);
+      return false;
+    }
+    repoWorkspacePath = wtResult.workspacePath;
+    repoBranch = wtResult.branch;
+    repoSourceDescriptor = `worktree:${job.repo_path}`;
+  } else if (repoAccessMode === 'clone') {
+    if (!job.workspace_path || !job.repo_url) {
+      const reason = `Agent repo_access_mode=clone requires workspace_path and repo_url (workspace_path=${job.workspace_path ? 'set' : 'missing'}, repo_url=${job.repo_url ? 'set' : 'missing'})`;
+      console.warn(`[dispatcher] Blocking task #${task.id}: ${reason}`);
+      db.prepare(`UPDATE tasks SET status = 'ready', active_instance_id = NULL, updated_at = datetime('now') WHERE id = ?`).run(task.id);
+      db.prepare(`INSERT INTO task_notes (task_id, author, content) VALUES (?, ?, ?)`).run(task.id, 'Atlas HQ', `Agent check-in: Blocked\nSummary: Dispatch blocked before run start\nBlocker: ${reason}\nNext action: Configure repo_url for clone mode or switch the agent back to worktree mode with repo_path.\nNext owner: dev`);
+      return false;
+    }
+
+    const cloneRoot = job.os_user ? `/Users/${job.os_user}/workspaces` : job.workspace_path;
+    const cloneResult = ensureTaskClone({ repoUrl: job.repo_url, workspaceRoot: cloneRoot, taskId: task.id, taskTitle: task.title, agentSlug });
+    if (cloneResult.error) {
+      const reason = `Clone workspace creation failed for task #${task.id}: ${cloneResult.error}`;
+      console.warn(`[dispatcher] ${reason}`);
+      db.prepare(`UPDATE tasks SET status = 'ready', active_instance_id = NULL, updated_at = datetime('now') WHERE id = ?`).run(task.id);
+      db.prepare(`INSERT INTO task_notes (task_id, author, content) VALUES (?, ?, ?)`).run(task.id, 'Atlas HQ', `Agent check-in: Blocked\nSummary: Dispatch blocked before run start\nBlocker: ${reason}\nNext action: Fix repo_url access for this agent, then redispatch.\nNext owner: dev`);
+      return false;
+    }
+    repoWorkspacePath = cloneResult.workspacePath;
+    repoBranch = cloneResult.branch;
+    repoSourceDescriptor = `clone:${job.repo_url}`;
   }
+
+  const instancePayload = {
+    mode: 'runtime-dispatch',
+    transport: 'ws.send',
+    agentSlug,
+    repoAccessMode,
+    repoSource: repoSourceDescriptor,
+    repoWorkspacePath,
+    repoBranch,
+  };
 
   const instanceResult = db.prepare(`
     INSERT INTO job_instances (agent_id, status, dispatched_at, payload_sent, task_id, worktree_path)
     VALUES (?, 'dispatched', datetime('now'), ?, ?, ?)
   `).run(
     job.agent_id,
-    JSON.stringify({ mode: 'runtime-dispatch', transport: 'ws.send', agentSlug }),
+    JSON.stringify(instancePayload),
     task.id,
-    worktreePath,
+    repoWorkspacePath,
   );
   const instanceId = instanceResult.lastInsertRowid as number;
   const sessionKey = buildSessionKey(instanceId);
@@ -1418,7 +1467,7 @@ function dispatchTaskToJob(
   // ── GitHub identity injection (task #613) ────────────────────────────────
   // Resolve and inject per-agent GitHub credentials so routed agents can
   // operate under distinct GitHub identities for PR open/approve/merge.
-  const effectiveWorkDir = worktreePath ?? job.workspace_path ?? null;
+  const effectiveWorkDir = repoWorkspacePath ?? job.workspace_path ?? null;
   const ghIdentity = resolveGitHubIdentity(db, job.agent_id);
   if (ghIdentity && effectiveWorkDir) {
     injectGitHubCredentials(effectiveWorkDir, ghIdentity.identity);
@@ -1437,7 +1486,23 @@ function dispatchTaskToJob(
     callbackBaseUrl, task.task_type, task.sprint_type, transportMode,
   ) + ghIdentityContext;
 
-  fireAgentRun(db, job, fullMessage, instanceId, agentSlug, task.status, task.id, task.story_points ?? null, worktreePath).catch((err) => {
+  fireAgentRun(
+    db,
+    job,
+    fullMessage,
+    instanceId,
+    agentSlug,
+    task.status,
+    task.id,
+    task.story_points ?? null,
+    repoWorkspacePath,
+    {
+      repoAccessMode,
+      repoSource: repoSourceDescriptor,
+      repoWorkspacePath,
+      repoBranch,
+    },
+  ).catch((err) => {
     console.error(`[dispatcher] Unhandled error in fireAgentRun for instance #${instanceId}:`, err);
   });
 
@@ -1518,6 +1583,8 @@ export function runDispatcher(db: Database.Database, projectId?: number): Dispat
           skill_names: rule.skill_names ?? null,
           preferred_provider: rule.preferred_provider ?? null,
           repo_path: rule.repo_path ?? null,
+          repo_url: rule.repo_url ?? null,
+          repo_access_mode: rule.repo_access_mode ?? null,
           os_user: rule.os_user ?? null,
         };
 
@@ -1559,7 +1626,7 @@ export function runDispatcher(db: Database.Database, projectId?: number): Dispat
            a.session_key as agent_session_key, a.name as agent_name, a.model as agent_model,
            a.runtime_type, a.runtime_config, a.hooks_url as agent_hooks_url,
            a.hooks_auth_header as agent_hooks_auth_header,
-           a.workspace_path, a.preferred_provider, a.repo_path, a.os_user
+           a.workspace_path, a.preferred_provider, a.repo_path, a.repo_url, a.repo_access_mode, a.os_user
     FROM agents a
     WHERE a.enabled = 1
   `;
@@ -1670,6 +1737,10 @@ export interface DispatchInstanceParams {
   runtimeType?: string | null;
   runtimeConfig?: unknown;
   storyPoints?: number | null;
+  repoAccessMode?: RepoAccessMode | null;
+  repoSource?: string | null;
+  repoWorkspacePath?: string | null;
+  repoBranch?: string | null;
 }
 
 /**
@@ -1688,6 +1759,19 @@ export interface DispatchInstanceParams {
 export async function dispatchInstance(params: DispatchInstanceParams): Promise<void> {
   const db = getDb();
   const now = new Date().toISOString();
+
+  let existingPayload: Record<string, unknown> = {};
+  try {
+    const row = db.prepare(`SELECT payload_sent FROM job_instances WHERE id = ?`).get(params.instanceId) as { payload_sent: string | null } | undefined;
+    if (row?.payload_sent) {
+      const parsed = JSON.parse(row.payload_sent);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        existingPayload = parsed as Record<string, unknown>;
+      }
+    }
+  } catch {
+    existingPayload = {};
+  }
 
   const runSessionKey = buildSessionKey(params.instanceId);
   const agentSlug = resolveRuntimeAgentSlug({
@@ -1711,11 +1795,27 @@ export async function dispatchInstance(params: DispatchInstanceParams): Promise<
   );
 
   // Mark as dispatched
+  const repoAccessMode = params.repoAccessMode ?? (existingPayload.repoAccessMode as 'worktree' | 'clone' | null | undefined) ?? null;
+  const repoSource = params.repoSource ?? (existingPayload.repoSource as string | null | undefined) ?? null;
+  const repoWorkspacePath = params.repoWorkspacePath ?? (existingPayload.repoWorkspacePath as string | null | undefined) ?? null;
+  const repoBranch = params.repoBranch ?? (existingPayload.repoBranch as string | null | undefined) ?? null;
+
+  const runtimeDispatchPayload = {
+    ...existingPayload,
+    mode: 'runtime-dispatch',
+    agentSlug,
+    sessionKey: runSessionKey,
+    repoAccessMode,
+    repoSource,
+    repoWorkspacePath,
+    repoBranch,
+  };
+
   db.prepare(`
     UPDATE job_instances
     SET status = 'dispatched', dispatched_at = ?, payload_sent = ?, session_key = ?
     WHERE id = ?
-  `).run(now, JSON.stringify({ mode: 'runtime-dispatch', agentSlug, sessionKey: runSessionKey }), runSessionKey, params.instanceId);
+  `).run(now, JSON.stringify(runtimeDispatchPayload), runSessionKey, params.instanceId);
 
   db.prepare(`
     INSERT INTO logs (instance_id, agent_id, job_title, level, message)
@@ -1733,6 +1833,14 @@ export async function dispatchInstance(params: DispatchInstanceParams): Promise<
   });
 
   try {
+    const runtimeConfigOverride: Record<string, unknown> = {};
+    if (repoWorkspacePath) {
+      runtimeConfigOverride.workingDirectory = repoWorkspacePath;
+    }
+    const baseRuntimeConfig = params.runtimeConfig && typeof params.runtimeConfig === 'object'
+      ? params.runtimeConfig as Record<string, unknown>
+      : {};
+
     const { runId } = await runtime.dispatch({
       message: params.message,
       agentSlug,
@@ -1744,6 +1852,14 @@ export async function dispatchInstance(params: DispatchInstanceParams): Promise<
       instanceId: params.instanceId,
       taskId: null,
       db,
+      repoAccessMode,
+      repoSource,
+      repoWorkspacePath,
+      repoBranch,
+      workspaceRoot: repoWorkspacePath,
+      runtimeConfig: Object.keys(runtimeConfigOverride).length > 0
+        ? { ...baseRuntimeConfig, ...runtimeConfigOverride }
+        : params.runtimeConfig,
       hooksUrl: params.hooksUrl,
       hooksAuthHeader: params.hooksAuthHeader,
     });

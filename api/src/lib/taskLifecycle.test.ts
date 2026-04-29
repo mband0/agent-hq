@@ -1,12 +1,18 @@
 import Database from 'better-sqlite3';
 import { cleanupTaskExecutionLinkageForStatus } from './taskLifecycle';
 import { removeTaskWorktree } from '../services/worktreeManager';
+import { removeTaskClone } from '../services/repoWorkspaceManager';
 
 jest.mock('../services/worktreeManager', () => ({
   removeTaskWorktree: jest.fn(({ worktreePath }: { worktreePath: string }) => ({ removed: true, worktreePath })),
 }));
 
+jest.mock('../services/repoWorkspaceManager', () => ({
+  removeTaskClone: jest.fn(({ workspacePath }: { workspacePath: string }) => ({ removed: true, workspacePath })),
+}));
+
 const mockedRemoveTaskWorktree = removeTaskWorktree as jest.MockedFunction<typeof removeTaskWorktree>;
+const mockedRemoveTaskClone = removeTaskClone as jest.MockedFunction<typeof removeTaskClone>;
 
 function createDb(): Database.Database {
   const db = new Database(':memory:');
@@ -15,7 +21,8 @@ function createDb(): Database.Database {
       id INTEGER PRIMARY KEY,
       name TEXT,
       job_title TEXT,
-      repo_path TEXT
+      repo_path TEXT,
+      repo_access_mode TEXT
     );
 
     CREATE TABLE tasks (
@@ -58,7 +65,7 @@ function seedLinkedTask(db: Database.Database, params: {
     worktreePath = '/tmp/workspaces/task-1',
   } = params;
 
-  db.prepare(`INSERT INTO agents (id, name, job_title, repo_path) VALUES (1, 'Agent', ?, '/repo')`).run(nextAgentTitle);
+  db.prepare(`INSERT INTO agents (id, name, job_title, repo_path, repo_access_mode) VALUES (1, 'Agent', ?, '/repo', 'worktree')`).run(nextAgentTitle);
   db.prepare(`INSERT INTO tasks (id, status, agent_id, active_instance_id) VALUES (1, ?, 1, ?)`).run(taskStatus, activeInstanceId);
   db.prepare(`
     INSERT INTO job_instances (id, agent_id, task_id, status, session_key, worktree_path)
@@ -72,6 +79,8 @@ describe('task lifecycle worktree cleanup', () => {
   beforeEach(() => {
     mockedRemoveTaskWorktree.mockClear();
     mockedRemoveTaskWorktree.mockImplementation(({ worktreePath }) => ({ removed: true, worktreePath }));
+    mockedRemoveTaskClone.mockClear();
+    mockedRemoveTaskClone.mockImplementation(({ workspacePath }) => ({ removed: true, workspacePath }));
     db = createDb();
   });
 
@@ -109,9 +118,9 @@ describe('task lifecycle worktree cleanup', () => {
     expect(task.active_instance_id).toBeNull();
   });
 
-  it('removes all known task worktrees when the task becomes done', () => {
-    db.prepare(`INSERT INTO agents (id, name, job_title, repo_path) VALUES (1, 'Agent', 'Builder', '/repo')`).run();
-    db.prepare(`INSERT INTO agents (id, name, job_title, repo_path) VALUES (2, 'Agent 2', 'Builder', NULL)`).run();
+  it('removes all known repo task workspaces when the task becomes done', () => {
+    db.prepare(`INSERT INTO agents (id, name, job_title, repo_path, repo_access_mode) VALUES (1, 'Agent', 'Builder', '/repo', 'worktree')`).run();
+    db.prepare(`INSERT INTO agents (id, name, job_title, repo_path, repo_access_mode) VALUES (2, 'Agent 2', 'Builder', NULL, 'clone')`).run();
     db.prepare(`INSERT INTO tasks (id, status, agent_id, active_instance_id) VALUES (1, 'deployed', 1, NULL)`).run();
     db.prepare(`
       INSERT INTO job_instances (id, agent_id, task_id, status, worktree_path)
@@ -129,6 +138,17 @@ describe('task lifecycle worktree cleanup', () => {
     expect(mockedRemoveTaskWorktree).toHaveBeenCalledWith({ repoPath: '/repo', worktreePath: '/tmp/workspaces/task-1' });
     expect(mockedRemoveTaskWorktree).toHaveBeenCalledWith({ repoPath: '/repo', worktreePath: '/tmp/workspaces/task-1-retry' });
     expect(mockedRemoveTaskWorktree).toHaveBeenCalledWith({ repoPath: '/repo', worktreePath: '/tmp/workspaces/atlas-hq-task-1' });
+    expect(mockedRemoveTaskClone).toHaveBeenCalledWith({ workspacePath: '/tmp/workspaces/no-repo' });
+  });
+
+  it('removes clone-backed task workspaces with removeTaskClone', () => {
+    db.prepare(`INSERT INTO agents (id, name, job_title, repo_path, repo_access_mode) VALUES (3, 'Clone Agent', 'Builder', NULL, 'clone')`).run();
+    db.prepare(`INSERT INTO tasks (id, status, agent_id, active_instance_id) VALUES (77, 'done', 3, NULL)`).run();
+    db.prepare(`INSERT INTO job_instances (id, agent_id, task_id, status, worktree_path) VALUES (77, 3, 77, 'done', '/tmp/task-77')`).run();
+
+    cleanupTaskExecutionLinkageForStatus(db, 77, 'done');
+
+    expect(mockedRemoveTaskClone).toHaveBeenCalledWith({ workspacePath: '/tmp/task-77' });
   });
 
   it('keeps repeated done cleanup calls harmless', () => {

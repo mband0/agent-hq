@@ -29,11 +29,12 @@ const CONNECTABLE_PROVIDER_SLUGS = ['anthropic', 'openai', 'openai-codex', 'goog
 const AGENT_MODEL_PROVIDER_PREFIX: Record<string, string> = {
   'anthropic/claude-sonnet-4-6': 'anthropic',
   'anthropic/claude-opus-4-6': 'anthropic',
+  'openai-codex/gpt-5.5': 'openai-codex',
   'openai-codex/gpt-5.4': 'openai-codex',
 };
 const DEFAULT_AGENT_MODEL_BY_PROVIDER: Record<string, string> = {
   anthropic: 'anthropic/claude-sonnet-4-6',
-  'openai-codex': 'openai-codex/gpt-5.4',
+  'openai-codex': 'openai-codex/gpt-5.5',
 };
 
 function makeStableSkillId(name: string): number {
@@ -175,6 +176,8 @@ interface ProvisionFullRequest {
   session_key?: string;
   workspace_path?: string;
   repo_path?: string | null;
+  repo_url?: string | null;
+  repo_access_mode?: 'worktree' | 'clone' | null;
   status?: string;
   runtime_type?: string;
   runtime_config?: ClaudeCodeRuntimeConfig | null;
@@ -219,6 +222,8 @@ interface AgentInsertParams {
   sessionKey: string;
   workspacePath: string;
   repoPath: string | null;
+  repoUrl: string | null;
+  repoAccessMode: 'worktree' | 'clone' | null;
   status: string;
   openclawAgentId: string | null;
   runtimeType: string;
@@ -401,18 +406,20 @@ function ensureOpenClawRegistration(params: {
 function insertProvisionedAgent(db: ReturnType<typeof getDb>, params: AgentInsertParams): number {
   const result = db.prepare(`
     INSERT INTO agents (
-      name, role, session_key, workspace_path, repo_path, status, openclaw_agent_id,
+      name, role, session_key, workspace_path, repo_path, repo_url, repo_access_mode, status, openclaw_agent_id,
       runtime_type, runtime_config, project_id, preferred_provider, model, system_role,
       hooks_url, hooks_auth_header, os_user, enabled, github_identity_id, job_title, schedule,
       pre_instructions, skill_names, timeout_seconds, startup_grace_seconds, heartbeat_stale_seconds,
       stall_threshold_min, max_retries, sort_rules
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     params.name,
     params.role,
     params.sessionKey,
     params.workspacePath,
     params.repoPath,
+    params.repoUrl ?? null,
+    params.repoAccessMode ?? (params.repoPath ? 'worktree' : null),
     params.status,
     params.openclawAgentId,
     params.runtimeType,
@@ -575,7 +582,25 @@ router.post('/provision-full', (req: Request, res: Response) => {
       systemRole: resolvedSystemRole,
     });
     const workspacePath = body.workspace_path || buildDefaultWorkspacePath(runtimeSlug);
-    const repoPath = body.repo_path === undefined ? workspacePath : (body.repo_path || null);
+    const repoPath = body.repo_path === undefined ? null : (body.repo_path || null);
+    const repoUrl = body.repo_url === undefined ? null : (body.repo_url || null);
+    const repoAccessMode = body.repo_access_mode === undefined ? (repoPath ? 'worktree' : null) : body.repo_access_mode;
+    if (repoAccessMode === 'worktree' && !repoPath) {
+      return res.status(400).json({
+        ok: false,
+        report: {
+          validation: { ok: false, status: 'failed', error: 'repo_access_mode=worktree requires repo_path' },
+        },
+      });
+    }
+    if (repoAccessMode === 'clone' && !repoUrl) {
+      return res.status(400).json({
+        ok: false,
+        report: {
+          validation: { ok: false, status: 'failed', error: 'repo_access_mode=clone requires repo_url' },
+        },
+      });
+    }
     const reflectionEnabled = body.reflection?.enabled !== false;
     const schedule = body.schedule ?? (reflectionEnabled ? (body.reflection?.schedule ?? '0 9 * * 1') : '');
     const connectedProviders = getConnectedProviderSlugs();
@@ -677,6 +702,8 @@ router.post('/provision-full', (req: Request, res: Response) => {
         sessionKey,
         workspacePath,
         repoPath,
+        repoUrl,
+        repoAccessMode,
         status: body.status ?? 'idle',
         openclawAgentId: runtimeSlug,
         runtimeType,
@@ -911,11 +938,14 @@ router.get('/:id', (req: Request, res: Response) => {
 router.post('/', (req: Request, res: Response) => {
   try {
     const db = getDb();
-    const { name, role, session_key, workspace_path, status, provision_openclaw, runtime_type, runtime_config, project_id, preferred_provider, model, system_role } = req.body as {
+    const { name, role, session_key, workspace_path, repo_path, repo_url, repo_access_mode, status, provision_openclaw, runtime_type, runtime_config, project_id, preferred_provider, model, system_role } = req.body as {
       name: string;
       role?: string;
       session_key?: string;
       workspace_path?: string;
+      repo_path?: string | null;
+      repo_url?: string | null;
+      repo_access_mode?: 'worktree' | 'clone' | null;
       status?: string;
       provision_openclaw?: boolean;
       runtime_type?: string;
@@ -988,14 +1018,27 @@ router.post('/', (req: Request, res: Response) => {
       });
     }
 
+    const resolvedCreateRepoPath = repo_path === undefined ? null : (repo_path || null);
+    const resolvedCreateRepoUrl = repo_url === undefined ? null : (repo_url || null);
+    const resolvedCreateRepoAccessMode = repo_access_mode === undefined ? (resolvedCreateRepoPath ? 'worktree' : null) : repo_access_mode;
+    if (resolvedCreateRepoAccessMode === 'worktree' && !resolvedCreateRepoPath) {
+      return res.status(400).json({ error: 'repo_access_mode=worktree requires repo_path' });
+    }
+    if (resolvedCreateRepoAccessMode === 'clone' && !resolvedCreateRepoUrl) {
+      return res.status(400).json({ error: 'repo_access_mode=clone requires repo_url' });
+    }
+
     const result = db.prepare(`
-      INSERT INTO agents (name, role, session_key, workspace_path, status, openclaw_agent_id, runtime_type, runtime_config, project_id, preferred_provider, model, system_role)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO agents (name, role, session_key, workspace_path, repo_path, repo_url, repo_access_mode, status, openclaw_agent_id, runtime_type, runtime_config, project_id, preferred_provider, model, system_role)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       name,
       resolvedRole,
       resolvedSessionKey,
       resolvedWorkspacePath,
+      resolvedCreateRepoPath,
+      resolvedCreateRepoUrl,
+      resolvedCreateRepoAccessMode,
       status ?? 'idle',
       openclawAgentId,
       effectiveRuntimeTypeCreate,
@@ -1038,7 +1081,7 @@ router.put('/:id', (req: Request, res: Response) => {
   try {
     const db = getDb();
     const {
-      name, role, session_key, workspace_path, repo_path, status, model,
+      name, role, session_key, workspace_path, repo_path, repo_url, repo_access_mode, status, model,
       runtime_type, runtime_config, hooks_url, hooks_auth_header,
       preferred_provider, os_user, enabled, github_identity_id,
       // Job-template fields (T#619): updated on the agents table directly
@@ -1061,6 +1104,8 @@ router.put('/:id', (req: Request, res: Response) => {
        * never touch the main checkout. Set to null/empty to disable worktree isolation.
        */
       repo_path?: string | null;
+      repo_url?: string | null;
+      repo_access_mode?: 'worktree' | 'clone' | null;
       status?: string;
       model?: string | null;
       runtime_type?: string;
@@ -1150,6 +1195,24 @@ router.put('/:id', (req: Request, res: Response) => {
       resolvedRepoPath = (agent.repo_path as string | null) ?? null;
     }
 
+    let resolvedRepoUrl: string | null;
+    if (repo_url !== undefined) {
+      resolvedRepoUrl = (repo_url === '' || repo_url === null) ? null : repo_url;
+    } else {
+      resolvedRepoUrl = (agent.repo_url as string | null) ?? null;
+    }
+
+    const resolvedRepoAccessMode = repo_access_mode !== undefined
+      ? repo_access_mode
+      : ((agent.repo_access_mode as 'worktree' | 'clone' | null | undefined) ?? (resolvedRepoPath ? 'worktree' : null));
+
+    if (resolvedRepoAccessMode === 'worktree' && !resolvedRepoPath) {
+      return res.status(400).json({ error: 'repo_access_mode=worktree requires repo_path' });
+    }
+    if (resolvedRepoAccessMode === 'clone' && !resolvedRepoUrl) {
+      return res.status(400).json({ error: 'repo_access_mode=clone requires repo_url' });
+    }
+
     // Resolve skill_names as JSON
     const resolvedSkillNames = skill_names !== undefined
       ? JSON.stringify(Array.isArray(skill_names) ? skill_names : [])
@@ -1174,6 +1237,8 @@ router.put('/:id', (req: Request, res: Response) => {
         session_key = ?,
         workspace_path = ?,
         repo_path = ?,
+        repo_url = ?,
+        repo_access_mode = ?,
         status = ?,
         model = ?,
         runtime_type = ?,
@@ -1204,6 +1269,8 @@ router.put('/:id', (req: Request, res: Response) => {
       resolvedSessionKey,
       workspace_path ?? agent.workspace_path,
       resolvedRepoPath,
+      resolvedRepoUrl,
+      resolvedRepoAccessMode,
       status ?? agent.status,
       resolvedModel,
       runtime_type !== undefined ? runtime_type : (agent.runtime_type ?? 'openclaw'),
@@ -2280,7 +2347,7 @@ export interface ClaudeCodeRuntimeConfig {
 /**
  * Parse runtime_config from a raw DB row (stored as JSON string or null).
  */
-function parseAgentRuntimeConfig(agent: Record<string, unknown>): Record<string, unknown> {
+export function parseAgentRuntimeConfig(agent: Record<string, unknown>): Record<string, unknown> {
   const raw = agent.runtime_config;
   let parsed: ClaudeCodeRuntimeConfig | null = null;
   if (typeof raw === 'string' && raw) {
@@ -2316,12 +2383,18 @@ function parseAgentRuntimeConfig(agent: Record<string, unknown>): Record<string,
   // Do not default runtime_type to 'openclaw' in API responses — surface the actual stored value
   // so callers can distinguish "explicitly set to openclaw" from "never configured".
   // The dispatcher falls back to openclaw internally; the API should be honest about the stored value.
+  const normalizedRepoPath = (agent.repo_path as string | null | undefined) ?? null;
+  const normalizedRepoAccessMode = (agent.repo_access_mode as string | null | undefined) ?? (normalizedRepoPath ? 'worktree' : null);
+
   const result: Record<string, unknown> = {
     ...agent,
     runtime_type: (agent.runtime_type as string | undefined) ?? 'openclaw',
     runtime_config: parsed,
     skill_names: skillNames,
     sort_rules: sortRules,
+    repo_path: normalizedRepoPath,
+    repo_url: (agent.repo_url as string | null | undefined) ?? null,
+    repo_access_mode: normalizedRepoAccessMode,
   };
   // Remove deprecated field from API responses
   delete result.dispatch_mode;

@@ -4,6 +4,7 @@ import { notifyTelegram } from '../integrations/telegram';
 import { HEARTBEAT_STALE_MS, START_CHECKIN_GRACE_MS } from '../lib/runObservability';
 import { writeTaskHistory } from '../lib/taskHistory';
 import { pruneOrphanedWorktrees, resolveWorktreeBasePath } from '../services/worktreeManager';
+import type { RepoAccessMode } from '../services/repoWorkspaceManager';
 
 const DEFAULT_TIMEOUT_MINUTES = 20;
 const DEFAULT_TIMEOUT_MS = DEFAULT_TIMEOUT_MINUTES * 60_000;
@@ -215,13 +216,13 @@ export function startWatchdog(): void {
     try {
       const db = getDb();
 
-      // Find all agents with a repo_path (worktree-enabled)
       const agents = db.prepare(`
-        SELECT id, name, workspace_path, repo_path, os_user
+        SELECT id, name, workspace_path, repo_path, repo_access_mode, os_user
         FROM agents
-        WHERE repo_path IS NOT NULL AND repo_path != ''
+        WHERE repo_access_mode = 'worktree'
+          AND repo_path IS NOT NULL AND repo_path != ''
           AND workspace_path IS NOT NULL AND workspace_path != ''
-      `).all() as Array<{ id: number; name: string; workspace_path: string; repo_path: string; os_user: string | null }>;
+      `).all() as Array<{ id: number; name: string; workspace_path: string; repo_path: string; repo_access_mode: RepoAccessMode | null; os_user: string | null }>;
 
       for (const agent of agents) {
         const basePath = resolveWorktreeBasePath({

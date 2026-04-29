@@ -1465,13 +1465,24 @@ export function initSchema(): void {
   } catch (_) { /* column already exists */ }
 
   // Safe migration: add repo_path to agents (task #365)
-  // The canonical git repository path used for worktree operations.
-  // When set, the dispatcher creates per-task worktrees instead of
-  // using the workspace_path directly.
+  // The canonical local git repository path used for worktree operations.
   try {
     db.exec(`ALTER TABLE agents ADD COLUMN repo_path TEXT`);
     console.log('[schema] Migrated: added repo_path to agents');
   } catch (_) { /* column already exists */ }
+
+  // Safe migration: explicit repo source fields for worktree vs clone dispatch (task #373)
+  try {
+    db.exec(`ALTER TABLE agents ADD COLUMN repo_url TEXT`);
+    console.log('[schema] Migrated: added repo_url to agents');
+  } catch (_) { /* column already exists */ }
+  try {
+    db.exec(`ALTER TABLE agents ADD COLUMN repo_access_mode TEXT CHECK(repo_access_mode IN ('worktree','clone'))`);
+    console.log('[schema] Migrated: added repo_access_mode to agents');
+  } catch (_) { /* column already exists */ }
+  try {
+    db.exec(`UPDATE agents SET repo_access_mode = 'worktree' WHERE repo_access_mode IS NULL AND repo_path IS NOT NULL AND repo_path != ''`);
+  } catch (_) { /* ignore */ }
 
   // Create story_point_model_routing table
   db.exec(`

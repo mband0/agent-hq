@@ -77,7 +77,7 @@ export async function closeInstance(opts: CloseInstanceOptions): Promise<CloseIn
   let instance: Record<string, unknown> | undefined;
   try {
     instance = db.prepare(`
-      SELECT ji.*, a.session_key AS agent_session_key, a.repo_path AS agent_repo_path
+      SELECT ji.*, a.session_key AS agent_session_key, a.repo_path AS agent_repo_path, a.repo_access_mode AS agent_repo_access_mode
       FROM job_instances ji
       LEFT JOIN agents a ON a.id = ji.agent_id
       WHERE ji.id = ?

@@ -45,6 +45,8 @@ interface EditFormState {
   session_key: string;
   workspace_path: string;
   repo_path: string;
+  repo_url: string;
+  repo_access_mode: 'worktree' | 'clone' | '';
   status: 'idle' | 'running' | 'blocked';
   model: string;
   preferred_provider: string;
@@ -92,6 +94,8 @@ function agentToForm(agent: Agent): EditFormState {
     session_key: agent.session_key,
     workspace_path: agent.workspace_path,
     repo_path: agent.repo_path ?? '',
+    repo_url: agent.repo_url ?? '',
+    repo_access_mode: agent.repo_access_mode ?? '',
     status: agent.status,
     model: agent.model ?? '',
     preferred_provider: agent.preferred_provider ?? 'anthropic',
@@ -252,6 +256,8 @@ export default function AgentDetailPage() {
       session_key: form.session_key,
       workspace_path: form.workspace_path,
       repo_path: form.repo_path.trim() || null,
+      repo_url: form.repo_url.trim() || null,
+      repo_access_mode: form.repo_access_mode || null,
       status: form.status,
       model: form.model || null,
       preferred_provider: form.preferred_provider || 'anthropic',
@@ -715,21 +721,54 @@ export default function AgentDetailPage() {
             </div>
           )}
 
-          {/* Repo Path — available for workspace-based runtimes */}
+          {/* Repo source mode — available for workspace-based runtimes */}
           {(editForm.runtime_type === 'openclaw' || editForm.runtime_type === 'claude-code') && (
-            <div className="mt-4">
+            <div className="mt-4 space-y-4">
               <label className="block">
-                <span className="text-slate-400 text-xs mb-1 block">
-                  Repo Path
-                  <span className="text-slate-600 ml-1">(optional — worktree isolation)</span>
-                </span>
-                <input
-                  className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500 font-mono"
-                  value={editForm.repo_path}
-                  onChange={e => setF({ repo_path: e.target.value })}
-                  placeholder="/Users/…/atlas-hq"
-                />
+                <span className="text-slate-400 text-xs mb-1 block">Repo Access Mode</span>
+                <div className="relative">
+                  <select
+                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500 appearance-none pr-8"
+                    value={editForm.repo_access_mode}
+                    onChange={e => setF({ repo_access_mode: e.target.value as EditFormState['repo_access_mode'] })}
+                  >
+                    <option value="">None</option>
+                    <option value="worktree">Worktree</option>
+                    <option value="clone">Clone</option>
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                </div>
               </label>
+
+              {editForm.repo_access_mode === 'worktree' && (
+                <label className="block">
+                  <span className="text-slate-400 text-xs mb-1 block">
+                    Repo Path
+                    <span className="text-slate-600 ml-1">(required for worktree mode)</span>
+                  </span>
+                  <input
+                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500 font-mono"
+                    value={editForm.repo_path}
+                    onChange={e => setF({ repo_path: e.target.value })}
+                    placeholder="/Users/…/atlas-hq"
+                  />
+                </label>
+              )}
+
+              {editForm.repo_access_mode === 'clone' && (
+                <label className="block">
+                  <span className="text-slate-400 text-xs mb-1 block">
+                    Repo URL
+                    <span className="text-slate-600 ml-1">(required for clone mode)</span>
+                  </span>
+                  <input
+                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500 font-mono"
+                    value={editForm.repo_url}
+                    onChange={e => setF({ repo_url: e.target.value })}
+                    placeholder="git@github.com:owner/repo.git"
+                  />
+                </label>
+              )}
             </div>
           )}
 
@@ -1076,14 +1115,35 @@ export default function AgentDetailPage() {
               <dd className="text-slate-400 font-mono text-xs break-all">{agent.workspace_path || '—'}</dd>
             </div>
             <div>
+              <dt className="text-slate-500 text-xs mb-0.5">Repo Access Mode</dt>
+              <dd>
+                {agent.repo_access_mode
+                  ? <span className="text-slate-300 text-xs font-mono">{agent.repo_access_mode}</span>
+                  : <span className="text-slate-600 text-xs italic">Disabled</span>
+                }
+              </dd>
+            </div>
+            <div>
               <dt className="text-slate-500 text-xs mb-0.5 flex items-center gap-1">
                 🌿 Repo Path
-                <span className="text-slate-600 font-normal">(worktree isolation)</span>
+                <span className="text-slate-600 font-normal">(worktree mode)</span>
               </dt>
               <dd>
                 {agent.repo_path
                   ? <span className="text-emerald-400 font-mono text-xs break-all">{agent.repo_path}</span>
-                  : <span className="text-slate-600 text-xs italic">Not set — disabled</span>
+                  : <span className="text-slate-600 text-xs italic">Not set</span>
+                }
+              </dd>
+            </div>
+            <div>
+              <dt className="text-slate-500 text-xs mb-0.5 flex items-center gap-1">
+                🔁 Repo URL
+                <span className="text-slate-600 font-normal">(clone mode)</span>
+              </dt>
+              <dd>
+                {agent.repo_url
+                  ? <span className="text-cyan-300 font-mono text-xs break-all">{agent.repo_url}</span>
+                  : <span className="text-slate-600 text-xs italic">Not set</span>
                 }
               </dd>
             </div>

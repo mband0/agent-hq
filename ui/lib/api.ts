@@ -695,11 +695,14 @@ export interface Agent {
   session_key: string;
   workspace_path: string;
   /**
-   * repo_path — absolute path to the git repository used for worktree isolation (T#365).
-   * When set, the dispatcher creates an isolated worktree per task so agents never
-   * touch the main checkout. Null disables worktree isolation.
+   * repo_path — absolute path to the canonical local repository used for worktree isolation.
+   * Used only when repo_access_mode = 'worktree'.
    */
   repo_path: string | null;
+  /** repo_url — remote Git URL used for task-local clone dispatch. */
+  repo_url: string | null;
+  /** repo_access_mode — explicit repo source mode for this agent. */
+  repo_access_mode: 'worktree' | 'clone' | null;
   openclaw_agent_id: string | null;
   status: 'idle' | 'running' | 'blocked';
   model: string | null;

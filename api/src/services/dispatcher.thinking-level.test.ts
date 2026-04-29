@@ -97,6 +97,8 @@ describe('runDispatcher thinking-level routing', () => {
         workspace_path TEXT,
         preferred_provider TEXT,
         repo_path TEXT,
+        repo_url TEXT,
+        repo_access_mode TEXT,
         os_user TEXT,
         openclaw_agent_id TEXT,
         sort_rules TEXT NOT NULL DEFAULT '[]'
@@ -280,7 +282,7 @@ describe('runDispatcher thinking-level routing', () => {
 
     db.prepare(`
       INSERT INTO story_point_model_routing (max_points, provider, model, thinking_level, label)
-      VALUES (8, NULL, 'openai-codex/gpt-5.4', 'adaptive', 'deeper route')
+      VALUES (8, NULL, 'openai-codex/gpt-5.5', 'adaptive', 'deeper route')
     `).run();
 
     const dispatchMock = jest.fn().mockResolvedValue({ runId: 'run-456' });
@@ -310,7 +312,7 @@ describe('runDispatcher thinking-level routing', () => {
     }
 
     expect(dispatchMock).toHaveBeenCalledWith(expect.objectContaining({
-      model: 'openai-codex/gpt-5.4',
+      model: 'openai-codex/gpt-5.5',
       thinking: 'adaptive',
     }));
 

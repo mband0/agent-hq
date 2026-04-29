@@ -9,6 +9,7 @@ export interface AgentModelOption {
 export const AGENT_MODEL_OPTIONS: AgentModelOption[] = [
   { value: 'anthropic/claude-sonnet-4-6', label: 'Claude Sonnet 4.6', provider: 'anthropic' },
   { value: 'anthropic/claude-opus-4-6', label: 'Claude Opus 4.6', provider: 'anthropic' },
+  { value: 'openai-codex/gpt-5.5', label: 'GPT-5.5 (Codex)', provider: 'openai-codex' },
   { value: 'openai-codex/gpt-5.4', label: 'GPT-5.4 (Codex)', provider: 'openai-codex' },
 ];
 

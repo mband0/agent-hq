@@ -151,14 +151,14 @@ describe('OpenClawRuntime gateway dispatch', () => {
     const runtime = new OpenClawRuntime();
 
     await runtime.dispatch(dispatchParams({
-      model: 'openai-codex/gpt-5.4',
+      model: 'openai-codex/gpt-5.5',
       thinking: 'adaptive',
     }));
 
     const patch = mockSentRequests.find((request) => request.method === 'sessions.patch');
     expect(patch?.params).toEqual({
       key: 'agent:cinder-backend:hook:atlas:jobrun:383',
-      model: 'openai-codex/gpt-5.4',
+      model: 'openai-codex/gpt-5.5',
     });
   });
 

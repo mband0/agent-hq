@@ -26,6 +26,16 @@ export interface DispatchParams extends RuntimeEventCallbacks {
   taskId?: number | null;
   /** Database handle — required by runtimes that write directly to the DB (e.g. ClaudeCodeRuntime). */
   db?: Database.Database;
+  /** Repo source mode used for this run, when dispatch prepared a repo-backed workspace. */
+  repoAccessMode?: 'worktree' | 'clone' | null;
+  /** Truthful descriptor of the repo source used for this run, e.g. worktree:/repo or clone:https://... */
+  repoSource?: string | null;
+  /** Effective repo-backed workspace path used for this run. */
+  repoWorkspacePath?: string | null;
+  /** Effective branch prepared for this run. */
+  repoBranch?: string | null;
+  /** Runtime-specific config override assembled by dispatcher. */
+  runtimeConfig?: unknown;
   /**
    * Workspace root for this agent (from agents.workspace_path).
    * Runtimes that launch subprocesses set the working directory to this path

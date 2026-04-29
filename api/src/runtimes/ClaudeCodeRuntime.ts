@@ -84,7 +84,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // Per-dispatch runtimeConfig overrides the agent-level baseConfig
     const runtimeConfig: ClaudeCodeRuntimeConfig = {
       ...this.baseConfig,
-      ...((params as DispatchParams & { runtimeConfig?: ClaudeCodeRuntimeConfig }).runtimeConfig ?? {}),
+      ...((params.runtimeConfig as ClaudeCodeRuntimeConfig | undefined) ?? {}),
     };
 
     const abortController = new AbortController();

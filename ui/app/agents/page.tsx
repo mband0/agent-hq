@@ -35,8 +35,9 @@ interface FormState {
   role: string;
   session_key: string;
   workspace_path: string;
-  /** repo_path — git repo for worktree isolation (T#365). Empty string = disabled. */
   repo_path: string;
+  repo_url: string;
+  repo_access_mode: 'worktree' | 'clone' | '';
   status: 'idle' | 'running' | 'blocked';
   model: string;
   preferred_provider: string;
@@ -70,6 +71,8 @@ const emptyForm: FormState = {
   session_key: '',
   workspace_path: '',
   repo_path: '',
+  repo_url: '',
+  repo_access_mode: '',
   status: 'idle',
   model: '',
   preferred_provider: 'anthropic',
@@ -238,8 +241,9 @@ export default function AgentsPage() {
       role: form.role,
       session_key: form.session_key,
       workspace_path: form.workspace_path,
-      // Empty string → null (disables worktree isolation)
       repo_path: form.repo_path.trim() || null,
+      repo_url: form.repo_url.trim() || null,
+      repo_access_mode: form.repo_access_mode || null,
       status: form.status,
       model: form.model || null,
       preferred_provider: form.preferred_provider || 'anthropic',
@@ -332,6 +336,9 @@ export default function AgentsPage() {
         const payload = {
           ...createData,
           model: createData.model || null,
+          repo_path: createData.repo_path.trim() || null,
+          repo_url: createData.repo_url.trim() || null,
+          repo_access_mode: createData.repo_access_mode || null,
           provision_openclaw: form.provision_openclaw,
           // Only attach runtime_config when relevant to the selected runtime
           runtime_config: form.runtime_type === 'claude-code' ? buildUpdatePayload().runtime_config : null,
@@ -716,22 +723,57 @@ export default function AgentsPage() {
                 </div>
               )}
 
-              {/* Shared: Repo Path (applicable to openclaw + claude-code) */}
+              {/* Shared: Repo source mode (applicable to openclaw + claude-code) */}
               {(form.runtime_type === 'openclaw' || form.runtime_type === 'claude-code') && (
-                <div className="mt-4">
+                <div className="mt-4 space-y-4">
                   <label className="block">
-                    <span className="text-slate-400 text-xs mb-1 block">
-                      Repo Path
-                      <span className="text-slate-600 ml-1">(optional — enables git worktree isolation per task)</span>
-                    </span>
-                    <input
-                      className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500 font-mono"
-                      value={form.repo_path}
-                      onChange={e => setForm(f => ({ ...f, repo_path: e.target.value }))}
-                      placeholder="/Users/nordini/.openclaw/workspace-forge/atlas-hq"
-                    />
-                    <p className="text-slate-600 text-xs mt-1">When set, the dispatcher creates an isolated git worktree per task so the agent never touches the main checkout. Clear to disable.</p>
+                    <span className="text-slate-400 text-xs mb-1 block">Repo Access Mode</span>
+                    <div className="relative">
+                      <select
+                        className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500 appearance-none pr-8"
+                        value={form.repo_access_mode}
+                        onChange={e => setForm(f => ({ ...f, repo_access_mode: e.target.value as FormState['repo_access_mode'] }))}
+                      >
+                        <option value="">None</option>
+                        <option value="worktree">Worktree</option>
+                        <option value="clone">Clone</option>
+                      </select>
+                      <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                    </div>
+                    <p className="text-slate-600 text-xs mt-1">Choose whether task repos come from a local canonical checkout via git worktree or from a remote clone.</p>
                   </label>
+
+                  {form.repo_access_mode === 'worktree' && (
+                    <label className="block">
+                      <span className="text-slate-400 text-xs mb-1 block">
+                        Repo Path
+                        <span className="text-slate-600 ml-1">(required for worktree mode)</span>
+                      </span>
+                      <input
+                        className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500 font-mono"
+                        value={form.repo_path}
+                        onChange={e => setForm(f => ({ ...f, repo_path: e.target.value }))}
+                        placeholder="/Users/nordini/.openclaw/workspace-forge/atlas-hq"
+                      />
+                      <p className="text-slate-600 text-xs mt-1">Dispatcher creates an isolated git worktree per task from this canonical checkout.</p>
+                    </label>
+                  )}
+
+                  {form.repo_access_mode === 'clone' && (
+                    <label className="block">
+                      <span className="text-slate-400 text-xs mb-1 block">
+                        Repo URL
+                        <span className="text-slate-600 ml-1">(required for clone mode)</span>
+                      </span>
+                      <input
+                        className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500 font-mono"
+                        value={form.repo_url}
+                        onChange={e => setForm(f => ({ ...f, repo_url: e.target.value }))}
+                        placeholder="git@github.com:owner/repo.git"
+                      />
+                      <p className="text-slate-600 text-xs mt-1">Dispatcher clones this remote into the task workspace and creates a task branch there.</p>
+                    </label>
+                  )}
                 </div>
               )}
 
@@ -992,11 +1034,17 @@ export default function AgentsPage() {
                   📁 {agent.runtime_config.workingDirectory || '—'}
                 </div>
               )}
-              {/* repo_path — worktree isolation indicator */}
-              {agent.repo_path && (
+              {agent.repo_access_mode === 'worktree' && agent.repo_path && (
                 <div className="mt-2 flex items-center gap-1.5">
                   <span className="text-xs text-emerald-400/80 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded font-mono truncate max-w-full" title={agent.repo_path}>
-                    🌿 {agent.repo_path}
+                    🌿 worktree: {agent.repo_path}
+                  </span>
+                </div>
+              )}
+              {agent.repo_access_mode === 'clone' && agent.repo_url && (
+                <div className="mt-2 flex items-center gap-1.5">
+                  <span className="text-xs text-cyan-300/80 bg-cyan-500/10 border border-cyan-500/20 px-1.5 py-0.5 rounded font-mono truncate max-w-full" title={agent.repo_url}>
+                    🔁 clone: {agent.repo_url}
                   </span>
                 </div>
               )}

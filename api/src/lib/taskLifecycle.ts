@@ -4,6 +4,7 @@ import type Database from 'better-sqlite3';
 import { OPENCLAW_BIN, OPENCLAW_CONFIG_PATH, OPENCLAW_PATH } from '../config';
 import { buildGatewayRunSessionKey } from './sessionKeys';
 import { removeTaskWorktree } from '../services/worktreeManager';
+import { removeTaskClone } from '../services/repoWorkspaceManager';
 
 const LIVE_TASK_STATUSES = ['dispatched', 'in_progress', 'stalled'] as const;
 const LIVE_INSTANCE_STATUSES = ['queued', 'dispatched', 'running'] as const;
@@ -78,8 +79,9 @@ export function taskAllowsActiveExecution(status: string | null | undefined): bo
 }
 
 export function cleanupDoneTaskWorktrees(db: Database.Database, taskId: number): number {
+  const hasRepoAccessMode = (db.prepare(`PRAGMA table_info(agents)`).all() as Array<{ name: string }>).some(col => col.name === 'repo_access_mode');
   const rows = db.prepare(`
-    SELECT DISTINCT ji.worktree_path, a.repo_path
+    SELECT DISTINCT ji.worktree_path, a.repo_path${hasRepoAccessMode ? ', a.repo_access_mode' : ', NULL AS repo_access_mode'}
     FROM job_instances ji
     LEFT JOIN agents a ON a.id = ji.agent_id
     WHERE (
@@ -91,23 +93,23 @@ export function cleanupDoneTaskWorktrees(db: Database.Database, taskId: number):
       )
       AND ji.worktree_path IS NOT NULL
       AND ji.worktree_path != ''
-      AND a.repo_path IS NOT NULL
-      AND a.repo_path != ''
   `).all(
     taskId,
     `task-${taskId}`,
     `%/task-${taskId}`,
     `atlas-hq-task-${taskId}`,
     `%/atlas-hq-task-${taskId}`,
-  ) as Array<{ worktree_path: string; repo_path: string }>;
+  ) as Array<{ worktree_path: string; repo_path: string | null; repo_access_mode: string | null }>;
 
   let removed = 0;
   for (const row of rows) {
     try {
-      const result = removeTaskWorktree({
-        repoPath: row.repo_path,
-        worktreePath: row.worktree_path,
-      });
+      const result = row.repo_access_mode === 'clone'
+        ? removeTaskClone({ workspacePath: row.worktree_path })
+        : removeTaskWorktree({
+            repoPath: row.repo_path ?? '',
+            worktreePath: row.worktree_path,
+          });
       if (result.removed) removed++;
       else if (result.error) {
         console.warn(`[taskLifecycle] Worktree cleanup failed for done task #${taskId} at ${row.worktree_path}: ${result.error}`);
