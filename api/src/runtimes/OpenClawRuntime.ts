@@ -1318,7 +1318,7 @@ export class OpenClawRuntime implements AgentRuntime {
     const workspaceRoot = params.workspaceRoot ?? null;
     if (activeRepoRoot || workspaceRoot) {
       console.log(
-        `[OpenClawRuntime] dispatch path resolution: sessionKey=${routedSessionKey} activeRepoRoot=${activeRepoRoot ?? 'null'} workspaceRoot=${workspaceRoot ?? 'null'}`,
+        `[OpenClawRuntime] dispatch path resolution: sessionKey=${routedSessionKey} cwd=${activeRepoRoot ?? workspaceRoot ?? 'null'} activeRepoRoot=${activeRepoRoot ?? 'null'} workspaceRoot=${workspaceRoot ?? 'null'}`,
       );
     }
 

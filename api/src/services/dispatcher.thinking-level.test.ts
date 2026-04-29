@@ -360,6 +360,8 @@ describe('runDispatcher thinking-level routing', () => {
       abort: jest.fn().mockResolvedValue(undefined),
     });
 
+    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+
     const { createTaskWorktree } = jest.requireMock('./worktreeManager') as { createTaskWorktree: jest.Mock };
     createTaskWorktree.mockReturnValue({
       created: true,
@@ -378,6 +380,14 @@ describe('runDispatcher thinking-level routing', () => {
       activeRepoRoot: '/Users/test/workspaces/task-375',
       runtimeConfig: expect.objectContaining({ workingDirectory: '/Users/test/workspaces/task-375' }),
     }));
+
+    const loggedMessages = logSpy.mock.calls.map(([message]) => String(message));
+    expect(loggedMessages).toEqual(expect.arrayContaining([
+      '[dispatcher] Instance #1 path resolution: activeRepoRoot=/Users/test/workspaces/task-375 workspaceRoot=/parent/workspace worktreePath=/Users/test/workspaces/task-375 runtimeConfigWorkingDirectory=/parent/workspace',
+      '[dispatcher] Instance #1 runtime config handoff: workingDirectory=/Users/test/workspaces/task-375 activeRepoRoot=/Users/test/workspaces/task-375 workspaceRoot=/parent/workspace worktreePath=/Users/test/workspaces/task-375 runtimeConfigWorkingDirectory=/parent/workspace',
+    ]));
+
+    logSpy.mockRestore();
 
     const payloadSent = db.prepare(`SELECT payload_sent FROM job_instances LIMIT 1`).get() as { payload_sent: string | null };
     expect(JSON.parse(payloadSent.payload_sent ?? '{}')).toEqual(expect.objectContaining({

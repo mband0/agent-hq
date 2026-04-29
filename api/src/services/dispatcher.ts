@@ -1074,11 +1074,12 @@ async function fireAgentRun(
 ): Promise<void> {
   const timeoutSec = job.timeout_seconds || 900;
   const sessionKey = buildSessionKey(instanceId);
-  const activeRepoRoot: string | null = worktreePath ?? extractWorkingDirectoryFromRuntimeConfig(job.runtime_config) ?? job.workspace_path ?? null;
+  const runtimeConfigWorkingDirectory = extractWorkingDirectoryFromRuntimeConfig(job.runtime_config);
+  const activeRepoRoot: string | null = worktreePath ?? runtimeConfigWorkingDirectory ?? job.workspace_path ?? null;
   const workspaceContainerRoot: string | null = job.workspace_path ?? activeRepoRoot;
 
   console.log(
-    `[dispatcher] Instance #${instanceId} path resolution: activeRepoRoot=${activeRepoRoot ?? 'null'} workspaceRoot=${workspaceContainerRoot ?? 'null'} worktreePath=${worktreePath ?? 'null'}`
+    `[dispatcher] Instance #${instanceId} path resolution: activeRepoRoot=${activeRepoRoot ?? 'null'} workspaceRoot=${workspaceContainerRoot ?? 'null'} worktreePath=${worktreePath ?? 'null'} runtimeConfigWorkingDirectory=${runtimeConfigWorkingDirectory ?? 'null'}`
   );
 
   // Store the deterministic session key on the instance BEFORE dispatch
@@ -1243,7 +1244,7 @@ async function fireAgentRun(
     const dispatchRuntimeConfig = buildDispatchRuntimeConfig(job.runtime_config, runtimeConfigOverride);
 
     console.log(
-      `[dispatcher] Instance #${instanceId} runtime config handoff: workingDirectory=${typeof dispatchRuntimeConfig.workingDirectory === 'string' ? dispatchRuntimeConfig.workingDirectory : 'null'} activeRepoRoot=${activeRepoRoot ?? 'null'} workspaceRoot=${workspaceContainerRoot ?? 'null'}`
+      `[dispatcher] Instance #${instanceId} runtime config handoff: workingDirectory=${typeof dispatchRuntimeConfig.workingDirectory === 'string' ? dispatchRuntimeConfig.workingDirectory : 'null'} activeRepoRoot=${activeRepoRoot ?? 'null'} workspaceRoot=${workspaceContainerRoot ?? 'null'} worktreePath=${worktreePath ?? 'null'} runtimeConfigWorkingDirectory=${runtimeConfigWorkingDirectory ?? 'null'}`
     );
 
     const { runId } = await runtime.dispatch({
