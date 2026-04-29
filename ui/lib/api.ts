@@ -389,6 +389,18 @@ export const api = {
     }),
   deleteTaskFieldSchema: (key: string, schemaId: number) =>
     apiFetch<{ ok: boolean }>(`/api/v1/sprints/types/${encodeURIComponent(key)}/field-schemas/${schemaId}`, { method: 'DELETE' }),
+  createSprintOutcome: (key: string, data: Omit<SprintTypeOutcome, 'id' | 'sprint_type_key' | 'is_system' | 'created_at' | 'updated_at'>) =>
+    apiFetch<SprintTypeOutcome>(`/api/v1/sprints/types/${encodeURIComponent(key)}/outcomes`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateSprintOutcome: (key: string, outcomeId: number, data: Partial<Omit<SprintTypeOutcome, 'id' | 'sprint_type_key' | 'is_system' | 'created_at' | 'updated_at'>>) =>
+    apiFetch<SprintTypeOutcome>(`/api/v1/sprints/types/${encodeURIComponent(key)}/outcomes/${outcomeId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  deleteSprintOutcome: (key: string, outcomeId: number) =>
+    apiFetch<{ ok: boolean }>(`/api/v1/sprints/types/${encodeURIComponent(key)}/outcomes/${outcomeId}`, { method: 'DELETE' }),
   createWorkflowTemplate: (key: string, data: WorkflowTemplateInput) =>
     apiFetch<SprintWorkflowTemplate>(`/api/v1/sprints/types/${encodeURIComponent(key)}/workflow-templates`, {
       method: 'POST',
@@ -1360,6 +1372,24 @@ export interface TaskFieldSchema {
   updated_at: string;
 }
 
+export interface SprintTypeOutcome {
+  id: number;
+  sprint_type_key: string;
+  task_type: string | null;
+  outcome_key: string;
+  label: string;
+  description: string;
+  enabled: number;
+  behavior: 'base' | 'extend' | 'override' | 'disable';
+  color: string | null;
+  badge_variant: string | null;
+  stage_order: number;
+  is_system: number;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface WorkflowTemplateInput {
   key: string;
   name: string;
@@ -1372,6 +1402,7 @@ export interface WorkflowTemplateInput {
 export interface SprintTypeConfig extends SprintType {
   task_types: SprintTypeTaskType[];
   field_schemas: TaskFieldSchema[];
+  outcomes: SprintTypeOutcome[];
   workflow_templates: SprintWorkflowTemplate[];
 }
 

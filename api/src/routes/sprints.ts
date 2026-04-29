@@ -62,6 +62,24 @@ interface TaskFieldSchemaRow {
   updated_at: string;
 }
 
+interface SprintTypeOutcomeRow {
+  id: number;
+  sprint_type_key: string;
+  task_type: string | null;
+  outcome_key: string;
+  label: string;
+  description: string;
+  enabled: number;
+  behavior: 'base' | 'extend' | 'override' | 'disable';
+  color: string | null;
+  badge_variant: string | null;
+  stage_order: number;
+  is_system: number;
+  metadata_json: string;
+  created_at: string;
+  updated_at: string;
+}
+
 interface SprintWorkflowStatusRow {
   id: number;
   template_id: number;
@@ -98,6 +116,19 @@ interface WorkflowTemplateInput {
   is_default?: unknown;
   statuses?: unknown;
   transitions?: unknown;
+}
+
+interface SprintTypeOutcomeInput {
+  task_type?: unknown;
+  outcome_key?: unknown;
+  label?: unknown;
+  description?: unknown;
+  enabled?: unknown;
+  behavior?: unknown;
+  color?: unknown;
+  badge_variant?: unknown;
+  stage_order?: unknown;
+  metadata?: unknown;
 }
 
 interface WorkflowTemplateStatusInput {
@@ -257,6 +288,47 @@ function getFieldSchemasForSprintType(db: ReturnType<typeof getDb>, sprintTypeKe
   }));
 }
 
+function getOutcomesForSprintType(db: ReturnType<typeof getDb>, sprintTypeKey: string) {
+  const rows = db.prepare(`
+    SELECT id, sprint_type_key, task_type, outcome_key, label, description, enabled, behavior, color, badge_variant, stage_order, is_system, metadata_json, created_at, updated_at
+    FROM sprint_type_outcomes
+    WHERE sprint_type_key = ?
+    ORDER BY CASE WHEN task_type IS NULL THEN 0 ELSE 1 END, task_type ASC, stage_order ASC, id ASC
+  `).all(sprintTypeKey) as SprintTypeOutcomeRow[];
+
+  return rows.map((row) => ({
+    ...row,
+    metadata: JSON.parse(row.metadata_json || '{}'),
+  }));
+}
+
+function validateOutcomePayload(input: SprintTypeOutcomeInput, index = 0) {
+  const taskType = input.task_type == null || input.task_type === ''
+    ? null
+    : normalizeConfigKey(input.task_type, `outcomes[${index}].task_type`);
+  const outcomeKey = normalizeConfigKey(input.outcome_key, `outcomes[${index}].outcome_key`);
+  const label = normalizeOptionalText(input.label) || outcomeKey;
+  const description = normalizeOptionalText(input.description);
+  const enabled = input.enabled === undefined ? 1 : normalizeBooleanInt(input.enabled);
+  const behaviorRaw = normalizeOptionalText(input.behavior) || (taskType ? 'extend' : 'base');
+  if (!['base', 'extend', 'override', 'disable'].includes(behaviorRaw)) {
+    throw new Error(`outcomes[${index}].behavior must be one of: base, extend, override, disable`);
+  }
+  const stageOrder = Number.isFinite(Number(input.stage_order)) ? Number(input.stage_order) : index;
+  return {
+    task_type: taskType,
+    outcome_key: outcomeKey,
+    label,
+    description,
+    enabled,
+    behavior: behaviorRaw as 'base' | 'extend' | 'override' | 'disable',
+    color: normalizeOptionalText(input.color) || null,
+    badge_variant: normalizeOptionalText(input.badge_variant) || null,
+    stage_order: stageOrder,
+    metadata: parseMetadataObject(input.metadata, `outcomes[${index}].metadata`),
+  };
+}
+
 function buildWorkflowTemplateUsageSummary(
   rows: Array<{ id: number; status: string | null }>,
 ): WorkflowTemplateUsageSummary {
@@ -381,6 +453,7 @@ function buildWorkflowConfigSnapshot(db: ReturnType<typeof getDb>) {
       ...sprintType,
       task_types: getTaskTypesForSprintType(db, sprintType.key),
       field_schemas: getFieldSchemasForSprintType(db, sprintType.key),
+      outcomes: getOutcomesForSprintType(db, sprintType.key),
       workflow_templates: getWorkflowTemplatesDetailed(db, sprintType.key),
     })),
   };
@@ -594,6 +667,7 @@ router.get('/types/:key', (req: Request, res: Response) => {
       ...sprintType,
       task_types: getTaskTypesForSprintType(db, sprintTypeKey),
       field_schemas: getFieldSchemasForSprintType(db, sprintTypeKey),
+      outcomes: getOutcomesForSprintType(db, sprintTypeKey),
       workflow_templates: getWorkflowTemplatesDetailed(db, sprintTypeKey),
     });
   } catch (err) {
@@ -1217,6 +1291,122 @@ router.delete('/types/:key/field-schemas/:schemaId', (req: Request, res: Respons
     `).run(schemaId, sprintTypeKey);
 
     if (result.changes === 0) return res.status(404).json({ error: 'Field schema not found' });
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ error: String(err) });
+  }
+});
+
+// ── Outcome vocabulary CRUD ──────────────────────────────────────────────────
+
+router.get('/types/:key/outcomes', (req: Request, res: Response) => {
+  try {
+    const db = getDb();
+    const sprintTypeKey = resolveSprintTypeOrNull(req.params.key);
+    if (!sprintTypeKey) return res.status(400).json({ error: 'Sprint type key is required' });
+    if (!getSprintTypeOr404(db, sprintTypeKey)) return res.status(404).json({ error: 'Sprint type not found' });
+
+    return res.json({ outcomes: getOutcomesForSprintType(db, sprintTypeKey) });
+  } catch (err) {
+    return res.status(500).json({ error: String(err) });
+  }
+});
+
+router.post('/types/:key/outcomes', (req: Request, res: Response) => {
+  try {
+    const db = getDb();
+    const sprintTypeKey = resolveSprintTypeOrNull(req.params.key);
+    if (!sprintTypeKey) return res.status(400).json({ error: 'Sprint type key is required' });
+    if (!getSprintTypeOr404(db, sprintTypeKey)) return res.status(404).json({ error: 'Sprint type not found' });
+
+    const payload = validateOutcomePayload(req.body ?? {});
+    const duplicate = db.prepare(`
+      SELECT id FROM sprint_type_outcomes
+      WHERE sprint_type_key = ? AND task_type IS ? AND outcome_key = ?
+    `).get(sprintTypeKey, payload.task_type, payload.outcome_key) as { id: number } | undefined;
+    if (duplicate) return res.status(409).json({ error: 'An outcome definition for this sprint type/task type already exists' });
+
+    const result = db.prepare(`
+      INSERT INTO sprint_type_outcomes (sprint_type_key, task_type, outcome_key, label, description, enabled, behavior, color, badge_variant, stage_order, is_system, metadata_json, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, datetime('now'), datetime('now'))
+    `).run(sprintTypeKey, payload.task_type, payload.outcome_key, payload.label, payload.description, payload.enabled, payload.behavior, payload.color, payload.badge_variant, payload.stage_order, JSON.stringify(payload.metadata));
+
+    const created = db.prepare(`
+      SELECT id, sprint_type_key, task_type, outcome_key, label, description, enabled, behavior, color, badge_variant, stage_order, is_system, metadata_json, created_at, updated_at
+      FROM sprint_type_outcomes
+      WHERE id = ?
+    `).get(Number(result.lastInsertRowid)) as SprintTypeOutcomeRow;
+
+    return res.status(201).json({ ...created, metadata: JSON.parse(created.metadata_json || '{}') });
+  } catch (err) {
+    return res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.put('/types/:key/outcomes/:outcomeId', (req: Request, res: Response) => {
+  try {
+    const db = getDb();
+    const sprintTypeKey = resolveSprintTypeOrNull(req.params.key);
+    const outcomeId = Number(req.params.outcomeId);
+    if (!sprintTypeKey) return res.status(400).json({ error: 'Sprint type key is required' });
+
+    const existing = db.prepare(`
+      SELECT id, sprint_type_key, task_type, outcome_key, label, description, enabled, behavior, color, badge_variant, stage_order, is_system, metadata_json, created_at, updated_at
+      FROM sprint_type_outcomes
+      WHERE id = ? AND sprint_type_key = ?
+    `).get(outcomeId, sprintTypeKey) as SprintTypeOutcomeRow | undefined;
+    if (!existing) return res.status(404).json({ error: 'Outcome definition not found' });
+
+    const payload = validateOutcomePayload({
+      task_type: req.body?.task_type ?? existing.task_type,
+      outcome_key: req.body?.outcome_key ?? existing.outcome_key,
+      label: req.body?.label ?? existing.label,
+      description: req.body?.description ?? existing.description,
+      enabled: req.body?.enabled ?? existing.enabled,
+      behavior: req.body?.behavior ?? existing.behavior,
+      color: req.body?.color ?? existing.color,
+      badge_variant: req.body?.badge_variant ?? existing.badge_variant,
+      stage_order: req.body?.stage_order ?? existing.stage_order,
+      metadata: req.body?.metadata ?? JSON.parse(existing.metadata_json || '{}'),
+    });
+
+    const duplicate = db.prepare(`
+      SELECT id FROM sprint_type_outcomes
+      WHERE sprint_type_key = ? AND task_type IS ? AND outcome_key = ? AND id != ?
+    `).get(sprintTypeKey, payload.task_type, payload.outcome_key, outcomeId) as { id: number } | undefined;
+    if (duplicate) return res.status(409).json({ error: 'An outcome definition for this sprint type/task type already exists' });
+
+    db.prepare(`
+      UPDATE sprint_type_outcomes
+      SET task_type = ?, outcome_key = ?, label = ?, description = ?, enabled = ?, behavior = ?, color = ?, badge_variant = ?, stage_order = ?, metadata_json = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).run(payload.task_type, payload.outcome_key, payload.label, payload.description, payload.enabled, payload.behavior, payload.color, payload.badge_variant, payload.stage_order, JSON.stringify(payload.metadata), outcomeId);
+
+    const updated = db.prepare(`
+      SELECT id, sprint_type_key, task_type, outcome_key, label, description, enabled, behavior, color, badge_variant, stage_order, is_system, metadata_json, created_at, updated_at
+      FROM sprint_type_outcomes
+      WHERE id = ?
+    `).get(outcomeId) as SprintTypeOutcomeRow;
+
+    return res.json({ ...updated, metadata: JSON.parse(updated.metadata_json || '{}') });
+  } catch (err) {
+    return res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+router.delete('/types/:key/outcomes/:outcomeId', (req: Request, res: Response) => {
+  try {
+    const db = getDb();
+    const sprintTypeKey = resolveSprintTypeOrNull(req.params.key);
+    const outcomeId = Number(req.params.outcomeId);
+    if (!sprintTypeKey) return res.status(400).json({ error: 'Sprint type key is required' });
+
+    const result = db.prepare(`
+      DELETE FROM sprint_type_outcomes
+      WHERE id = ? AND sprint_type_key = ?
+    `).run(outcomeId, sprintTypeKey);
+
+    if (result.changes === 0) return res.status(404).json({ error: 'Outcome definition not found' });
     return res.json({ ok: true });
   } catch (err) {
     return res.status(500).json({ error: String(err) });

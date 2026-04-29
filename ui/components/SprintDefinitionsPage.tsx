@@ -6,6 +6,7 @@ import {
   api,
   CustomFieldDefinition,
   SprintTypeConfig,
+  SprintTypeOutcome,
   SprintWorkflowTemplate,
   TaskFieldSchema,
   WorkflowTemplateInput,
@@ -46,6 +47,18 @@ type WorkflowTemplateForm = {
     label: string;
     outcome: string;
   }>;
+};
+
+type OutcomeForm = {
+  id?: number;
+  task_type: string;
+  outcome_key: string;
+  label: string;
+  description: string;
+  enabled: boolean;
+  behavior: 'base' | 'extend' | 'override' | 'disable';
+  color: string;
+  badge_variant: string;
 };
 
 const emptySprintTypeForm: SprintTypeForm = { key: '', name: '', description: '' };
@@ -103,6 +116,33 @@ function templateToForm(template: SprintWorkflowTemplate): WorkflowTemplateForm 
   };
 }
 
+function outcomeToForm(outcome: SprintTypeOutcome): OutcomeForm {
+  return {
+    id: outcome.id,
+    task_type: outcome.task_type ?? '',
+    outcome_key: outcome.outcome_key,
+    label: outcome.label,
+    description: outcome.description,
+    enabled: outcome.enabled === 1,
+    behavior: outcome.behavior,
+    color: outcome.color ?? '',
+    badge_variant: outcome.badge_variant ?? '',
+  };
+}
+
+function emptyOutcomeForm(taskType = ''): OutcomeForm {
+  return {
+    task_type: taskType,
+    outcome_key: '',
+    label: '',
+    description: '',
+    enabled: true,
+    behavior: taskType ? 'extend' : 'base',
+    color: '',
+    badge_variant: '',
+  };
+}
+
 export default function SprintDefinitionsPage() {
   const [config, setConfig] = useState<SprintTypeConfig[]>([]);
   const [selectedKey, setSelectedKey] = useState<string>('');
@@ -112,6 +152,7 @@ export default function SprintDefinitionsPage() {
   const [sprintTypeForm, setSprintTypeForm] = useState<SprintTypeForm>(emptySprintTypeForm);
   const [taskTypesText, setTaskTypesText] = useState('');
   const [schemaEditor, setSchemaEditor] = useState<FieldSchemaForm | null>(null);
+  const [outcomeEditor, setOutcomeEditor] = useState<OutcomeForm | null>(null);
   const [templateEditor, setTemplateEditor] = useState<WorkflowTemplateForm | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
 
@@ -151,6 +192,7 @@ export default function SprintDefinitionsPage() {
     });
     setTaskTypesText(selectedSprintType.task_types.map(taskType => taskType.task_type).join('\n'));
     setSchemaEditor(null);
+    setOutcomeEditor(null);
     setTemplateEditor(null);
   }, [selectedSprintType]);
 
@@ -165,6 +207,14 @@ export default function SprintDefinitionsPage() {
   );
   const baseFieldSchema = useMemo(
     () => selectedSprintType?.field_schemas.find(schema => schema.task_type == null) ?? null,
+    [selectedSprintType],
+  );
+  const baseOutcomes = useMemo(
+    () => (selectedSprintType?.outcomes ?? []).filter(outcome => outcome.task_type == null),
+    [selectedSprintType],
+  );
+  const taskTypeOutcomes = useMemo(
+    () => (selectedSprintType?.outcomes ?? []).filter(outcome => outcome.task_type != null),
     [selectedSprintType],
   );
   const overrideFieldSchemas = useMemo(
@@ -275,6 +325,52 @@ export default function SprintDefinitionsPage() {
       await load(selectedSprintType.key);
       setSchemaEditor(null);
       setSuccess('Saved field schema.');
+    } catch (error) {
+      setError(error);
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const saveOutcome = async () => {
+    if (!selectedSprintType || !outcomeEditor) return;
+    setSaving('outcome');
+    try {
+      const payload = {
+        task_type: outcomeEditor.task_type.trim() || null,
+        outcome_key: outcomeEditor.outcome_key.trim(),
+        label: outcomeEditor.label.trim(),
+        description: outcomeEditor.description.trim(),
+        enabled: outcomeEditor.enabled,
+        behavior: outcomeEditor.behavior,
+        color: outcomeEditor.color.trim() || null,
+        badge_variant: outcomeEditor.badge_variant.trim() || null,
+        stage_order: 0,
+        metadata: {},
+      };
+      if (outcomeEditor.id) {
+        await api.updateSprintOutcome(selectedSprintType.key, outcomeEditor.id, payload);
+      } else {
+        await api.createSprintOutcome(selectedSprintType.key, payload as any);
+      }
+      await load(selectedSprintType.key);
+      setOutcomeEditor(null);
+      setSuccess('Saved outcome vocabulary entry.');
+    } catch (error) {
+      setError(error);
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const deleteOutcome = async (outcome: SprintTypeOutcome) => {
+    if (!selectedSprintType || !window.confirm('Delete this outcome definition?')) return;
+    setSaving(`delete-outcome-${outcome.id}`);
+    try {
+      await api.deleteSprintOutcome(selectedSprintType.key, outcome.id);
+      await load(selectedSprintType.key);
+      if (outcomeEditor?.id === outcome.id) setOutcomeEditor(null);
+      setSuccess('Deleted outcome vocabulary entry.');
     } catch (error) {
       setError(error);
     } finally {
@@ -659,6 +755,103 @@ export default function SprintDefinitionsPage() {
                     <Button size="sm" variant="secondary" onClick={() => setSchemaEditor(editor => editor ? { ...editor, fields: [...editor.fields, { ...emptyField }] } : editor)}><Plus className="w-3.5 h-3.5" />Add field</Button>
                     <Button size="sm" variant="primary" loading={saving === 'schema'} onClick={saveSchema}>Save schema</Button>
                   </div>
+                </div>
+              )}
+            </Card>
+
+            <Card className="space-y-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">Outcome vocabulary</p>
+                  <h2 className="mt-1 text-lg font-semibold text-white">Base outcomes and task-type overlays</h2>
+                  <p className="mt-1 text-sm text-slate-400">Sprint type owns the base outcome keys. Task types can extend, override, or disable those keys without changing code.</p>
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="secondary" onClick={() => setOutcomeEditor(emptyOutcomeForm())}><Plus className="w-3.5 h-3.5" />Add base outcome</Button>
+                  <Button size="sm" variant="secondary" onClick={() => setOutcomeEditor(emptyOutcomeForm('backend'))}><Plus className="w-3.5 h-3.5" />Add task-type overlay</Button>
+                </div>
+              </div>
+
+              <div className="grid gap-4 xl:grid-cols-2">
+                <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wide text-amber-300">Base sprint-type outcomes</p>
+                      <p className="mt-1 text-sm text-slate-300">These define the default valid outcome vocabulary for this sprint type.</p>
+                    </div>
+                  </div>
+                  <div className="mt-3 space-y-3">
+                    {baseOutcomes.length === 0 ? (
+                      <div className="rounded-lg border border-dashed border-slate-700 bg-slate-950/60 px-3 py-4 text-sm text-slate-400">No base outcomes configured yet.</div>
+                    ) : baseOutcomes.map(outcome => (
+                      <div key={outcome.id} className="rounded-xl border border-slate-700 bg-slate-950/70 p-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <div className="flex items-center gap-2"><span className="font-mono text-sm text-amber-300">{outcome.outcome_key}</span><span className="text-sm text-white">{outcome.label}</span></div>
+                            <p className="mt-1 text-xs text-slate-400">{outcome.description || 'No description yet.'}</p>
+                            <p className="mt-2 text-[11px] uppercase tracking-wide text-slate-500">{outcome.enabled === 1 ? 'enabled' : 'disabled'} • {outcome.behavior}</p>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button size="sm" variant="ghost" onClick={() => setOutcomeEditor(outcomeToForm(outcome))}><Pencil className="w-3.5 h-3.5" /></Button>
+                            <Button size="sm" variant="ghost" loading={saving === `delete-outcome-${outcome.id}`} onClick={() => deleteOutcome(outcome)}><Trash2 className="w-3.5 h-3.5" /></Button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-700 bg-slate-900/70 p-4">
+                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Task-type overlays</p>
+                  <p className="mt-1 text-sm text-slate-400">Overlays resolve before the base vocabulary. Use extend to add keys, override to replace entries, or disable to remove a base key for one task type.</p>
+                  <div className="mt-3 space-y-3">
+                    {taskTypeOutcomes.length === 0 ? (
+                      <div className="rounded-lg border border-dashed border-slate-700 bg-slate-950/60 px-3 py-4 text-sm text-slate-400">No task-type overlays yet.</div>
+                    ) : taskTypeOutcomes.map(outcome => (
+                      <div key={outcome.id} className="rounded-xl border border-slate-700 bg-slate-950/70 p-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2"><span className="rounded-full border border-slate-600 px-2 py-0.5 text-[11px] uppercase tracking-wide text-slate-300">{outcome.task_type}</span><span className="font-mono text-sm text-amber-300">{outcome.outcome_key}</span><span className="text-sm text-white">{outcome.label}</span></div>
+                            <p className="mt-1 text-xs text-slate-400">{outcome.description || 'No description yet.'}</p>
+                            <p className="mt-2 text-[11px] uppercase tracking-wide text-slate-500">{outcome.enabled === 1 ? 'enabled' : 'disabled'} • {outcome.behavior}</p>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button size="sm" variant="ghost" onClick={() => setOutcomeEditor(outcomeToForm(outcome))}><Pencil className="w-3.5 h-3.5" /></Button>
+                            <Button size="sm" variant="ghost" loading={saving === `delete-outcome-${outcome.id}`} onClick={() => deleteOutcome(outcome)}><Trash2 className="w-3.5 h-3.5" /></Button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {outcomeEditor && (
+                <div className="rounded-xl border border-amber-500/30 bg-slate-900/80 p-4 space-y-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="font-semibold text-white">{outcomeEditor.id ? 'Edit outcome definition' : 'New outcome definition'}</h3>
+                      <p className="mt-1 text-sm text-slate-400">Leave task type blank for the base sprint vocabulary. Fill it in to create a task-type overlay.</p>
+                    </div>
+                    <Button size="sm" variant="ghost" onClick={() => setOutcomeEditor(null)}>Close</Button>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <input className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white" placeholder="task type override, or leave blank" value={outcomeEditor.task_type} onChange={e => setOutcomeEditor(editor => editor ? { ...editor, task_type: e.target.value } : editor)} />
+                    <select className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white" value={outcomeEditor.behavior} onChange={e => setOutcomeEditor(editor => editor ? { ...editor, behavior: e.target.value as OutcomeForm['behavior'] } : editor)}>
+                      {['base', 'extend', 'override', 'disable'].map(mode => <option key={mode} value={mode}>{mode}</option>)}
+                    </select>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <input className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white" placeholder="outcome key" value={outcomeEditor.outcome_key} onChange={e => setOutcomeEditor(editor => editor ? { ...editor, outcome_key: e.target.value } : editor)} />
+                    <input className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white" placeholder="label" value={outcomeEditor.label} onChange={e => setOutcomeEditor(editor => editor ? { ...editor, label: e.target.value } : editor)} />
+                  </div>
+                  <textarea className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white" rows={3} placeholder="description" value={outcomeEditor.description} onChange={e => setOutcomeEditor(editor => editor ? { ...editor, description: e.target.value } : editor)} />
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <input className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white" placeholder="color token (optional)" value={outcomeEditor.color} onChange={e => setOutcomeEditor(editor => editor ? { ...editor, color: e.target.value } : editor)} />
+                    <input className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white" placeholder="badge variant (optional)" value={outcomeEditor.badge_variant} onChange={e => setOutcomeEditor(editor => editor ? { ...editor, badge_variant: e.target.value } : editor)} />
+                    <label className="flex items-center gap-2 text-sm text-slate-300"><input type="checkbox" checked={outcomeEditor.enabled} onChange={e => setOutcomeEditor(editor => editor ? { ...editor, enabled: e.target.checked } : editor)} />Enabled</label>
+                  </div>
+                  <Button variant="primary" loading={saving === 'outcome'} onClick={saveOutcome}>Save outcome definition</Button>
                 </div>
               )}
             </Card>

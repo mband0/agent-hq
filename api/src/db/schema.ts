@@ -546,6 +546,26 @@ export function initSchema(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_sprint_type_task_types_lookup ON sprint_type_task_types(sprint_type_key, task_type);
 
+    CREATE TABLE IF NOT EXISTS sprint_type_outcomes (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      sprint_type_key  TEXT NOT NULL REFERENCES sprint_types(key) ON DELETE CASCADE,
+      task_type        TEXT,
+      outcome_key      TEXT NOT NULL,
+      label            TEXT NOT NULL,
+      description      TEXT NOT NULL DEFAULT '',
+      enabled          INTEGER NOT NULL DEFAULT 1,
+      behavior         TEXT NOT NULL DEFAULT 'base' CHECK(behavior IN ('base','extend','override','disable')),
+      color            TEXT,
+      badge_variant    TEXT,
+      stage_order      INTEGER NOT NULL DEFAULT 0,
+      is_system        INTEGER NOT NULL DEFAULT 1,
+      metadata_json    TEXT NOT NULL DEFAULT '{}',
+      created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at       TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(sprint_type_key, task_type, outcome_key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_sprint_type_outcomes_lookup ON sprint_type_outcomes(sprint_type_key, task_type, enabled, stage_order);
+
     CREATE TABLE IF NOT EXISTS sprint_workflow_templates (
       id               INTEGER PRIMARY KEY AUTOINCREMENT,
       sprint_type_key  TEXT NOT NULL REFERENCES sprint_types(key) ON DELETE CASCADE,
@@ -639,6 +659,16 @@ export function initSchema(): void {
   ensureColumn('sprint_type_task_types', 'is_system', `is_system INTEGER NOT NULL DEFAULT 1`);
   ensureColumn('sprint_type_task_types', 'updated_at', `updated_at TEXT`);
   db.exec(`UPDATE sprint_type_task_types SET updated_at = COALESCE(updated_at, datetime('now'))`);
+  ensureColumn('sprint_type_outcomes', 'description', `description TEXT NOT NULL DEFAULT ''`);
+  ensureColumn('sprint_type_outcomes', 'enabled', `enabled INTEGER NOT NULL DEFAULT 1`);
+  ensureColumn('sprint_type_outcomes', 'behavior', `behavior TEXT NOT NULL DEFAULT 'base'`);
+  ensureColumn('sprint_type_outcomes', 'color', `color TEXT`);
+  ensureColumn('sprint_type_outcomes', 'badge_variant', `badge_variant TEXT`);
+  ensureColumn('sprint_type_outcomes', 'stage_order', `stage_order INTEGER NOT NULL DEFAULT 0`);
+  ensureColumn('sprint_type_outcomes', 'is_system', `is_system INTEGER NOT NULL DEFAULT 1`);
+  ensureColumn('sprint_type_outcomes', 'metadata_json', `metadata_json TEXT NOT NULL DEFAULT '{}'`);
+  ensureColumn('sprint_type_outcomes', 'updated_at', `updated_at TEXT`);
+  db.exec(`UPDATE sprint_type_outcomes SET description = COALESCE(description, ''), enabled = COALESCE(enabled, 1), behavior = COALESCE(NULLIF(behavior, ''), 'base'), stage_order = COALESCE(stage_order, 0), is_system = COALESCE(is_system, 1), metadata_json = COALESCE(metadata_json, '{}'), updated_at = COALESCE(updated_at, datetime('now'))`);
   ensureColumn('sprint_workflow_templates', 'is_system', `is_system INTEGER NOT NULL DEFAULT 1`);
   ensureColumn('sprint_workflow_templates', 'updated_at', `updated_at TEXT`);
   db.exec(`UPDATE sprint_workflow_templates SET updated_at = COALESCE(updated_at, datetime('now'))`);

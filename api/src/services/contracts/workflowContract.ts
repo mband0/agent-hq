@@ -18,6 +18,7 @@ import {
   type ResolvedSprintWorkflow,
   type ResolvedSprintWorkflowTransition,
 } from '../../lib/sprintWorkflow';
+import { resolveSprintOutcomeMap, getLegacyOutcomeMeta } from '../../lib/sprintOutcomes';
 
 // ── PM task types ────────────────────────────────────────────────────────────
 
@@ -132,34 +133,13 @@ function buildResolvedLane(
   }
 }
 
-function buildOutcomeHelp(outcome: string, transition?: ResolvedSprintWorkflowTransition): OutcomeHelpEntry {
+function buildOutcomeHelp(outcome: string, transition?: ResolvedSprintWorkflowTransition, resolvedDescription?: string): OutcomeHelpEntry {
   const toStatus = transition?.toStatus;
-
-  switch (outcome) {
-    case 'completed_for_review':
-      return { outcome, description: 'Implementation is ready for QA/review' };
-    case 'qa_pass':
-      return { outcome, description: 'QA passed; move the task to qa_pass' };
-    case 'qa_fail':
-      return { outcome, description: 'QA failed; return the task to the dev queue' };
-    case 'approved_for_merge':
-      return { outcome, description: 'Work is complete and can move to ready_to_merge' };
-    case 'deployed_live':
-      return { outcome, description: 'Merge/deploy completed and the task should move to deployed' };
-    case 'live_verified':
-      return { outcome, description: 'Deployed work was verified live and can move to done' };
-    case 'blocked':
-      return { outcome, description: 'Cannot proceed because of an external blocker' };
-    case 'failed':
-      return { outcome, description: 'The run itself failed' };
-    case 'retry':
-      return { outcome, description: 'Retry the stalled task from ready' };
-    default:
-      return {
-        outcome,
-        description: toStatus ? `Route the task to ${toStatus}` : `Apply outcome ${outcome}`,
-      };
-  }
+  const fallback = getLegacyOutcomeMeta(outcome);
+  return {
+    outcome,
+    description: resolvedDescription || fallback.description || (toStatus ? `Route the task to ${toStatus}` : `Apply outcome ${outcome}`),
+  };
 }
 
 function legacyResolveWorkflowLane(
@@ -262,6 +242,7 @@ function inferWorkflowLane(
 }
 
 function resolveWorkflowLaneFromResolvedWorkflow(
+  db: Database.Database | null | undefined,
   taskStatus: string,
   taskType: string | null | undefined,
   workflow: ResolvedSprintWorkflow,
@@ -273,13 +254,17 @@ function resolveWorkflowLaneFromResolvedWorkflow(
   const suggestedOutcome = getSuggestedOutcome(taskStatus, taskType, validOutcomes);
   if (!suggestedOutcome) return null;
 
+  const outcomeMeta = db
+    ? resolveSprintOutcomeMap(db, { sprintType: workflow.sprintType, taskType, fallbackOutcomes: validOutcomes })
+    : new Map<string, { description: string }>();
+
   const lane = inferWorkflowLane(taskStatus, taskType, suggestedOutcome);
   return buildResolvedLane(lane, 'sprint_type_config', {
     sprintType: workflow.sprintType,
     workflowTemplateKey: workflow.workflowTemplateKey,
     suggestedOutcome,
     validOutcomes,
-    outcomeHelp: transitions.map((transition) => buildOutcomeHelp(transition.outcome, transition)),
+    outcomeHelp: transitions.map((transition) => buildOutcomeHelp(transition.outcome, transition, outcomeMeta.get(transition.outcome)?.description)),
   });
 }
 
@@ -308,7 +293,7 @@ export function resolveWorkflowLane(
     ?? (ctx.db ? resolveSprintWorkflow(ctx.db, ctx.sprintId ?? null, normalizedSprintType) : null);
 
   if (resolvedWorkflow) {
-    const workflowResolvedLane = resolveWorkflowLaneFromResolvedWorkflow(ctx.taskStatus, ctx.taskType, resolvedWorkflow);
+    const workflowResolvedLane = resolveWorkflowLaneFromResolvedWorkflow(ctx.db ?? null, ctx.taskStatus, ctx.taskType, resolvedWorkflow);
     if (workflowResolvedLane) return workflowResolvedLane;
   }
 

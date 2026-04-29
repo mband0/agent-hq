@@ -21,6 +21,8 @@
  */
 
 import { getAgentHqBaseUrl } from '../lib/agentHqBaseUrl';
+import { getDb } from '../db/client';
+import { resolveWorkflowLane } from '../services/contracts/workflowContract';
 
 // ── Lifecycle data types ─────────────────────────────────────────────────────
 
@@ -36,35 +38,67 @@ export interface AtlasLifecycleData {
   notes?: string;
 }
 
-/** Valid outcomes for the implementation lane. */
-export const VALID_IMPLEMENTATION_OUTCOMES = new Set([
-  'completed_for_review',
-  'blocked',
-  'failed',
-]);
-
-/** Valid outcomes for the QA lane. */
-export const VALID_QA_OUTCOMES = new Set([
-  'qa_pass',
-  'qa_fail',
-  'blocked',
-  'failed',
-]);
-
-/** Valid outcomes for the release lane. */
-export const VALID_RELEASE_OUTCOMES = new Set([
-  'deployed_live',
-  'live_verified',
-  'blocked',
-  'failed',
-]);
-
-/** All valid outcomes across all lanes. */
+/** Compatibility-only default outcomes for proxy-managed remote runtimes. */
+export const VALID_IMPLEMENTATION_OUTCOMES = new Set(['completed_for_review', 'blocked', 'failed']);
+export const VALID_QA_OUTCOMES = new Set(['qa_pass', 'qa_fail', 'blocked', 'failed']);
+export const VALID_RELEASE_OUTCOMES = new Set(['deployed_live', 'live_verified', 'blocked', 'failed']);
 export const ALL_VALID_OUTCOMES = new Set([
   ...VALID_IMPLEMENTATION_OUTCOMES,
   ...VALID_QA_OUTCOMES,
   ...VALID_RELEASE_OUTCOMES,
 ]);
+
+interface ResolvedLifecycleOutcomeSet {
+  validOutcomes: Set<string>;
+  suggestedOutcome: string;
+}
+
+function resolveAllowedLifecycleOutcomes(taskId: number): ResolvedLifecycleOutcomeSet {
+  try {
+    const db = getDb();
+    const task = db.prepare(`
+      SELECT t.status, t.task_type, t.sprint_id, s.sprint_type
+      FROM tasks t
+      LEFT JOIN sprints s ON s.id = t.sprint_id
+      WHERE t.id = ?
+      LIMIT 1
+    `).get(taskId) as {
+      status: string | null;
+      task_type: string | null;
+      sprint_id: number | null;
+      sprint_type: string | null;
+    } | undefined;
+
+    if (!task?.status) {
+      return {
+        validOutcomes: new Set(ALL_VALID_OUTCOMES),
+        suggestedOutcome: 'blocked',
+      };
+    }
+
+    const resolved = resolveWorkflowLane({
+      taskStatus: task.status,
+      taskType: task.task_type,
+      sprintId: task.sprint_id,
+      sprintType: task.sprint_type,
+      db,
+    });
+
+    if (resolved.validOutcomes.length > 0) {
+      return {
+        validOutcomes: new Set(resolved.validOutcomes),
+        suggestedOutcome: resolved.suggestedOutcome,
+      };
+    }
+  } catch {
+    // Fall back to compatibility defaults below.
+  }
+
+  return {
+    validOutcomes: new Set(ALL_VALID_OUTCOMES),
+    suggestedOutcome: 'blocked',
+  };
+}
 
 // ── Lifecycle context ────────────────────────────────────────────────────────
 
@@ -505,8 +539,9 @@ export async function runPostStreamLifecycle(
   );
 
   // Step 3: Derive effective outcome and summary
+  const allowedOutcomes = resolveAllowedLifecycleOutcomes(ctx.taskId);
   const effectiveOutcome =
-    lifecycle?.outcome && ALL_VALID_OUTCOMES.has(lifecycle.outcome)
+    lifecycle?.outcome && allowedOutcomes.validOutcomes.has(lifecycle.outcome)
       ? lifecycle.outcome
       : 'blocked';
 
