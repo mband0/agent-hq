@@ -79,6 +79,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       db,
       model,
       workspaceRoot,
+      activeRepoRoot,
     } = params;
 
     // Per-dispatch runtimeConfig overrides the agent-level baseConfig
@@ -93,10 +94,13 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       this.abortControllers.set(instanceId, abortController);
     }
 
-    // workspaceRoot: prefer explicit param, then fall back to runtimeConfig.workingDirectory
-    const effectiveWorkspaceRoot: string | null =
+    // activeRepoRoot is the authoritative cwd for this run. workspaceRoot remains
+    // the broader container boundary when different from the active repo root.
+    const effectiveActiveRepoRoot: string | null =
+      activeRepoRoot ??
+      (typeof runtimeConfig.workingDirectory === 'string' ? runtimeConfig.workingDirectory : null) ??
       workspaceRoot ??
-      (typeof runtimeConfig.workingDirectory === 'string' ? runtimeConfig.workingDirectory : null);
+      null;
 
     const { sessionKey, agentSlug } = params;
 
@@ -110,7 +114,8 @@ export class ClaudeCodeRuntime implements AgentRuntime {
         runtimeConfig,
         model ?? null,
         abortController,
-        effectiveWorkspaceRoot,
+        workspaceRoot,
+        effectiveActiveRepoRoot,
         sessionKey,
         agentSlug,
       ).catch((err: unknown) => {
@@ -146,21 +151,24 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     modelOverride: string | null,
     abortController: AbortController,
     workspaceRoot: string | null = null,
+    activeRepoRoot: string | null = null,
     sessionKey?: string,
     agentSlug?: string,
   ): Promise<void> {
     const baseUrl = getAgentHqBaseUrl();
 
     // Determine the effective working directory.
-    // Priority: config.workingDirectory (agent-specific) → workspaceRoot (dispatcher-provided)
-    const effectiveCwd: string | undefined = config.workingDirectory ?? workspaceRoot ?? undefined;
+    // activeRepoRoot is authoritative for the dispatched repo root. The runtime
+    // config may still carry the same value as a compatibility override, but it
+    // must not outrank the resolved active repo root when both are present.
+    const effectiveCwd: string | undefined = activeRepoRoot ?? config.workingDirectory ?? workspaceRoot ?? undefined;
 
     if (effectiveCwd) {
       if (workspaceRoot && db) {
         validateAndLogViolation(db, workspaceRoot, effectiveCwd, { instanceId });
       }
       console.log(
-        `[ClaudeCodeRuntime] instance #${instanceId}: cwd=${effectiveCwd} (workspace boundary enforced)`
+        `[ClaudeCodeRuntime] instance #${instanceId}: cwd=${effectiveCwd} activeRepoRoot=${activeRepoRoot ?? 'null'} workspaceRoot=${workspaceRoot ?? 'null'} (workspace boundary enforced)`
       );
     }
 
@@ -233,8 +241,10 @@ export class ClaudeCodeRuntime implements AgentRuntime {
             ATLAS_CALLBACK_START: `${baseUrl}/api/v1/instances/${instanceId}/start`,
             ATLAS_CALLBACK_CHECKIN: `${baseUrl}/api/v1/instances/${instanceId}/check-in`,
             ATLAS_CALLBACK_COMPLETE: `${baseUrl}/api/v1/instances/${instanceId}/complete`,
-            // Workspace boundary: agent runtime uses this to validate file operation paths
-            ...(effectiveCwd ? { ATLAS_WORKSPACE_ROOT: effectiveCwd } : {}),
+            // Workspace boundary remains the broader allowed container root when present.
+            ...(workspaceRoot ? { ATLAS_WORKSPACE_ROOT: workspaceRoot } : effectiveCwd ? { ATLAS_WORKSPACE_ROOT: effectiveCwd } : {}),
+            // Active repo root is the authoritative repo cwd for this dispatched run.
+            ...(effectiveCwd ? { ATLAS_ACTIVE_REPO_ROOT: effectiveCwd } : {}),
           } as Record<string, string>,
         },
       })) {

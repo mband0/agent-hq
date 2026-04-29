@@ -1131,8 +1131,10 @@ export async function gatewayWsSend(params: {
   sessionKey: string;
   message: string;
   timeoutMs?: number;
+  cwd?: string | null;
+  metadata?: Record<string, unknown> | null;
 }): Promise<{ ok: boolean; runId?: string; error?: string }> {
-  const { sessionKey, message, timeoutMs } = params;
+  const { sessionKey, message, timeoutMs, cwd, metadata } = params;
 
   return new Promise((resolve) => {
     const ws = new WebSocket(GATEWAY_WS_URL, openClawGatewayWsOptions(GATEWAY_WS_URL));
@@ -1234,12 +1236,16 @@ export async function gatewayWsSend(params: {
         // wrapping pipeline entirely so no SECURITY NOTICE is applied
         // regardless of provenance.
         console.log('[runtime-ws] sending chat.send');
-        const sendResult = await sendRpc('chat.send', {
+        const sendParams: Record<string, unknown> = {
           sessionKey,
           message,
           idempotencyKey: crypto.randomUUID(),
           timeoutMs: timeoutMs ?? 900_000,
-        });
+        };
+        if (typeof cwd === 'string' && cwd.trim()) sendParams.cwd = cwd.trim();
+        if (metadata && Object.keys(metadata).length > 0) sendParams.metadata = metadata;
+
+        const sendResult = await sendRpc('chat.send', sendParams);
 
         clearTimeout(timeout);
         ws.close();
@@ -1308,10 +1314,33 @@ export class OpenClawRuntime implements AgentRuntime {
       );
     }
 
+    const activeRepoRoot = params.activeRepoRoot ?? null;
+    const workspaceRoot = params.workspaceRoot ?? null;
+    const pathMetadata = params.pathMetadata ?? null;
+    if (activeRepoRoot || workspaceRoot) {
+      const pathMode = pathMetadata?.pathMode ?? (activeRepoRoot ? 'active-repo-root' : 'workspace-root');
+      console.log(
+        `[OpenClawRuntime] dispatch path resolution: sessionKey=${routedSessionKey} mode=${pathMode} cwd=${activeRepoRoot ?? workspaceRoot ?? 'null'} activeRepoRoot=${activeRepoRoot ?? 'null'} workspaceRoot=${workspaceRoot ?? 'null'} worktreeRoot=${pathMetadata?.worktreeRoot ?? 'null'} runtimeConfigWorkingDirectory=${pathMetadata?.runtimeConfigWorkingDirectory ?? 'null'} repoRootSource=${pathMetadata?.repoRootSource ?? 'unknown'} workspaceRootSource=${pathMetadata?.workspaceRootSource ?? 'unknown'}`,
+      );
+    }
+
+    const dispatchCwd = activeRepoRoot ?? workspaceRoot;
     const wsResult = await gatewayWsSend({
       sessionKey: routedSessionKey,
       message: params.message,
       timeoutMs: (params.timeoutSeconds ?? 900) * 1000,
+      cwd: dispatchCwd,
+      metadata: activeRepoRoot || workspaceRoot
+        ? {
+            activeRepoRoot,
+            workspaceRoot,
+            pathMode: pathMetadata?.pathMode ?? null,
+            repoRootSource: pathMetadata?.repoRootSource ?? null,
+            workspaceRootSource: pathMetadata?.workspaceRootSource ?? null,
+            worktreeRoot: pathMetadata?.worktreeRoot ?? null,
+            runtimeConfigWorkingDirectory: pathMetadata?.runtimeConfigWorkingDirectory ?? null,
+          }
+        : null,
     });
 
     if (!wsResult.ok) {

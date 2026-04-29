@@ -52,7 +52,21 @@ jest.mock('ws', () => {
         delete response.payload;
         response.error = { code: 'INVALID_REQUEST', message: 'bad runtime config' };
       } else if (frame.method === 'chat.send') {
-        response.payload = { runId: 'run-123' };
+        const metadata = frame.params.metadata as Record<string, unknown> | undefined;
+        if (
+          typeof frame.params.cwd === 'string' &&
+          typeof metadata?.activeRepoRoot === 'string' &&
+          frame.params.cwd !== metadata.activeRepoRoot
+        ) {
+          delete response.payload;
+          response.error = { code: 'INVALID_REQUEST', message: 'cwd must match activeRepoRoot' };
+        } else {
+          response.payload = {
+            runId: 'run-123',
+            cwd: frame.params.cwd,
+            metadata: frame.params.metadata,
+          };
+        }
       }
 
       setImmediate(() => {
@@ -181,5 +195,96 @@ describe('OpenClawRuntime gateway dispatch', () => {
       message: 'Implement task',
     }));
     expect(send?.params).not.toHaveProperty('model');
+  });
+
+  it('passes the task worktree repo root as chat cwd and records both path roots in metadata', async () => {
+    const runtime = new OpenClawRuntime();
+
+    const result = await runtime.dispatch(dispatchParams({
+      workspaceRoot: '/Users/nordini/.openclaw/workspace-agent-hq-backend',
+      activeRepoRoot: '/Users/nordini/.openclaw/workspace-agent-hq-backend/task-375',
+      pathMetadata: {
+        pathMode: 'worktree',
+        repoRootSource: 'worktree',
+        workspaceRootSource: 'workspace',
+        worktreeRoot: '/Users/nordini/.openclaw/workspace-agent-hq-backend/task-375',
+        runtimeConfigWorkingDirectory: '/Users/nordini/.openclaw/workspace-agent-hq-backend',
+      },
+    }));
+
+    expect(result).toEqual({ runId: 'run-123' });
+
+    const send = mockSentRequests.find((request) => request.method === 'chat.send');
+    expect(send?.params).toEqual(expect.objectContaining({
+      sessionKey: 'agent:cinder-backend:hook:atlas:jobrun:383',
+      message: 'Implement task',
+      cwd: '/Users/nordini/.openclaw/workspace-agent-hq-backend/task-375',
+      metadata: {
+        activeRepoRoot: '/Users/nordini/.openclaw/workspace-agent-hq-backend/task-375',
+        workspaceRoot: '/Users/nordini/.openclaw/workspace-agent-hq-backend',
+        pathMode: 'worktree',
+        repoRootSource: 'worktree',
+        workspaceRootSource: 'workspace',
+        worktreeRoot: '/Users/nordini/.openclaw/workspace-agent-hq-backend/task-375',
+        runtimeConfigWorkingDirectory: '/Users/nordini/.openclaw/workspace-agent-hq-backend',
+      },
+    }));
+
+    expect(logSpy).toHaveBeenCalledWith(
+      '[OpenClawRuntime] dispatch path resolution: sessionKey=agent:cinder-backend:hook:atlas:jobrun:383 mode=worktree cwd=/Users/nordini/.openclaw/workspace-agent-hq-backend/task-375 activeRepoRoot=/Users/nordini/.openclaw/workspace-agent-hq-backend/task-375 workspaceRoot=/Users/nordini/.openclaw/workspace-agent-hq-backend worktreeRoot=/Users/nordini/.openclaw/workspace-agent-hq-backend/task-375 runtimeConfigWorkingDirectory=/Users/nordini/.openclaw/workspace-agent-hq-backend repoRootSource=worktree workspaceRootSource=workspace',
+    );
+  });
+
+  it('keeps chat cwd on activeRepoRoot even when workspaceRoot points at the parent workspace', async () => {
+    const runtime = new OpenClawRuntime();
+
+    await runtime.dispatch(dispatchParams({
+      workspaceRoot: '/parent/workspace',
+      activeRepoRoot: '/parent/workspace/task-375',
+      pathMetadata: {
+        pathMode: 'worktree',
+        repoRootSource: 'worktree',
+        workspaceRootSource: 'workspace',
+        worktreeRoot: '/parent/workspace/task-375',
+        runtimeConfigWorkingDirectory: '/parent/workspace',
+      },
+    }));
+
+    const send = mockSentRequests.find((request) => request.method === 'chat.send');
+    expect(send?.params).toEqual(expect.objectContaining({
+      cwd: '/parent/workspace/task-375',
+      metadata: {
+        activeRepoRoot: '/parent/workspace/task-375',
+        workspaceRoot: '/parent/workspace',
+        pathMode: 'worktree',
+        repoRootSource: 'worktree',
+        workspaceRootSource: 'workspace',
+        worktreeRoot: '/parent/workspace/task-375',
+        runtimeConfigWorkingDirectory: '/parent/workspace',
+      },
+    }));
+  });
+
+  it('falls back to workspaceRoot as chat cwd when no activeRepoRoot is provided', async () => {
+    const runtime = new OpenClawRuntime();
+
+    await runtime.dispatch(dispatchParams({
+      workspaceRoot: '/parent/workspace',
+      activeRepoRoot: null,
+    }));
+
+    const send = mockSentRequests.find((request) => request.method === 'chat.send');
+    expect(send?.params).toEqual(expect.objectContaining({
+      cwd: '/parent/workspace',
+      metadata: {
+        activeRepoRoot: null,
+        workspaceRoot: '/parent/workspace',
+        pathMode: null,
+        repoRootSource: null,
+        workspaceRootSource: null,
+        worktreeRoot: null,
+        runtimeConfigWorkingDirectory: null,
+      },
+    }));
   });
 });

@@ -86,6 +86,59 @@ function gatewayFetch(hookPath: string, init: RequestInit): Promise<Response> {
 }
 // ── End container routing config ─────────────────────────────────────────────
 
+function normalizePathOrNull(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return path.resolve(trimmed);
+}
+
+function resolveDispatchPathContext(params: {
+  worktreePath?: string | null;
+  runtimeConfigWorkingDirectory?: string | null;
+  workspacePath?: string | null;
+}): {
+  activeRepoRoot: string | null;
+  workspaceContainerRoot: string | null;
+  worktreeRoot: string | null;
+  runtimeConfigWorkingDirectory: string | null;
+  pathMode: 'worktree' | 'runtime-config' | 'workspace';
+  repoRootSource: 'worktree' | 'runtime-config' | 'workspace' | 'none';
+  workspaceContainerSource: 'workspace' | 'active-repo-root' | 'none';
+} {
+  const worktreeRoot = normalizePathOrNull(params.worktreePath);
+  const runtimeConfigWorkingDirectory = normalizePathOrNull(params.runtimeConfigWorkingDirectory);
+  const workspacePath = normalizePathOrNull(params.workspacePath);
+  const activeRepoRoot = worktreeRoot ?? runtimeConfigWorkingDirectory ?? workspacePath;
+  const workspaceContainerRoot = workspacePath ?? activeRepoRoot;
+  const pathMode: 'worktree' | 'runtime-config' | 'workspace' = worktreeRoot
+    ? 'worktree'
+    : runtimeConfigWorkingDirectory
+      ? 'runtime-config'
+      : 'workspace';
+  const repoRootSource: 'worktree' | 'runtime-config' | 'workspace' | 'none' = worktreeRoot
+    ? 'worktree'
+    : runtimeConfigWorkingDirectory
+      ? 'runtime-config'
+      : workspacePath
+        ? 'workspace'
+        : 'none';
+  const workspaceContainerSource: 'workspace' | 'active-repo-root' | 'none' = workspacePath
+    ? 'workspace'
+    : activeRepoRoot
+      ? 'active-repo-root'
+      : 'none';
+  return {
+    activeRepoRoot,
+    workspaceContainerRoot,
+    worktreeRoot,
+    runtimeConfigWorkingDirectory,
+    pathMode,
+    repoRootSource,
+    workspaceContainerSource,
+  };
+}
+
 /**
  * hooksFetch — send a /hooks/agent request to the correct OpenClaw instance.
  *
@@ -337,6 +390,44 @@ function tableHasColumn(db: Database.Database, tableName: string, columnName: st
   } catch {
     return false;
   }
+}
+
+function extractWorkingDirectoryFromRuntimeConfig(runtimeConfig: unknown): string | null {
+  if (typeof runtimeConfig === 'string') {
+    try {
+      const parsed = JSON.parse(runtimeConfig) as Record<string, unknown>;
+      return typeof parsed.workingDirectory === 'string' ? parsed.workingDirectory : null;
+    } catch {
+      return null;
+    }
+  }
+  if (runtimeConfig && typeof runtimeConfig === 'object') {
+    const parsed = runtimeConfig as Record<string, unknown>;
+    return typeof parsed.workingDirectory === 'string' ? parsed.workingDirectory : null;
+  }
+  return null;
+}
+
+function buildDispatchRuntimeConfig(
+  runtimeConfig: unknown,
+  overrides: Record<string, unknown>,
+): Record<string, unknown> {
+  const baseConfig = typeof runtimeConfig === 'string'
+    ? (() => {
+        try {
+          return JSON.parse(runtimeConfig) as Record<string, unknown>;
+        } catch {
+          return {};
+        }
+      })()
+    : (runtimeConfig && typeof runtimeConfig === 'object'
+        ? runtimeConfig as Record<string, unknown>
+        : {});
+
+  return {
+    ...baseConfig,
+    ...overrides,
+  };
 }
 
 function getCandidates(db: Database.Database, agentId: number, _templateId: number | null, projectId: number | null): CandidateTask[] {
@@ -768,8 +859,11 @@ export function writeRunContext(params: {
   sessionKey: string;
   agentSlug: string;
   apiBase?: string;
+  workspaceRoot?: string | null;
+  activeRepoRoot?: string | null;
+  worktreeRoot?: string | null;
 }): void {
-  const { workingDirectory, instanceId, taskId, sessionKey, agentSlug, apiBase } = params;
+  const { workingDirectory, instanceId, taskId, sessionKey, agentSlug, apiBase, workspaceRoot, activeRepoRoot, worktreeRoot } = params;
   const contextPath = path.join(workingDirectory, RUN_CONTEXT_FILENAME);
   const tmpPath = contextPath + '.tmp';
   const data = {
@@ -778,6 +872,9 @@ export function writeRunContext(params: {
     session_key: sessionKey,
     agent_slug: agentSlug,
     api_base: apiBase ?? 'http://localhost:3501',
+    workspace_root: workspaceRoot ?? null,
+    active_repo_root: activeRepoRoot ?? workingDirectory,
+    worktree_root: worktreeRoot ?? null,
     written_at: new Date().toISOString(),
   };
   try {
@@ -1041,6 +1138,24 @@ async function fireAgentRun(
 ): Promise<void> {
   const timeoutSec = job.timeout_seconds || 900;
   const sessionKey = buildSessionKey(instanceId);
+  const pathContext = resolveDispatchPathContext({
+    worktreePath,
+    runtimeConfigWorkingDirectory: extractWorkingDirectoryFromRuntimeConfig(job.runtime_config),
+    workspacePath: job.workspace_path,
+  });
+  const {
+    activeRepoRoot,
+    workspaceContainerRoot,
+    worktreeRoot,
+    runtimeConfigWorkingDirectory,
+    pathMode,
+    repoRootSource,
+    workspaceContainerSource,
+  } = pathContext;
+
+  console.log(
+    `[dispatcher] Instance #${instanceId} path resolution: mode=${pathMode} activeRepoRoot=${activeRepoRoot ?? 'null'} workspaceRoot=${workspaceContainerRoot ?? 'null'} worktreePath=${worktreeRoot ?? 'null'} runtimeConfigWorkingDirectory=${runtimeConfigWorkingDirectory ?? 'null'} repoRootSource=${repoRootSource} workspaceRootSource=${workspaceContainerSource}`
+  );
 
   // Store the deterministic session key on the instance BEFORE dispatch
   // so it's always available for transcript lookups even if dispatch fails.
@@ -1094,21 +1209,7 @@ async function fireAgentRun(
   // without requiring runtime-specific conditionals here.
   {
     // Resolve the working directory (same logic as before, now shared across runtimes)
-    let workingDirectory: string | null = null;
-    if (worktreePath) {
-      workingDirectory = worktreePath;
-    } else if (typeof job.runtime_config === 'string') {
-      try {
-        const cfg = JSON.parse(job.runtime_config) as Record<string, unknown>;
-        if (typeof cfg.workingDirectory === 'string') workingDirectory = cfg.workingDirectory;
-      } catch { /* ignore */ }
-    } else if (job.runtime_config && typeof job.runtime_config === 'object') {
-      const cfg = job.runtime_config as Record<string, unknown>;
-      if (typeof cfg.workingDirectory === 'string') workingDirectory = cfg.workingDirectory;
-    }
-    if (!workingDirectory && job.workspace_path) {
-      workingDirectory = job.workspace_path;
-    }
+    const workingDirectory: string | null = activeRepoRoot;
 
     // Parse skill names from the canonical agent/job record
     let skillNames: string[] = [];
@@ -1150,7 +1251,7 @@ async function fireAgentRun(
   // bundles. Atlas owns the canonical assignment in the DB, so write the
   // effective assigned server set into the working directory before dispatch.
   if ((job.runtime_type ?? 'openclaw') === 'openclaw') {
-    const effectiveMcpDir: string | null = worktreePath ?? job.workspace_path ?? null;
+    const effectiveMcpDir: string | null = activeRepoRoot;
     if (effectiveMcpDir) {
       try {
         const mcpResult = syncAssignedMcpForAgent({
@@ -1181,7 +1282,7 @@ async function fireAgentRun(
   // This covers all runtimes (OpenClaw, claude-code, etc.) — the file is
   // written to the agent's working directory before dispatch so the
   // atlas-callback CLI can auto-discover instance/task/session context.
-  const effectiveWorkDir: string | null = worktreePath ?? job.workspace_path ?? null;
+  const effectiveWorkDir: string | null = activeRepoRoot;
   if (effectiveWorkDir && taskId != null) {
     try {
       writeRunContext({
@@ -1190,6 +1291,9 @@ async function fireAgentRun(
         taskId,
         sessionKey,
         agentSlug,
+        workspaceRoot: workspaceContainerRoot,
+        activeRepoRoot,
+        worktreeRoot,
       });
     } catch (ctxErr) {
       console.warn(`[dispatcher] writeRunContext failed for instance #${instanceId}:`, ctxErr);
@@ -1201,16 +1305,22 @@ async function fireAgentRun(
     // Do not bypass AgentRuntime with direct /hooks/agent calls here.
 
     // Build runtimeConfig override from story-point rule (max_turns / max_budget_usd)
-    // and worktree path (task #365)
-    let runtimeConfigOverride: Record<string, unknown> = {};
+    // and resolved repo-root path. The active repo root must remain authoritative
+    // for the dispatched runtime cwd even if the stored runtime config still points
+    // at the parent workspace or another stale location.
+    const runtimeConfigOverride: Record<string, unknown> = {};
     if (spModel) {
       if (spModel.max_turns != null) runtimeConfigOverride.maxTurns = spModel.max_turns;
       if (spModel.max_budget_usd != null) runtimeConfigOverride.maxBudgetUsd = spModel.max_budget_usd;
     }
-    // Override workingDirectory with worktree path when available (task #365)
-    if (worktreePath) {
-      runtimeConfigOverride.workingDirectory = worktreePath;
+    if (activeRepoRoot) {
+      runtimeConfigOverride.workingDirectory = activeRepoRoot;
     }
+    const dispatchRuntimeConfig = buildDispatchRuntimeConfig(job.runtime_config, runtimeConfigOverride);
+
+    console.log(
+      `[dispatcher] Instance #${instanceId} runtime config handoff: mode=${pathMode} workingDirectory=${typeof dispatchRuntimeConfig.workingDirectory === 'string' ? dispatchRuntimeConfig.workingDirectory : 'null'} activeRepoRoot=${activeRepoRoot ?? 'null'} workspaceRoot=${workspaceContainerRoot ?? 'null'} worktreePath=${worktreeRoot ?? 'null'} runtimeConfigWorkingDirectory=${runtimeConfigWorkingDirectory ?? 'null'} repoRootSource=${repoRootSource} workspaceRootSource=${workspaceContainerSource}`
+    );
 
     const { runId } = await runtime.dispatch({
       message,
@@ -1228,12 +1338,18 @@ async function fireAgentRun(
       repoSource: repoContext?.repoSource ?? null,
       repoWorkspacePath: repoContext?.repoWorkspacePath ?? null,
       repoBranch: repoContext?.repoBranch ?? null,
-      // Workspace boundary (task #364): pass the agent's workspace root so the
-      // runtime can set cwd and expose ATLAS_WORKSPACE_ROOT to the agent process.
-      workspaceRoot: repoContext?.repoWorkspacePath ?? job.workspace_path ?? null,
-      runtimeConfig: Object.keys(runtimeConfigOverride).length > 0
-        ? { ...(typeof job.runtime_config === 'string' ? JSON.parse(job.runtime_config) as Record<string, unknown> : (job.runtime_config ?? {})), ...runtimeConfigOverride }
-        : job.runtime_config,
+      // Workspace boundary (task #364): keep the broader workspace container root
+      // separate from the authoritative active repo root for this dispatched run.
+      workspaceRoot: workspaceContainerRoot,
+      activeRepoRoot,
+      pathMetadata: {
+        pathMode,
+        repoRootSource,
+        workspaceRootSource: workspaceContainerSource,
+        worktreeRoot,
+        runtimeConfigWorkingDirectory,
+      },
+      runtimeConfig: dispatchRuntimeConfig,
       hooksUrl: job.agent_hooks_url ?? null,
       hooksAuthHeader: job.agent_hooks_auth_header ?? null,
     });
@@ -1467,12 +1583,33 @@ export function dispatchTaskToJob(
   // ── GitHub identity injection (task #613) ────────────────────────────────
   // Resolve and inject per-agent GitHub credentials so routed agents can
   // operate under distinct GitHub identities for PR open/approve/merge.
-  const effectiveWorkDir = repoWorkspacePath ?? job.workspace_path ?? null;
+  // When a task worktree exists, that active repo root must be authoritative
+  // for both dispatch-time cwd and any run-local credential/context files.
+  const dispatchPathContext = resolveDispatchPathContext({
+    worktreePath: repoWorkspacePath,
+    runtimeConfigWorkingDirectory: extractWorkingDirectoryFromRuntimeConfig(job.runtime_config),
+    workspacePath: job.workspace_path,
+  });
+  const ghIdentityEffectiveWorkDir = dispatchPathContext.activeRepoRoot;
   const ghIdentity = resolveGitHubIdentity(db, job.agent_id);
-  if (ghIdentity && effectiveWorkDir) {
-    injectGitHubCredentials(effectiveWorkDir, ghIdentity.identity);
+  if (ghIdentity && ghIdentityEffectiveWorkDir) {
+    injectGitHubCredentials(ghIdentityEffectiveWorkDir, ghIdentity.identity);
   }
-  const ghIdentityContext = buildGitHubIdentityContext(ghIdentity, effectiveWorkDir ?? '');
+  const pathContextSection = [
+    '## Active Workspace Context',
+    `- **Path mode:** ${dispatchPathContext.pathMode}`,
+    `- **Active repo root:** ${dispatchPathContext.activeRepoRoot ?? 'unknown'}`,
+    `- **Workspace container root:** ${dispatchPathContext.workspaceContainerRoot ?? 'unknown'}`,
+    `- **Task worktree:** ${dispatchPathContext.worktreeRoot ?? 'none'}`,
+    '',
+    'Use the active repo root as the authoritative cwd for repo files, git commands, and task implementation work.',
+    'Start all file inspection, searches, edits, and git commands from the active repo root first.',
+    'Do not begin by probing the workspace container root for repo files when the active repo root differs.',
+    'Do not treat the workspace container root as the repo root when a task worktree or other active repo root is present.',
+    'Treat the workspace container root as a broader container boundary only, not the repo root, when these differ.',
+    '',
+  ].join('\n');
+  const ghIdentityContext = buildGitHubIdentityContext(ghIdentity, ghIdentityEffectiveWorkDir ?? '');
 
   // Resolve transport mode from agent runtime type and config (task #632)
   const transportMode = resolveTransportMode({
@@ -1482,7 +1619,7 @@ export function dispatchTaskToJob(
   });
 
   const fullMessage = appendInstanceInstructions(
-    baseMessage, instanceId, task.id, task.status, agentSlug, sessionKey,
+    [baseMessage, pathContextSection].filter(Boolean).join('\n\n'), instanceId, task.id, task.status, agentSlug, sessionKey,
     callbackBaseUrl, task.task_type, task.sprint_type, transportMode,
   ) + ghIdentityContext;
 
