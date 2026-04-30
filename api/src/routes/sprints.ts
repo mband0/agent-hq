@@ -5,6 +5,7 @@ import { buildDispatchMessage, dispatchInstance } from '../services/dispatcher';
 import { seedSprintTaskPolicy } from '../lib/sprintTaskPolicy';
 import { syncStarterRoutingForSprint } from '../lib/starterSetup';
 import { getAgentHqBaseUrl } from '../lib/agentHqBaseUrl';
+import { resolveSprintOutcomeVocabulary } from '../lib/sprintOutcomes';
 
 const router = Router();
 
@@ -300,6 +301,27 @@ function getOutcomesForSprintType(db: ReturnType<typeof getDb>, sprintTypeKey: s
     ...row,
     metadata: JSON.parse(row.metadata_json || '{}'),
   }));
+}
+
+function getResolvedOutcomesForSprintType(db: ReturnType<typeof getDb>, sprintTypeKey: string) {
+  const taskTypes = getTaskTypesForSprintType(db, sprintTypeKey).map((row) => row.task_type);
+  const base = resolveSprintOutcomeVocabulary(db, { sprintType: sprintTypeKey }).map((row) => ({
+    ...row,
+    source: row.id ? 'configured' : 'fallback',
+  }));
+
+  const byTaskType = Object.fromEntries(taskTypes.map((taskType) => [
+    taskType,
+    resolveSprintOutcomeVocabulary(db, { sprintType: sprintTypeKey, taskType }).map((row) => ({
+      ...row,
+      source: row.id ? 'configured' : 'fallback',
+    })),
+  ]));
+
+  return {
+    base,
+    by_task_type: byTaskType,
+  };
 }
 
 function validateOutcomePayload(input: SprintTypeOutcomeInput, index = 0) {
@@ -674,6 +696,7 @@ router.get('/types/:key', (req: Request, res: Response) => {
       task_types: getTaskTypesForSprintType(db, sprintTypeKey),
       field_schemas: getFieldSchemasForSprintType(db, sprintTypeKey),
       outcomes: getOutcomesForSprintType(db, sprintTypeKey),
+      resolved_outcomes: getResolvedOutcomesForSprintType(db, sprintTypeKey),
       workflow_templates: getWorkflowTemplatesDetailed(db, sprintTypeKey),
     });
   } catch (err) {
@@ -1312,7 +1335,10 @@ router.get('/types/:key/outcomes', (req: Request, res: Response) => {
     if (!sprintTypeKey) return res.status(400).json({ error: 'Sprint type key is required' });
     if (!getSprintTypeOr404(db, sprintTypeKey)) return res.status(404).json({ error: 'Sprint type not found' });
 
-    return res.json({ outcomes: getOutcomesForSprintType(db, sprintTypeKey) });
+    return res.json({
+      outcomes: getOutcomesForSprintType(db, sprintTypeKey),
+      resolved_outcomes: getResolvedOutcomesForSprintType(db, sprintTypeKey),
+    });
   } catch (err) {
     return res.status(500).json({ error: String(err) });
   }
