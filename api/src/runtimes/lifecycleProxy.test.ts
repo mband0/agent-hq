@@ -24,8 +24,10 @@ describe('lifecycleProxy configured outcome vocabulary', () => {
       DELETE FROM sprint_types;
       DELETE FROM sprints;
       DELETE FROM tasks;
+      DELETE FROM projects;
     `);
 
+    db.prepare(`INSERT INTO projects (id, name, description, context_md, created_at) VALUES (1, 'Agent HQ', '', '', datetime('now'))`).run();
     db.prepare(`INSERT INTO sprint_types (key, name, description, is_system, created_at, updated_at) VALUES ('enhancements', 'Enhancements', '', 0, datetime('now'), datetime('now'))`).run();
     db.prepare(`INSERT INTO sprints (id, project_id, name, goal, sprint_type, workflow_template_key, status, length_kind, length_value, created_at) VALUES (1, 1, 'Sprint', '', 'enhancements', 'default', 'active', 'time', '2w', datetime('now'))`).run();
     db.prepare(`INSERT INTO sprint_workflow_templates (id, sprint_type_key, key, name, description, is_default, is_system, created_at, updated_at) VALUES (1, 'enhancements', 'default', 'Default', '', 1, 0, datetime('now'), datetime('now'))`).run();
