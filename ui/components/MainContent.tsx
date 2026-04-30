@@ -69,7 +69,7 @@ export default function MainContent({ children }: { children: React.ReactNode })
       {showOnboarding && (
         <OnboardingWizard onClose={() => setShowOnboarding(false)} />
       )}
-    <main className={`flex-1 min-h-0 overflow-y-auto md:overflow-hidden flex flex-col transition-all duration-200 ${desktopMargin}`}>
+    <main className={`flex-1 min-h-0 overflow-y-auto overscroll-none md:overflow-hidden flex flex-col transition-all duration-200 ${desktopMargin}`}>
       {isFullHeight ? (
         <div className="flex-1 min-h-0 pb-[calc(4rem+env(safe-area-inset-bottom,0px))] md:pb-0 flex flex-col md:overflow-hidden">
           {children}

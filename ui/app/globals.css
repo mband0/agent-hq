@@ -9,9 +9,14 @@
   --foreground: #e2e8f0;
 }
 
+html,
 body {
   background-color: #1a2236;
   color: #e2e8f0;
+}
+
+body {
+  overscroll-behavior-y: none;
 }
 
 :root {
