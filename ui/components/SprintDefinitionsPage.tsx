@@ -341,7 +341,7 @@ export default function SprintDefinitionsPage() {
         outcome_key: outcomeEditor.outcome_key.trim(),
         label: outcomeEditor.label.trim(),
         description: outcomeEditor.description.trim(),
-        enabled: outcomeEditor.enabled,
+        enabled: outcomeEditor.enabled ? 1 : 0,
         behavior: outcomeEditor.behavior,
         color: outcomeEditor.color.trim() || null,
         badge_variant: outcomeEditor.badge_variant.trim() || null,
@@ -351,7 +351,7 @@ export default function SprintDefinitionsPage() {
       if (outcomeEditor.id) {
         await api.updateSprintOutcome(selectedSprintType.key, outcomeEditor.id, payload);
       } else {
-        await api.createSprintOutcome(selectedSprintType.key, payload as any);
+        await api.createSprintOutcome(selectedSprintType.key, payload);
       }
       await load(selectedSprintType.key);
       setOutcomeEditor(null);
