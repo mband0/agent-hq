@@ -177,7 +177,7 @@ export default function ProjectDetailPage() {
   return (
     <div className="space-y-6">
       {/* Back + Title */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-start gap-3">
         <Button variant="ghost" size="sm" onClick={() => router.push('/projects')}>
           <ArrowLeft className="w-4 h-4" />
         </Button>
@@ -190,14 +190,14 @@ export default function ProjectDetailPage() {
               placeholder="Project name"
             />
           ) : (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <FolderOpen className="w-5 h-5 text-amber-400 shrink-0" />
               <h1 className="text-xl font-bold text-white truncate">{project.name}</h1>
               <Badge variant="workspace">{projectAgents.length} agents</Badge>
             </div>
           )}
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex w-full flex-wrap items-center gap-2 shrink-0 sm:w-auto sm:justify-end">
           {editing ? (
             <>
               <Button variant="primary" size="sm" onClick={handleSave} loading={saving}>
@@ -318,7 +318,7 @@ export default function ProjectDetailPage() {
       </Card>
 
       {/* Tab Nav */}
-      <div className="flex items-center gap-1 border-b border-slate-700 pb-0">
+      <div className="-mx-1 flex items-center gap-1 overflow-x-auto border-b border-slate-700 pb-0 scrollbar-none">
         <button
           onClick={() => setPageTab('agents')}
           className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-t-lg transition-colors border-b-2 ${
@@ -370,7 +370,7 @@ export default function ProjectDetailPage() {
       {/* Sprints Tab */}
       {pageTab === 'sprints' && (
         <div className="space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="font-semibold text-white">Project Sprints</h2>
             <Link href="/sprints/new">
               <Button variant="primary" size="sm">
@@ -452,12 +452,12 @@ export default function ProjectDetailPage() {
 
       {/* Agents Tab */}
       {pageTab === 'agents' && <div className="space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="font-semibold text-white">Assigned Agents</h2>
           {unassignedAgents.length > 0 && (
-            <div className="flex items-center gap-2">
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
               <select
-                className="bg-slate-700 border border-slate-600 rounded-lg px-2 py-1.5 text-white text-sm focus:outline-none focus:border-amber-500"
+                className="min-w-0 flex-1 bg-slate-700 border border-slate-600 rounded-lg px-2 py-1.5 text-white text-sm focus:outline-none focus:border-amber-500 sm:min-w-[220px] sm:flex-none"
                 value={addAgentId}
                 onChange={e => setAddAgentId(e.target.value)}
               >

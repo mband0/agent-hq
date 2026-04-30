@@ -42,7 +42,6 @@ const navItems = [
   { href: '/logs', label: 'Logs', icon: ScrollText },
 ];
 
-// Bottom nav items (mobile — primary 4 + a scrollable overflow menu)
 const mobileNavItems = [
   { href: '/', label: 'Home', icon: LayoutDashboard },
   { href: '/tasks', label: 'Tasks', icon: ClipboardList },
@@ -159,36 +158,44 @@ export default function Sidebar() {
         )}
       </aside>
 
-      {/* Mobile bottom tab bar — visible only on mobile, horizontally scrollable */}
+      {/* Mobile bottom tab bar — visible only on mobile, intentionally limited to primary destinations */}
       <nav className="md:hidden order-2 z-[45] w-full shrink-0 bg-slate-950 border-t border-slate-800 pb-[env(safe-area-inset-bottom,0px)]">
-        <div className="flex items-center overflow-x-auto scrollbar-none px-1 py-1">
-          {navItems.map(({ href, label, icon: Icon }) => {
-            const isActive = href === '/'
+        <div className="grid grid-cols-6 gap-1 px-1 py-1">
+          {[...mobileNavItems, { href: '__guide__', label: 'Guide', icon: HelpCircle }].map(({ href, label, icon: Icon }) => {
+            const isGuide = href === '__guide__';
+            const isActive = !isGuide && (href === '/'
               ? pathname === '/'
               : href === '/capabilities'
                 ? pathname.startsWith('/capabilities') || pathname.startsWith('/skills')
-                : pathname.startsWith(href);
+                : pathname.startsWith(href));
+
+            if (isGuide) {
+              return (
+                <button
+                  key={href}
+                  type="button"
+                  onClick={() => beginGettingStartedGuide(0)}
+                  className="flex min-w-0 flex-col items-center gap-1 rounded-xl px-2 py-2 text-slate-500 transition-colors hover:text-slate-300"
+                >
+                  <Icon className="w-5 h-5 text-amber-400" />
+                  <span className="text-[10px] font-medium leading-none">{label}</span>
+                </button>
+              );
+            }
+
             return (
               <Link
                 key={href}
                 href={href}
-                className={`flex flex-col items-center gap-0.5 px-3 py-2 rounded-lg transition-colors shrink-0 min-w-[56px] ${
-                  isActive ? 'text-amber-400' : 'text-slate-500 hover:text-slate-300'
+                className={`flex min-w-0 flex-col items-center gap-1 rounded-xl px-2 py-2 transition-colors ${
+                  isActive ? 'bg-slate-900 text-amber-400' : 'text-slate-500 hover:text-slate-300'
                 }`}
               >
                 <Icon className="w-5 h-5" />
-                <span className="text-[10px] font-medium leading-none">{label}</span>
+                <span className="text-[10px] font-medium leading-none text-center">{label}</span>
               </Link>
             );
           })}
-          <button
-            type="button"
-            onClick={() => beginGettingStartedGuide(0)}
-            className="flex flex-col items-center gap-0.5 px-3 py-2 rounded-lg transition-colors shrink-0 min-w-[56px] text-slate-500 hover:text-slate-300"
-          >
-            <HelpCircle className="w-5 h-5 text-amber-400" />
-            <span className="text-[10px] font-medium leading-none">Guide</span>
-          </button>
         </div>
       </nav>
     </>
