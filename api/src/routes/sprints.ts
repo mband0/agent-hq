@@ -1326,10 +1326,11 @@ router.post('/types/:key/outcomes', (req: Request, res: Response) => {
     `).get(sprintTypeKey, payload.task_type, payload.outcome_key) as { id: number } | undefined;
     if (duplicate) return res.status(409).json({ error: 'An outcome definition for this sprint type/task type already exists' });
 
+    const isSystem = Number(req.body?.is_system ?? 0) ? 1 : 0;
     const result = db.prepare(`
       INSERT INTO sprint_type_outcomes (sprint_type_key, task_type, outcome_key, label, description, enabled, behavior, color, badge_variant, stage_order, is_system, metadata_json, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, datetime('now'), datetime('now'))
-    `).run(sprintTypeKey, payload.task_type, payload.outcome_key, payload.label, payload.description, payload.enabled, payload.behavior, payload.color, payload.badge_variant, payload.stage_order, JSON.stringify(payload.metadata));
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+    `).run(sprintTypeKey, payload.task_type, payload.outcome_key, payload.label, payload.description, payload.enabled, payload.behavior, payload.color, payload.badge_variant, payload.stage_order, isSystem, JSON.stringify(payload.metadata));
 
     const created = db.prepare(`
       SELECT id, sprint_type_key, task_type, outcome_key, label, description, enabled, behavior, color, badge_variant, stage_order, is_system, metadata_json, created_at, updated_at
@@ -1369,6 +1370,7 @@ router.put('/types/:key/outcomes/:outcomeId', (req: Request, res: Response) => {
       stage_order: req.body?.stage_order ?? existing.stage_order,
       metadata: req.body?.metadata ?? JSON.parse(existing.metadata_json || '{}'),
     });
+    const isSystem = req.body?.is_system === undefined ? Number(existing.is_system ?? 0) : (Number(req.body?.is_system) ? 1 : 0);
 
     const duplicate = db.prepare(`
       SELECT id FROM sprint_type_outcomes
@@ -1378,9 +1380,9 @@ router.put('/types/:key/outcomes/:outcomeId', (req: Request, res: Response) => {
 
     db.prepare(`
       UPDATE sprint_type_outcomes
-      SET task_type = ?, outcome_key = ?, label = ?, description = ?, enabled = ?, behavior = ?, color = ?, badge_variant = ?, stage_order = ?, metadata_json = ?, updated_at = datetime('now')
+      SET task_type = ?, outcome_key = ?, label = ?, description = ?, enabled = ?, behavior = ?, color = ?, badge_variant = ?, stage_order = ?, is_system = ?, metadata_json = ?, updated_at = datetime('now')
       WHERE id = ?
-    `).run(payload.task_type, payload.outcome_key, payload.label, payload.description, payload.enabled, payload.behavior, payload.color, payload.badge_variant, payload.stage_order, JSON.stringify(payload.metadata), outcomeId);
+    `).run(payload.task_type, payload.outcome_key, payload.label, payload.description, payload.enabled, payload.behavior, payload.color, payload.badge_variant, payload.stage_order, isSystem, JSON.stringify(payload.metadata), outcomeId);
 
     const updated = db.prepare(`
       SELECT id, sprint_type_key, task_type, outcome_key, label, description, enabled, behavior, color, badge_variant, stage_order, is_system, metadata_json, created_at, updated_at
