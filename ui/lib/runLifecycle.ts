@@ -1,4 +1,5 @@
 import { parseDbDate, timeAgo } from '@/lib/date';
+import { getLegacyOutcomeMeta } from '../../../api/src/lib/sprintOutcomes';
 
 export type RunDisplayStatus = 'queued' | 'dispatched' | 'starting' | 'running' | 'awaiting_outcome' | 'done' | 'failed';
 
@@ -172,36 +173,14 @@ export function getRunStatusLabel(status: RunDisplayStatus): string {
  * Human-readable label for a task outcome value.
  */
 export function getTaskOutcomeLabel(outcome: string): string {
-  switch (outcome) {
-    case 'completed_for_review': return 'Ready for Review';
-    case 'qa_pass':              return 'QA Pass';
-    case 'qa_fail':              return 'QA Fail';
-    case 'blocked':              return 'Blocked';
-    case 'failed':               return 'Failed';
-    case 'deployed_live':        return 'Deployed';
-    case 'live_verified':        return 'Live Verified';
-    case 'approved_for_merge':   return 'Approved for Merge';
-    case 'retry':                return 'Retry';
-    default:                     return outcome;
-  }
+  return getLegacyOutcomeMeta(outcome).label;
 }
 
 /**
  * Badge variant for a task outcome — determines colour in the UI.
  */
 export function getTaskOutcomeBadgeVariant(outcome: string): string {
-  switch (outcome) {
-    case 'completed_for_review': return 'review';
-    case 'qa_pass':              return 'done';
-    case 'qa_fail':              return 'failed';
-    case 'blocked':              return 'stalled';
-    case 'failed':               return 'failed';
-    case 'deployed_live':        return 'deployed';
-    case 'live_verified':        return 'done';
-    case 'approved_for_merge':   return 'review';
-    case 'retry':                return 'queued';
-    default:                     return 'workspace';
-  }
+  return getLegacyOutcomeMeta(outcome).badge_variant ?? 'workspace';
 }
 
 export function getRunTimelineSummary(instance: RunLifecycleLike): string {

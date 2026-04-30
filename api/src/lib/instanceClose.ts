@@ -25,6 +25,8 @@ export const TERMINAL_OUTCOMES = new Set([
   'qa_pass',
   'qa_fail',
   'live_verified',
+  'approved_for_merge',
+  'retry',
   'blocked',
   'failed',
 ]);
