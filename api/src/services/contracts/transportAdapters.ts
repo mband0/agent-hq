@@ -55,7 +55,7 @@ export interface TransportContext {
 function buildPreamble(ctx: TransportContext): string {
   return [
     `---`,
-    `## Atlas HQ run contract for this dispatched instance.`,
+    `## Agent HQ run contract for this dispatched instance.`,
     `Instance ID: ${ctx.instanceId}`,
     `Task ID: ${ctx.taskId}`,
     `Session key: ${ctx.sessionKey}`,
@@ -151,9 +151,18 @@ function buildLocalTransport(
     if (workflow.lane === 'implementation') {
       sections.push(
         `For implementation handoff:`,
+        `Before posting completed_for_review, you MUST first record review evidence.`,
+        `Required fields for completed_for_review:`,
+        `- branch: the feature branch under review (must not be main/master)`,
+        `- commit: the exact git commit SHA to review`,
+        `- review_url: a non-production review artifact URL, such as a GitHub branch URL, PR URL, or other review-specific artifact URL`,
+        `Optional:`,
+        `- notes: any short review handoff context that helps QA or release`,
+        `If you cannot truthfully provide branch, commit, and review_url, do NOT post completed_for_review.`,
+        `Instead, post blocked or failed with a clear explanation of what evidence is missing.`,
         `curl -s -X PUT ${baseUrl}/api/v1/tasks/${ctx.taskId}/review-evidence \\`,
         `  -H "Content-Type: application/json" \\`,
-        `  -d '{"branch":"<branch-name>","commit":"<sha>","dev_url":"<dev-env-url>","notes":"<optional notes>"}'`,
+        `  -d '{"branch":"<branch-name>","commit":"<sha>","review_url":"<non-production-review-url>","notes":"<optional notes>"}'`,
       );
     } else if (workflow.lane === 'review') {
       sections.push(
@@ -168,6 +177,12 @@ function buildLocalTransport(
         `curl -s -X PUT ${baseUrl}/api/v1/tasks/${ctx.taskId}/deploy-evidence \\`,
         `  -H "Content-Type: application/json" \\`,
         `  -d '{"merged_commit":"<sha>","deployed_commit":"<sha>","deploy_target":"production","deployed_at":"<ISO timestamp>"}'`,
+        `RELEASE-LANE RULES:`,
+        `- If the task is in ready_to_merge, your deployment-stage outcome is usually deployed_live after truthful merge/deploy completion.`,
+        `- If the task is already in deployed, your next required step is live verification, and the correct terminal outcome is live_verified.`,
+        `- deployed_live is not final completion.`,
+        `- Do not stop after deployment alone if the workflow still requires live verification.`,
+        `- If live verification cannot be completed truthfully, post blocked or failed with the exact reason.`,
       );
     }
   }
@@ -221,6 +236,7 @@ function buildRemoteDirectTransport(
     `Body: {"stage":"blocker","summary":"<description>","blocker_reason":"<exact blocker>","session_key":"${ctx.sessionKey}","meaningful_output":true}`,
     '',
     `4. FINAL OUTCOME — posting a terminal outcome closes the instance.`,
+    `Implementation-lane rule: record review evidence successfully BEFORE posting completed_for_review.`,
     `POST ${baseUrl}/api/v1/tasks/${ctx.taskId}/outcome`,
     `Body: {"outcome":"${workflow.suggestedOutcome}","summary":"<one sentence>","changed_by":"${ctx.agentSlug}","instance_id":${ctx.instanceId}}`,
     '',
@@ -242,7 +258,9 @@ function buildRemoteDirectTransport(
     if (workflow.lane === 'implementation') {
       sections.push(
         `PUT ${baseUrl}/api/v1/tasks/${ctx.taskId}/review-evidence`,
-        `Body: {"branch":"<branch>","commit":"<sha>","review_url":"<pr-or-branch-url>","dev_url":"<url>","notes":"<optional>"}`,
+        `Body: {"branch":"<branch>","commit":"<sha>","review_url":"<non-production-review-url>","notes":"<optional>"}`,
+        `Required before completed_for_review: review branch, review commit, and a non-production review URL.`,
+        `Do not post completed_for_review if those fields are missing, blank, or placeholder-only.`,
       );
     } else if (workflow.lane === 'review') {
       sections.push(
@@ -253,6 +271,9 @@ function buildRemoteDirectTransport(
       sections.push(
         `PUT ${baseUrl}/api/v1/tasks/${ctx.taskId}/deploy-evidence`,
         `Body: {"merged_commit":"<sha>","deployed_commit":"<sha>","deploy_target":"production","deployed_at":"<ISO timestamp>"}`,
+        `Release-lane rule: deployed_live records merge/deploy completion and moves the task to deployed, but it does not complete the task.`,
+        `If the task is in deployed, you must perform truthful live verification and then post live_verified to move the task to done.`,
+        `If live verification cannot be completed truthfully, post blocked or failed with the exact reason.`,
       );
     }
   }
@@ -305,7 +326,7 @@ function buildProxyManagedTransport(
     `  "summary": "One sentence describing what was done",`,
     `  "branch": "feature/branch-name",`,
     `  "commit": "abc1234...",`,
-    `  "dev_url": "http://dev-env/relevant-endpoint",`,
+    `  "review_url": "https://github.com/<owner>/<repo>/tree/feature/branch-name",`,
     `  "notes": "Optional reviewer notes"`,
     `}`,
     '```',
@@ -332,10 +353,11 @@ function buildProxyManagedTransport(
     `- \`branch\` (required for \`completed_for_review\`): git branch name for review`,
     `- \`commit\` (required for \`completed_for_review\`): git commit SHA`,
     `- \`review_url\` (required for \`completed_for_review\`): non-production review artifact URL, such as a PR URL or branch URL on GitHub`,
-    `- \`dev_url\` (recommended): URL in the dev environment to verify the work`,
     `- \`blocker_reason\` (optional): specific reason for blocker outcome`,
     `- \`notes\` (optional): additional context for the reviewer`,
     '',
+    `Implementation lane: do not claim completed_for_review without branch, commit, and review_url recorded first.`,
+    `Release lane: deployed_live is not terminal; tasks in deployed still require truthful live verification and then live_verified to reach done.`,
     `If you cannot emit the lifecycle block, the runtime will default to \`blocked\`.`,
     '',
     PIPELINE_REFERENCE,

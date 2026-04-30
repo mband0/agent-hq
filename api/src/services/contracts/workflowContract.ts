@@ -1,7 +1,7 @@
 /**
  * contracts/workflowContract.ts — Shared workflow semantics for all agent dispatches.
  *
- * This is the SINGLE SOURCE OF TRUTH for the Atlas HQ task lifecycle model.
+ * This is the SINGLE SOURCE OF TRUTH for the Agent HQ task lifecycle model.
  * It defines WHAT an agent must do (start, progress, outcome, evidence) without
  * specifying HOW (curl commands, HTTP calls, structured JSON blocks, etc.).
  *
@@ -318,7 +318,7 @@ export function resolveWorkflowLane(
 // ── Pipeline reference ───────────────────────────────────────────────────────
 
 /**
- * The canonical Atlas HQ task pipeline stages.
+ * The canonical Agent HQ task pipeline stages.
  * Shared by all runtimes as reference documentation.
  */
 export const PIPELINE_STAGES = [
@@ -339,12 +339,15 @@ export const PIPELINE_REFERENCE = `Pipeline reference: ${PIPELINE_STAGES.join(' 
  * setups.
  */
 export const RELEASE_LANE_NOTES = [
-  `⚠️ DEPLOYMENT-STAGE WORKFLOW ONLY: This task requires TWO outcome calls — do not stop after the first.`,
-  `  Step A — after merge + deploy:`,
-  `    Report outcome deployed_live → task moves to "deployed"`,
-  `    (deployed_live is NOT terminal — do NOT expect your session to end here)`,
-  `  Step B — after live verification against production:`,
-  `    Report outcome live_verified → task moves to "done" and your session ends`,
+  `⚠️ DEPLOYMENT-STAGE WORKFLOW ONLY: This task requires TWO distinct handoff steps. Do not stop after deployment alone.`,
+  `  Step A — merge and deploy:`,
+  `    Post outcome deployed_live → task moves to "deployed"`,
+  `    deployed_live is NOT terminal and does NOT mean the task is done.`,
+  `  Step B — live verification against the real deployed target:`,
+  `    Post outcome live_verified → task moves to "done"`,
+  `    live_verified is the terminal completion step for deployment-stage work.`,
+  `If deployment succeeds but live verification is not yet complete, do NOT treat the task as finished.`,
+  `If live verification cannot be completed truthfully, post blocked or failed with the exact reason.`,
 ].join('\n');
 
 // ── Evidence requirements (shared semantics) ─────────────────────────────────
@@ -364,8 +367,8 @@ export function getEvidenceRequirements(lane: WorkflowLane): EvidenceRequirement
   switch (lane) {
     case 'implementation':
       return {
-        fields: ['branch', 'commit', 'dev_url', 'notes'],
-        description: 'Record review evidence: branch name, commit SHA, dev environment URL',
+        fields: ['branch', 'commit', 'review_url', 'notes'],
+        description: 'Record review evidence: feature branch name, commit SHA, and non-production review URL',
       };
     case 'review':
       return {
