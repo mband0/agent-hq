@@ -519,6 +519,10 @@ export class AgentHqApiClient {
       dry_run?: boolean;
     },
   ) {
+    // Compatibility bridge for status-targeted MCP moves.
+    // The canonical backend truth is still outcome-driven. These aliases only
+    // cover the legacy/default lifecycle statuses, while sprint-type workflows
+    // may expose different configured outcome keys.
     const statusToOutcome: Record<string, string> = {
       review: 'completed_for_review',
       qa_pass: 'qa_pass',

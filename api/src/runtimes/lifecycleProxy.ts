@@ -38,7 +38,7 @@ export interface AtlasLifecycleData {
   notes?: string;
 }
 
-/** Compatibility-only default outcomes for proxy-managed remote runtimes. */
+/** Compatibility-only exported aliases kept for older runtime imports. */
 export const VALID_IMPLEMENTATION_OUTCOMES = new Set(['completed_for_review', 'blocked', 'failed']);
 export const VALID_QA_OUTCOMES = new Set(['qa_pass', 'qa_fail', 'blocked', 'failed']);
 export const VALID_RELEASE_OUTCOMES = new Set(['deployed_live', 'live_verified', 'blocked', 'failed']);
@@ -46,7 +46,10 @@ export const ALL_VALID_OUTCOMES = new Set([
   ...VALID_IMPLEMENTATION_OUTCOMES,
   ...VALID_QA_OUTCOMES,
   ...VALID_RELEASE_OUTCOMES,
+  'approved_for_merge',
 ]);
+
+const COMPATIBILITY_FALLBACK_OUTCOMES = new Set(ALL_VALID_OUTCOMES);
 
 interface ResolvedLifecycleOutcomeSet {
   validOutcomes: Set<string>;
@@ -71,7 +74,7 @@ function resolveAllowedLifecycleOutcomes(taskId: number): ResolvedLifecycleOutco
 
     if (!task?.status) {
       return {
-        validOutcomes: new Set(ALL_VALID_OUTCOMES),
+        validOutcomes: new Set(COMPATIBILITY_FALLBACK_OUTCOMES),
         suggestedOutcome: 'blocked',
       };
     }
@@ -95,7 +98,7 @@ function resolveAllowedLifecycleOutcomes(taskId: number): ResolvedLifecycleOutco
   }
 
   return {
-    validOutcomes: new Set(ALL_VALID_OUTCOMES),
+    validOutcomes: new Set(COMPATIBILITY_FALLBACK_OUTCOMES),
     suggestedOutcome: 'blocked',
   };
 }
@@ -299,7 +302,7 @@ export function buildLifecycleUserPromptSection(): string {
     ``,
     '```atlas_lifecycle',
     `{`,
-    `  "outcome": "completed_for_review",`,
+    `  "outcome": "<valid outcome key for this task lane>",`,
     `  "summary": "One sentence describing what was done",`,
     `  "branch": "feature/branch-name",`,
     `  "commit": "abc1234...",`,
@@ -310,16 +313,16 @@ export function buildLifecycleUserPromptSection(): string {
     '```',
     ``,
     `### Valid outcomes:`,
-    `- \`completed_for_review\` — implementation is ready for QA/review`,
-    `- \`blocked\` — cannot proceed (include \`blocker_reason\` field)`,
-    `- \`failed\` — task failed (include \`summary\` explaining why)`,
+    `- Use the valid configured outcome keys for this task's current lane and sprint workflow`,
+    `- The runtime will reject unconfigured or invalid outcome keys truthfully`,
+    `- Include \`blocker_reason\` when using a blocked outcome key, if one exists in the workflow`,
     ``,
     `### Field reference:`,
-    `- \`outcome\` (required): one of the valid outcomes above`,
+    `- \`outcome\` (required): a configured valid outcome key for this specific task/lane`,
     `- \`summary\` (required): one-sentence description of what was done or why blocked/failed`,
-    `- \`branch\` (required for \`completed_for_review\`): git branch name for review`,
-    `- \`commit\` (required for \`completed_for_review\`): git commit SHA`,
-    `- \`review_url\` (required for \`completed_for_review\`): non-production review artifact URL, such as a PR URL or branch URL on GitHub`,
+    `- \`branch\` (required when handing implementation work off for review): git branch name for review`,
+    `- \`commit\` (required when handing implementation work off for review): git commit SHA`,
+    `- \`review_url\` (required when handing implementation work off for review): non-production review artifact URL, such as a PR URL or branch URL on GitHub`,
     `- \`dev_url\` (recommended): externally reachable URL for QA to verify the work`,
     `- \`blocker_reason\` (optional): specific reason for blocker outcome`,
     `- \`notes\` (optional): additional context for the reviewer`,
