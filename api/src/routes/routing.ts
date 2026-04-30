@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { getDb } from '../db/client';
-import { getAvailableContractPlaceholders } from '../services/contracts';
+import { CONTRACT_PLACEHOLDER_DEFINITIONS, getAvailableContractPlaceholders } from '../services/contracts';
 import fs from 'fs';
 import path from 'path';
 import { VALID_TASK_TYPES, isValidTaskType } from '../lib/taskTypes';
@@ -1628,6 +1628,7 @@ router.get('/agent-contract', (req: Request, res: Response) => {
       path: contract.path,
       inherited_from: contract.inheritedFrom,
       placeholders: getAvailableContractPlaceholders(),
+      placeholder_definitions: CONTRACT_PLACEHOLDER_DEFINITIONS,
       format: 'plain_text_v1',
     });
   } catch (err) {

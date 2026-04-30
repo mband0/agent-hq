@@ -454,26 +454,33 @@ function tryBuildFromFileTemplate(
 }
 
 export function getAvailableContractPlaceholders(): string[] {
-  return [
-    'agentSlug',
-    'baseUrl',
-    'evidenceDescription',
-    'evidenceFields',
-    'evidenceFieldsBulleted',
-    'instanceId',
-    'lane',
-    'outcomeHelp',
-    'pipelineReference',
-    'sessionKey',
-    'sprintType',
-    'suggestedOutcome',
-    'taskId',
-    'taskStatus',
-    'transportMode',
-    'validOutcomes',
-    'workflowTemplateKey',
-  ];
+  return CONTRACT_PLACEHOLDER_DEFINITIONS.map(placeholder => placeholder.key);
 }
+
+export interface ContractPlaceholderDefinition {
+  key: string;
+  description: string;
+}
+
+export const CONTRACT_PLACEHOLDER_DEFINITIONS: ContractPlaceholderDefinition[] = [
+  { key: 'baseUrl', description: 'Atlas HQ base URL used for lifecycle callbacks like start, check-in, evidence, and outcome writes.' },
+  { key: 'instanceId', description: 'Current dispatched run instance ID for lifecycle callback endpoints and run-specific tracing.' },
+  { key: 'taskId', description: 'Current task ID, used when posting outcomes or attaching review, QA, or deploy evidence.' },
+  { key: 'sessionKey', description: 'OpenClaw session key for this run, useful when a contract needs to reference or resume the active session.' },
+  { key: 'agentSlug', description: 'Canonical slug of the assigned agent, typically used in changed_by fields and machine-authored records.' },
+  { key: 'sprintType', description: 'Normalized sprint type for the task, such as generic, bugs, or enhancements.' },
+  { key: 'lane', description: 'Resolved workflow lane for the current run, like implementation, QA, release, or PM/approval.' },
+  { key: 'workflowTemplateKey', description: 'Optional workflow template key that identifies the selected routing workflow variant when one is set.' },
+  { key: 'suggestedOutcome', description: 'Recommended semantic outcome for the current lane when the happy path succeeds.' },
+  { key: 'validOutcomes', description: 'Comma-separated list of outcomes the current lane is allowed to post.' },
+  { key: 'outcomeHelp', description: 'Multi-line outcome dictionary explaining what each valid outcome means in this lane.' },
+  { key: 'taskStatus', description: 'Current task status at dispatch time, useful when the contract needs to reference the exact pipeline state.' },
+  { key: 'pipelineReference', description: 'Readable summary of the pipeline and status progression used for lifecycle guidance.' },
+  { key: 'evidenceDescription', description: 'Short description of what evidence must be recorded before moving the task forward from this lane.' },
+  { key: 'evidenceFields', description: 'Comma-separated evidence field names required for the lane, useful inside compact instructions or examples.' },
+  { key: 'evidenceFieldsBulleted', description: 'Same required evidence fields formatted as a bulleted list for readable contract sections.' },
+  { key: 'transportMode', description: 'Dispatch transport mode, such as local, remote-direct, or proxy-managed, which affects how the agent reaches Atlas HQ.' },
+];
 
 // ── Public API ───────────────────────────────────────────────────────────────
 

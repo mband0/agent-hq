@@ -21,7 +21,9 @@ export {
 
 export {
   buildContractInstructions,
+  CONTRACT_PLACEHOLDER_DEFINITIONS,
   getAvailableContractPlaceholders,
+  type ContractPlaceholderDefinition,
   resolveTransportMode,
   type TransportMode,
   type TransportContext,

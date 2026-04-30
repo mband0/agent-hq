@@ -85,6 +85,11 @@ interface AgentOption {
   name: string;
 }
 
+interface ContractPlaceholderDefinition {
+  key: string;
+  description: string;
+}
+
 // ─── Dispatch Log Section ─────────────────────────────────────
 function DispatchLogSection() {
   const [log, setLog] = useState<DispatchLogEntry[]>([]);
@@ -1630,6 +1635,7 @@ function AgentContractSection() {
   const [sprintTypes, setSprintTypes] = useState<Array<{ key: string; name: string }>>([]);
   const [selectedSprintType, setSelectedSprintType] = useState('generic');
   const [content, setContent] = useState('');
+  const [placeholderDefinitions, setPlaceholderDefinitions] = useState<ContractPlaceholderDefinition[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -1654,10 +1660,11 @@ function AgentContractSection() {
 
   useEffect(() => {
     setLoading(true);
-    apiFetch<{ content: string; inherited_from?: string | null }>(`/api/v1/routing/agent-contract?sprint_type=${encodeURIComponent(selectedSprintType)}`)
+    apiFetch<{ content: string; inherited_from?: string | null; placeholder_definitions?: ContractPlaceholderDefinition[] }>(`/api/v1/routing/agent-contract?sprint_type=${encodeURIComponent(selectedSprintType)}`)
       .then(data => {
         setContent(data.content ?? '');
         setInheritedFrom(data.inherited_from ?? null);
+        setPlaceholderDefinitions(data.placeholder_definitions ?? []);
       })
       .catch(e => showToast('error', `Failed to load: ${e}`))
       .finally(() => setLoading(false));
@@ -1751,33 +1758,32 @@ function AgentContractSection() {
         />
       )}
 
-      <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-3">
-        <p className="text-xs text-slate-500 font-mono leading-relaxed">
-          Available placeholders:{' '}
-          {[
-            '{{baseUrl}}',
-            '{{instanceId}}',
-            '{{taskId}}',
-            '{{sessionKey}}',
-            '{{agentSlug}}',
-            '{{sprintType}}',
-            '{{lane}}',
-            '{{workflowTemplateKey}}',
-            '{{suggestedOutcome}}',
-            '{{validOutcomes}}',
-            '{{outcomeHelp}}',
-            '{{taskStatus}}',
-            '{{pipelineReference}}',
-            '{{evidenceDescription}}',
-            '{{evidenceFields}}',
-            '{{evidenceFieldsBulleted}}',
-            '{{transportMode}}',
-          ].map(p => (
-            <span key={p} className="inline-block bg-slate-700 text-amber-300 px-1 py-0.5 rounded mr-1 mb-1">
-              {p}
-            </span>
-          ))}
-        </p>
+      <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-3 space-y-3">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-400 mb-2">Available placeholders</p>
+          <div className="flex flex-wrap gap-1.5">
+            {placeholderDefinitions.map(({ key }) => {
+              const placeholder = `{{${key}}}`;
+              return (
+                <span key={placeholder} className="inline-block bg-slate-700 text-amber-300 px-1.5 py-0.5 rounded text-xs font-mono">
+                  {placeholder}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="border-t border-slate-700/60 pt-3">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-400 mb-2">Placeholder definitions</p>
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {placeholderDefinitions.map(({ key, description }) => (
+              <div key={key} className="rounded-lg border border-slate-700/60 bg-slate-900/50 p-3">
+                <code className="text-xs text-amber-300 font-mono">{`{{${key}}}`}</code>
+                <p className="mt-1 text-xs leading-5 text-slate-300">{description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
