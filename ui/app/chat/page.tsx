@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback, Suspense, memo } from 'react';
+import { useEffect, useState, useRef, useCallback, Suspense, memo, type ReactNode } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { formatTime, timeAgo } from '@/lib/date';
 import { getRunLifecycle } from '@/lib/runLifecycle';
@@ -24,7 +24,7 @@ import { Badge } from '@/components/ui/badge';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import Link from 'next/link';
-import { Bot, MessageSquare, Send, Loader2, Square, Clock, Tag, StopCircle, SquarePen } from 'lucide-react';
+import { Bot, MessageSquare, Send, Loader2, Square, Clock, Tag, StopCircle, SquarePen, ChevronLeft } from 'lucide-react';
 import { ThoughtBubble, ToolCallBubble, ToolResultBubble, TurnStartDivider, ErrorBubble } from '@/components/chat/EventBubbles';
 import {
   PendingAttachment,
@@ -232,6 +232,7 @@ function ChatPageInner() {
 
   // Resolved session key (for direct-chat mode — not job runs)
   const [resolvedSessionKey, setResolvedSessionKey] = useState<string | null>(null);
+  const [mobileView, setMobileView] = useState<'agents' | 'runs' | 'chat'>('agents');
 
   // Canonical session for the selected job-run instance (from /api/v1/sessions)
   const [canonicalSession, setCanonicalSession] = useState<CanonicalSession | null>(null);
@@ -897,6 +898,24 @@ function ChatPageInner() {
   const selectedAgent = agents.find(a => a.id === selectedAgentId);
   const hasMoreHistory = historyTotal > messages.length;
 
+  useEffect(() => {
+    if (overrideSessionKey) {
+      setMobileView('chat');
+      return;
+    }
+    if (!selectedAgentId) {
+      setMobileView('agents');
+      return;
+    }
+    if (selectedInstanceId !== null || activeSessionKey) {
+      setMobileView('chat');
+      return;
+    }
+    setMobileView('runs');
+  }, [overrideSessionKey, selectedAgentId, selectedInstanceId, activeSessionKey]);
+
+  const hasDesktopChatHeader = !overrideSessionKey;
+
   // ── URL override: 2-col layout ──
   if (overrideSessionKey) {
     return (
@@ -962,9 +981,9 @@ function ChatPageInner() {
 
   // ── Normal 3-column layout ──
   return (
-    <div className="flex h-full">
+    <div className="flex h-full flex-col md:flex-row">
       {/* ── Col 1: Agent list ── */}
-      <div className="w-48 shrink-0 bg-slate-800/40 border-r border-slate-700/50 flex flex-col">
+      <div className={`${mobileView === 'agents' ? 'flex' : 'hidden'} w-full shrink-0 bg-slate-800/40 border-r border-slate-700/50 flex-col md:flex md:w-48`}>
         <div className="px-4 py-3 border-b border-slate-700/50">
           <div className="flex items-center gap-2">
             <MessageSquare className="w-4 h-4 text-amber-400" />
@@ -983,7 +1002,10 @@ function ChatPageInner() {
             agents.map(agent => (
               <button
                 key={agent.id}
-                onClick={() => setSelectedAgentId(agent.id)}
+                onClick={() => {
+                  setSelectedAgentId(agent.id);
+                  setMobileView('runs');
+                }}
                 className={`w-full text-left px-4 py-3 flex items-center gap-2 transition-colors hover:bg-slate-700/40 ${
                   selectedAgentId === agent.id
                     ? 'bg-slate-700/60 border-l-2 border-amber-400'
@@ -1010,18 +1032,23 @@ function ChatPageInner() {
       </div>
 
       {/* ── Col 2: Run sessions ── */}
-      <div className="w-60 shrink-0 bg-slate-800/20 border-r border-slate-700/50 flex flex-col">
-        <div className="px-3 py-3 border-b border-slate-700/50">
-          <div className="flex items-center gap-2">
-            <Clock className="w-3.5 h-3.5 text-slate-400" />
-            <h2 className="font-semibold text-slate-300 text-xs uppercase tracking-wide">
-              {selectedAgent ? `${selectedAgent.name} Runs` : 'Runs'}
-            </h2>
-          </div>
+      <div className={`${mobileView === 'runs' ? 'flex' : 'hidden'} w-full shrink-0 bg-slate-800/20 border-r border-slate-700/50 flex-col md:flex md:w-60`}>
+        <div className="px-3 py-3 border-b border-slate-700/50 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setMobileView('agents')}
+            className="rounded-lg border border-slate-700/60 p-2 text-slate-300 transition-colors hover:border-slate-600 hover:text-white md:hidden"
+            aria-label="Back to agents"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <Clock className="w-3.5 h-3.5 text-slate-400" />
+          <h2 className="font-semibold text-slate-300 text-xs uppercase tracking-wide truncate">
+            {selectedAgent ? `${selectedAgent.name} Runs` : 'Runs'}
+          </h2>
         </div>
 
         <div className="flex-1 overflow-y-auto py-2">
-          {/* Direct chat entry — always shown when agent has a session key */}
           {selectedAgent?.session_key && (
             <button
               onClick={() => {
@@ -1035,6 +1062,7 @@ function ChatPageInner() {
                 );
                 setMessages([]);
                 setStreamContent(null);
+                setMobileView('chat');
               }}
               className={`w-full text-left px-3 py-2.5 flex flex-col gap-1 transition-colors border-l-2 mb-1 ${
                 selectedInstanceId === null && !!resolvedSessionKey
@@ -1064,7 +1092,10 @@ function ChatPageInner() {
               <button
                 key={instance.id}
                 onClick={() => {
-                  if (resolvedKey) setSelectedInstanceId(instance.id);
+                  if (resolvedKey) {
+                    setSelectedInstanceId(instance.id);
+                    setMobileView('chat');
+                  }
                 }}
                 disabled={!resolvedKey}
                 title={resolvedKey ?? 'No session key — agent never registered'}
@@ -1106,120 +1137,108 @@ function ChatPageInner() {
       </div>
 
       {/* ── Col 3: Chat panel ── */}
-      <div className="flex-1 flex flex-col min-w-0" data-tour-target="chat-main-panel">
-        <div className="px-5 py-3 border-b border-slate-700/50 flex items-center gap-3 shrink-0 min-w-0">
-          {selectedInstance ? (
-            <>
-              <div className="w-8 h-8 rounded-full bg-amber-500/20 border border-amber-500/30 flex items-center justify-center shrink-0">
-                <Bot className="w-4 h-4 text-amber-400" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="font-semibold text-white text-sm truncate">
-                  {selectedAgent?.name} — {selectedInstance.job_title || selectedInstance.agent_name || `Run #${selectedInstance.id}`}
-                </p>
-                <p className="text-slate-500 text-xs font-mono truncate">
-                  {activeSessionKey}
-                </p>
-                {selectedInstance.task_id && (
-                  <Link
-                    href={`/tasks?id=${selectedInstance.task_id}`}
-                    className="inline-flex items-center gap-1 text-xs text-amber-400/70 hover:text-amber-300 hover:underline mt-0.5"
-                    title={selectedInstance.task_title ? `Task #${selectedInstance.task_id}: ${selectedInstance.task_title}` : `Task #${selectedInstance.task_id}`}
-                  >
-                    <Tag className="w-2.5 h-2.5 shrink-0" />
-                    <span className="truncate">Task #{selectedInstance.task_id}{selectedInstance.task_title ? `: ${selectedInstance.task_title}` : ''}</span>
-                  </Link>
-                )}
-              </div>
-              {streaming && (
-                <div className="ml-auto shrink-0 flex items-center gap-1.5 text-xs text-amber-400">
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                  Streaming…
+      <div className={`${mobileView === 'chat' ? 'flex' : 'hidden'} flex-1 flex-col min-w-0 md:flex`} data-tour-target="chat-main-panel">
+        {hasDesktopChatHeader && (
+          <div className="px-4 py-3 border-b border-slate-700/50 flex flex-wrap items-center gap-3 shrink-0 min-w-0 md:px-5">
+            <button
+              type="button"
+              onClick={() => setMobileView(selectedAgent ? 'runs' : 'agents')}
+              className="rounded-lg border border-slate-700/60 p-2 text-slate-300 transition-colors hover:border-slate-600 hover:text-white md:hidden"
+              aria-label="Back"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            {selectedInstance ? (
+              <>
+                <div className="w-8 h-8 rounded-full bg-amber-500/20 border border-amber-500/30 flex items-center justify-center shrink-0">
+                  <Bot className="w-4 h-4 text-amber-400" />
                 </div>
-              )}
-              {instanceIsRunning && !streaming && (
-                <div className="shrink-0 flex items-center gap-1.5 text-xs text-emerald-400 ml-auto">
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-                  </span>
-                  Live
-                </div>
-              )}
-              {/* Stop button for active instances */}
-              {isActiveInstance && (
-                <div className={`shrink-0 flex items-center gap-2 ${!instanceIsRunning || streaming ? 'ml-auto' : ''}`}>
-                  {stopConfirming ? (
-                    <>
-                      <span className="text-xs text-red-400">Stop this run?</span>
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        onClick={handleStopInstance}
-                        loading={stopLoading}
-                        className="h-7 text-xs px-2"
-                      >
-                        Confirm
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={cancelStopConfirm}
-                        disabled={stopLoading}
-                        className="h-7 text-xs px-2"
-                      >
-                        Cancel
-                      </Button>
-                    </>
-                  ) : (
-                    <Button
-                      variant="danger"
-                      size="sm"
-                      onClick={handleStopInstance}
-                      className="h-7 text-xs px-2 gap-1"
+                <div className="min-w-0 flex-1 basis-full sm:basis-auto">
+                  <p className="font-semibold text-white text-sm truncate">
+                    {selectedAgent?.name} - {selectedInstance.job_title || selectedInstance.agent_name || `Run #${selectedInstance.id}`}
+                  </p>
+                  <p className="text-slate-500 text-xs font-mono truncate">
+                    {activeSessionKey}
+                  </p>
+                  {selectedInstance.task_id && (
+                    <Link
+                      href={`/tasks?id=${selectedInstance.task_id}`}
+                      className="inline-flex items-center gap-1 text-xs text-amber-400/70 hover:text-amber-300 hover:underline mt-0.5"
+                      title={selectedInstance.task_title ? `Task #${selectedInstance.task_id}: ${selectedInstance.task_title}` : `Task #${selectedInstance.task_id}`}
                     >
-                      <StopCircle className="w-3 h-3" />
-                      Stop
-                    </Button>
+                      <Tag className="w-2.5 h-2.5 shrink-0" />
+                      <span className="truncate">Task #{selectedInstance.task_id}{selectedInstance.task_title ? `: ${selectedInstance.task_title}` : ''}</span>
+                    </Link>
                   )}
                 </div>
-              )}
-              {stopError && (
-                <span className="text-xs text-red-400 shrink-0">{stopError}</span>
-              )}
-              {stopResult && (
-                <span className="text-xs text-green-400 shrink-0">{stopResult}</span>
-              )}
-            </>
-          ) : selectedAgent && activeSessionKey ? (
-            <>
-              <div className="w-8 h-8 rounded-full bg-amber-500/20 border border-amber-500/30 flex items-center justify-center shrink-0">
-                <Bot className="w-4 h-4 text-amber-400" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="font-semibold text-white text-sm truncate">
-                  {selectedAgent.name} Direct Chat
-                </p>
-                <p className="text-slate-500 text-xs font-mono truncate">
-                  {activeSessionKey}
-                </p>
-              </div>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={handleNewDirectChat}
-                className="ml-auto h-7 text-xs px-2 gap-1"
-              >
-                <SquarePen className="w-3 h-3" />
-                New chat
-              </Button>
-            </>
-          ) : (
-            <p className="text-slate-500 text-sm">
-              {selectedAgent ? 'Select a run from the list' : 'Select an agent to start'}
-            </p>
-          )}
-        </div>
+                {streaming && (
+                  <div className="shrink-0 flex items-center gap-1.5 text-xs text-amber-400 md:ml-auto">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Streaming…
+                  </div>
+                )}
+                {instanceIsRunning && !streaming && (
+                  <div className="shrink-0 flex items-center gap-1.5 text-xs text-emerald-400 md:ml-auto">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                    </span>
+                    Live
+                  </div>
+                )}
+                {isActiveInstance && (
+                  <div className={`shrink-0 flex flex-wrap items-center gap-2 ${!instanceIsRunning || streaming ? 'md:ml-auto' : ''}`}>
+                    {stopConfirming ? (
+                      <>
+                        <span className="text-xs text-red-400">Stop this run?</span>
+                        <Button variant="danger" size="sm" onClick={handleStopInstance} loading={stopLoading} className="h-7 text-xs px-2">
+                          Confirm
+                        </Button>
+                        <Button variant="secondary" size="sm" onClick={cancelStopConfirm} disabled={stopLoading} className="h-7 text-xs px-2">
+                          Cancel
+                        </Button>
+                      </>
+                    ) : (
+                      <Button variant="danger" size="sm" onClick={handleStopInstance} className="h-7 text-xs px-2 gap-1">
+                        <StopCircle className="w-3 h-3" />
+                        Stop
+                      </Button>
+                    )}
+                  </div>
+                )}
+                {stopError && <span className="text-xs text-red-400 shrink-0">{stopError}</span>}
+                {stopResult && <span className="text-xs text-green-400 shrink-0">{stopResult}</span>}
+              </>
+            ) : selectedAgent && activeSessionKey ? (
+              <>
+                <div className="w-8 h-8 rounded-full bg-amber-500/20 border border-amber-500/30 flex items-center justify-center shrink-0">
+                  <Bot className="w-4 h-4 text-amber-400" />
+                </div>
+                <div className="min-w-0 flex-1 basis-full sm:basis-auto">
+                  <p className="font-semibold text-white text-sm truncate">
+                    {selectedAgent.name} Direct Chat
+                  </p>
+                  <p className="text-slate-500 text-xs font-mono truncate">
+                    {activeSessionKey}
+                  </p>
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleNewDirectChat}
+                  className="h-7 text-xs px-2 gap-1 md:ml-auto"
+                >
+                  <SquarePen className="w-3 h-3" />
+                  New chat
+                </Button>
+              </>
+            ) : (
+              <p className="text-slate-500 text-sm">
+                {selectedAgent ? 'Select a run from the list' : 'Select an agent to start'}
+              </p>
+            )}
+          </div>
+        )}
 
         <ChatPanel
           messages={messages}
@@ -1241,6 +1260,15 @@ function ChatPageInner() {
           pendingAttachments={pendingAttachments}
           onAddFiles={addFiles}
           onRemoveAttachment={removeAttachment}
+          mobileBackTarget={selectedAgent ? 'runs' : 'agents'}
+          mobileTitle={selectedInstance
+            ? `${selectedAgent?.name ?? 'Agent'} • ${selectedInstance.job_title || selectedInstance.agent_name || `Run #${selectedInstance.id}`}`
+            : selectedAgent && activeSessionKey
+              ? `${selectedAgent.name} Direct Chat`
+              : 'Chat'}
+          mobileSubtitle={activeSessionKey}
+          onMobileBack={() => setMobileView(selectedAgent ? 'runs' : 'agents')}
+          showMobileHeader={!hasDesktopChatHeader}
         />
       </div>
     </div>
@@ -1268,6 +1296,11 @@ interface ChatPanelProps {
   pendingAttachments: PendingAttachment[];
   onAddFiles: (files: File[]) => void;
   onRemoveAttachment: (id: string) => void;
+  mobileBackTarget?: 'agents' | 'runs';
+  mobileTitle?: string;
+  mobileSubtitle?: string | null;
+  onMobileBack?: () => void;
+  showMobileHeader?: boolean;
 }
 
 function ChatPanel({
@@ -1290,6 +1323,11 @@ function ChatPanel({
   pendingAttachments,
   onAddFiles,
   onRemoveAttachment,
+  mobileBackTarget,
+  mobileTitle,
+  mobileSubtitle,
+  onMobileBack,
+  showMobileHeader,
 }: ChatPanelProps) {
   const { onDragOver, onDrop } = useDragDrop(onAddFiles, hasSession && !sending);
   const hasUploading = pendingAttachments.some(a => a.uploading);
@@ -1298,8 +1336,26 @@ function ChatPanel({
 
   return (
     <>
+      {showMobileHeader && (
+        <div className="flex items-center gap-3 border-b border-slate-700/50 px-4 py-3 md:hidden">
+          {onMobileBack && mobileBackTarget ? (
+            <button
+              type="button"
+              onClick={onMobileBack}
+              className="rounded-lg border border-slate-700/60 p-2 text-slate-300 transition-colors hover:border-slate-600 hover:text-white"
+              aria-label="Back"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+          ) : null}
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-white">{mobileTitle ?? agentName ?? 'Chat'}</p>
+            {mobileSubtitle ? <p className="truncate text-xs text-slate-500">{mobileSubtitle}</p> : null}
+          </div>
+        </div>
+      )}
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-5 py-4">
+      <div className="flex-1 overflow-y-auto px-4 py-4 md:px-5">
         {!hasSession ? (
           <div className="flex flex-col items-center justify-center h-full gap-3">
             <MessageSquare className="w-12 h-12 text-slate-700" />
@@ -1348,22 +1404,22 @@ function ChatPanel({
       {/* Input area */}
       {hasSession && (
         <div
-          className="border-t border-slate-700/50 shrink-0"
+          className="border-t border-slate-700/50 shrink-0 bg-slate-900/90 backdrop-blur-sm"
           onDragOver={onDragOver}
           onDrop={onDrop}
         >
           {/* Attachment previews */}
           <AttachmentPreviewStrip attachments={pendingAttachments} onRemove={onRemoveAttachment} />
 
-          <div className="px-5 py-4 safe-area-bottom-padding">
-            <div className="flex gap-2 items-end rounded-xl border border-slate-700/60 bg-slate-800/60 focus-within:border-amber-500/50 transition-colors px-2 py-2">
+          <div className="px-3 py-3 safe-area-bottom-padding md:px-5 md:py-4">
+            <div className="flex gap-2 items-end rounded-xl border border-slate-700/60 bg-slate-800/60 focus-within:border-amber-500/50 transition-colors px-2 py-2 md:px-2 md:py-2">
               {/* Attach button */}
               <AttachmentUploadButton onFiles={onAddFiles} disabled={sending} />
 
               {/* Text input */}
               <textarea
                 data-tour-target="chat-composer"
-                className="flex-1 bg-transparent text-sm text-white placeholder-slate-500 resize-none focus:outline-none py-1 px-2"
+                className="flex-1 bg-transparent text-sm text-white placeholder-slate-500 resize-none focus:outline-none py-1 px-2 min-h-[40px]"
                 placeholder={`Message ${agentName ?? 'agent'}… (Enter to send, Shift+Enter for newline, or paste/drop a file)`}
                 value={inputText}
                 onChange={e => setInputText(e.target.value)}

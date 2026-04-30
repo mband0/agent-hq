@@ -1401,13 +1401,13 @@ export default function TelemetryPage() {
       </section>
 
       {/* Tab bar */}
-      <div className="flex items-center gap-1 rounded-2xl border border-slate-800 bg-slate-900/70 p-1.5">
+      <div className="-mx-1 flex items-center gap-1 overflow-x-auto rounded-2xl border border-slate-800 bg-slate-900/70 p-1.5 scrollbar-none">
         {tabs.map(({ id, label, icon: Icon, badge }) => (
           <button
             key={id}
             type="button"
             onClick={() => setActiveTab(id)}
-            className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all ${
+            className={`flex min-w-fit flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-medium transition-all ${
               activeTab === id
                 ? 'bg-slate-800 text-white shadow-sm'
                 : 'text-slate-500 hover:text-slate-300'
