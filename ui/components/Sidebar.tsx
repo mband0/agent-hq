@@ -6,7 +6,6 @@ import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
   Bot,
-
   BookOpen,
   ScrollText,
   Zap,
@@ -22,8 +21,11 @@ import {
   Cpu,
   Settings,
   HelpCircle,
+  MoreHorizontal,
+  X,
 } from 'lucide-react';
 import { beginGettingStartedGuide } from '@/lib/gettingStarted';
+import { Button } from '@/components/ui/button';
 
 const navItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -42,17 +44,38 @@ const navItems = [
   { href: '/logs', label: 'Logs', icon: ScrollText },
 ];
 
-const mobileNavItems = [
-  { href: '/', label: 'Home', icon: LayoutDashboard },
-  { href: '/tasks', label: 'Tasks', icon: ClipboardList },
-  { href: '/agents', label: 'Agents', icon: Bot },
-  { href: '/sprints', label: 'Sprints', icon: Rocket },
-  { href: '/chat', label: 'Chat', icon: MessageSquare },
+const mobilePrimaryNavItems = [
+  { href: '/', label: 'Home', shortLabel: 'Home', icon: LayoutDashboard },
+  { href: '/tasks', label: 'Tasks', shortLabel: 'Tasks', icon: ClipboardList },
+  { href: '/agents', label: 'Agents', shortLabel: 'Agents', icon: Bot },
+  { href: '/projects', label: 'Projects', shortLabel: 'Projects', icon: FolderOpen },
+  { href: '/chat', label: 'Chat', shortLabel: 'Chat', icon: MessageSquare },
 ];
+
+const mobileOverflowNavItems = [
+  { href: '/sprints', label: 'Sprints', description: 'Sprint boards and execution', icon: Rocket },
+  { href: '/sprint-definitions', label: 'Sprint Definitions', description: 'Workflow templates and outcomes', icon: Workflow },
+  { href: '/routing', label: 'Task Routing', description: 'Dispatch rules, transitions, and contracts', icon: GitBranch },
+  { href: '/settings/model-routing', label: 'Model Routing', description: 'Provider and model policy', icon: Cpu },
+  { href: '/telemetry', label: 'Telemetry', description: 'Runtime metrics and visibility', icon: BarChart3 },
+  { href: '/capabilities', label: 'Capabilities', description: 'Skills, tools, and MCP servers', icon: BookOpen },
+  { href: '/workspaces', label: 'Workspaces', description: 'Workspace files and artifacts', icon: Files },
+  { href: '/settings/providers', label: 'Settings', description: 'Providers, gateway, and GitHub config', icon: Settings },
+  { href: '/logs', label: 'Logs', description: 'System logs and event history', icon: ScrollText },
+];
+
+function isNavItemActive(pathname: string, href: string) {
+  return href === '/'
+    ? pathname === '/'
+    : href === '/capabilities'
+      ? pathname.startsWith('/capabilities') || pathname.startsWith('/skills')
+      : pathname.startsWith(href);
+}
 
 export default function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
 
   useEffect(() => {
     // Default collapsed on mobile
@@ -70,6 +93,23 @@ export default function Sidebar() {
     localStorage.setItem('sidebar-collapsed', String(next));
     window.dispatchEvent(new Event('sidebar-toggle'));
   };
+
+  useEffect(() => {
+    setShowMobileMenu(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!showMobileMenu) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [showMobileMenu]);
+
+  const mobileOverflowActive = mobileOverflowNavItems.some(item => isNavItemActive(pathname, item.href));
 
   return (
     <>
@@ -109,11 +149,7 @@ export default function Sidebar() {
         {/* Nav */}
         <nav className={`flex-1 py-3 space-y-0.5 ${collapsed ? 'px-1' : 'px-3'}`}>
           {navItems.map(({ href, label, icon: Icon }) => {
-            const isActive = href === '/'
-              ? pathname === '/'
-              : href === '/capabilities'
-                ? pathname.startsWith('/capabilities') || pathname.startsWith('/skills')
-                : pathname.startsWith(href);
+            const isActive = isNavItemActive(pathname, href);
             return (
               <Link
                 key={href}
@@ -158,46 +194,107 @@ export default function Sidebar() {
         )}
       </aside>
 
-      {/* Mobile bottom tab bar — visible only on mobile, intentionally limited to primary destinations */}
-      <nav className="md:hidden order-2 z-[45] w-full shrink-0 bg-slate-950 border-t border-slate-800 pb-[env(safe-area-inset-bottom,0px)]">
-        <div className="grid grid-cols-6 gap-1 px-1 py-1">
-          {[...mobileNavItems, { href: '__guide__', label: 'Guide', icon: HelpCircle }].map(({ href, label, icon: Icon }) => {
-            const isGuide = href === '__guide__';
-            const isActive = !isGuide && (href === '/'
-              ? pathname === '/'
-              : href === '/capabilities'
-                ? pathname.startsWith('/capabilities') || pathname.startsWith('/skills')
-                : pathname.startsWith(href));
-
-            if (isGuide) {
-              return (
+      {/* Mobile bottom tab bar with overflow for parity destinations */}
+      <>
+        {showMobileMenu && (
+          <div className="md:hidden fixed inset-0 z-[55] bg-slate-950/80 backdrop-blur-sm" onClick={() => setShowMobileMenu(false)}>
+            <div
+              className="absolute inset-x-0 bottom-0 rounded-t-3xl border-t border-slate-700 bg-slate-950 shadow-2xl"
+              onClick={event => event.stopPropagation()}
+            >
+              <div className="flex items-center justify-between px-4 pt-4 pb-3">
+                <div>
+                  <p className="text-sm font-semibold text-white">More destinations</p>
+                  <p className="text-xs text-slate-400">Desktop-equivalent areas, optimized for mobile.</p>
+                </div>
                 <button
-                  key={href}
                   type="button"
-                  onClick={() => beginGettingStartedGuide(0)}
-                  className="flex min-w-0 flex-col items-center gap-1 rounded-xl px-2 py-2 text-slate-500 transition-colors hover:text-slate-300"
+                  onClick={() => setShowMobileMenu(false)}
+                  className="rounded-full p-2 text-slate-400 transition-colors hover:bg-slate-800 hover:text-white"
+                  aria-label="Close navigation menu"
                 >
-                  <Icon className="w-5 h-5 text-amber-400" />
-                  <span className="text-[10px] font-medium leading-none">{label}</span>
+                  <X className="w-5 h-5" />
                 </button>
-              );
-            }
+              </div>
 
-            return (
-              <Link
-                key={href}
-                href={href}
-                className={`flex min-w-0 flex-col items-center gap-1 rounded-xl px-2 py-2 transition-colors ${
-                  isActive ? 'bg-slate-900 text-amber-400' : 'text-slate-500 hover:text-slate-300'
-                }`}
-              >
-                <Icon className="w-5 h-5" />
-                <span className="text-[10px] font-medium leading-none text-center">{label}</span>
-              </Link>
-            );
-          })}
-        </div>
-      </nav>
+              <div className="max-h-[70vh] overflow-y-auto px-3 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]">
+                <div className="space-y-1">
+                  {mobileOverflowNavItems.map(({ href, label, description, icon: Icon }) => {
+                    const isActive = isNavItemActive(pathname, href);
+                    return (
+                      <Link
+                        key={href}
+                        href={href}
+                        className={`flex items-center gap-3 rounded-2xl px-3 py-3 transition-colors ${
+                          isActive ? 'bg-slate-900 text-white ring-1 ring-amber-500/30' : 'text-slate-300 hover:bg-slate-900/80 hover:text-white'
+                        }`}
+                      >
+                        <div className={`rounded-xl p-2 ${isActive ? 'bg-amber-500/15 text-amber-400' : 'bg-slate-800 text-slate-400'}`}>
+                          <Icon className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className={`text-sm font-medium ${isActive ? 'text-white' : 'text-slate-200'}`}>{label}</p>
+                          <p className="text-xs text-slate-500">{description}</p>
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-4 border-t border-slate-800 pt-4">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="md"
+                    onClick={() => {
+                      setShowMobileMenu(false);
+                      beginGettingStartedGuide(0);
+                    }}
+                    className="w-full justify-start rounded-2xl border border-slate-800 bg-slate-900/70 px-3 py-3 text-left text-slate-300 hover:border-slate-700"
+                  >
+                    <HelpCircle className="w-4 h-4 text-amber-400" />
+                    Getting Started Guide
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <nav className="md:hidden order-2 z-[45] w-full shrink-0 bg-slate-950 border-t border-slate-800 pb-[env(safe-area-inset-bottom,0px)]">
+          <div className="grid grid-cols-6 gap-1 px-1 py-1">
+            {mobilePrimaryNavItems.map(({ href, label, shortLabel, icon: Icon }) => {
+              const isActive = isNavItemActive(pathname, href);
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  className={`flex min-w-0 flex-col items-center gap-1 rounded-xl px-2 py-2 transition-colors ${
+                    isActive ? 'bg-slate-900 text-amber-400' : 'text-slate-500 hover:text-slate-300'
+                  }`}
+                  aria-label={label}
+                >
+                  <Icon className="w-5 h-5" />
+                  <span className="text-[10px] font-medium leading-none text-center">{shortLabel}</span>
+                </Link>
+              );
+            })}
+
+            <button
+              type="button"
+              onClick={() => setShowMobileMenu(true)}
+              className={`flex min-w-0 flex-col items-center gap-1 rounded-xl px-2 py-2 transition-colors ${
+                showMobileMenu || mobileOverflowActive ? 'bg-slate-900 text-amber-400' : 'text-slate-500 hover:text-slate-300'
+              }`}
+              aria-label="More navigation destinations"
+              aria-expanded={showMobileMenu}
+            >
+              <MoreHorizontal className="w-5 h-5" />
+              <span className="text-[10px] font-medium leading-none text-center">More</span>
+            </button>
+          </div>
+        </nav>
+      </>
     </>
   );
 }

@@ -89,16 +89,17 @@ export default function MainContent({ children }: { children: React.ReactNode })
       });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // On mobile: no sidebar offset (sidebar is hidden, replaced by bottom tab bar)
+  // On mobile: reserve space for the bottom tab bar so content and floating UI stay reachable.
   // On desktop (md+): offset by sidebar width (collapsed = 56px / expanded = 240px)
   const desktopMargin = collapsed ? 'md:ml-14' : 'md:ml-60';
+  const mobileBottomOffset = pathname === '/chat' ? 'pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] md:pb-0' : 'pb-[calc(6.25rem+env(safe-area-inset-bottom,0px))] md:pb-0';
 
   return (
     <>
       {showOnboarding && (
         <OnboardingWizard onClose={() => setShowOnboarding(false)} />
       )}
-    <main className={`order-1 md:order-none flex-1 min-h-0 overflow-hidden flex flex-col transition-all duration-200 ${desktopMargin}`}>
+    <main className={`order-1 md:order-none flex-1 min-h-0 overflow-hidden flex flex-col transition-all duration-200 ${desktopMargin} ${mobileBottomOffset}`}>
       {isFullHeight ? (
         <div className="flex-1 min-h-0 flex flex-col overflow-x-hidden overflow-y-auto md:overflow-hidden">
           {children}
