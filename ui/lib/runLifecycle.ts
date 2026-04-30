@@ -1,5 +1,5 @@
 import { parseDbDate, timeAgo } from '@/lib/date';
-import { getLegacyOutcomeMeta } from '../../../api/src/lib/sprintOutcomes';
+import { getTaskOutcomeMeta } from '@/lib/taskOutcomeMeta';
 
 export type RunDisplayStatus = 'queued' | 'dispatched' | 'starting' | 'running' | 'awaiting_outcome' | 'done' | 'failed';
 
@@ -173,14 +173,14 @@ export function getRunStatusLabel(status: RunDisplayStatus): string {
  * Human-readable label for a task outcome value.
  */
 export function getTaskOutcomeLabel(outcome: string): string {
-  return getLegacyOutcomeMeta(outcome).label;
+  return getTaskOutcomeMeta(outcome).label;
 }
 
 /**
  * Badge variant for a task outcome — determines colour in the UI.
  */
 export function getTaskOutcomeBadgeVariant(outcome: string): string {
-  return getLegacyOutcomeMeta(outcome).badge_variant ?? 'workspace';
+  return getTaskOutcomeMeta(outcome).badge_variant ?? 'workspace';
 }
 
 export function getRunTimelineSummary(instance: RunLifecycleLike): string {
