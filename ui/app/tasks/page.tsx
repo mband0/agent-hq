@@ -859,8 +859,8 @@ function TasksPageInner() {
   }, [sprints, filteredTasks, loadingSprintIds, selectedSprintIds, isFiltered]);
 
   return (
-    <div className="flex flex-col bg-slate-950 p-2 md:p-6 overflow-y-auto md:flex-1 md:overflow-hidden md:min-h-0 pb-20 md:pb-6">
-      <div className="flex items-center justify-between gap-2 mb-2 md:mb-6 flex-shrink-0">
+    <div className="flex flex-1 min-h-0 flex-col bg-slate-950 p-2 md:p-6 overflow-x-hidden overflow-y-auto md:overflow-hidden md:pb-6">
+      <div className="flex flex-col gap-2 mb-2 md:mb-6 flex-shrink-0 md:flex-row md:items-center md:justify-between">
         <h1 className="text-lg md:text-xl font-bold text-white shrink-0">Tasks
           {!loading && totalTasks > 0 && (
             <span className="ml-2 text-xs text-slate-500 font-normal hidden sm:inline">
@@ -869,8 +869,8 @@ function TasksPageInner() {
           )}
         </h1>
 
-        <div className="flex items-center gap-2 flex-1 min-w-0 md:gap-3">
-          <div className="relative flex-1 sm:min-w-[200px]">
+        <div className="flex items-center gap-2 min-w-0 overflow-x-auto scrollbar-none md:flex-1 md:overflow-visible md:gap-3">
+          <div className="relative w-28 shrink-0 sm:w-auto sm:min-w-[200px] md:flex-1">
             <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-slate-400 pointer-events-none" />
             <input
               type="text"

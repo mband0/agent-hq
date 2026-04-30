@@ -15,7 +15,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="dark">
-      <body className="bg-slate-900 text-slate-100 min-h-dvh md:h-dvh md:overflow-hidden flex">
+      <body className="bg-slate-900 text-slate-100 h-[var(--app-viewport-height)] min-h-0 overflow-hidden flex flex-col md:flex-row">
         <Sidebar />
         <MainContent>{children}</MainContent>
       </body>

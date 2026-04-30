@@ -32,6 +32,35 @@ export default function MainContent({ children }: { children: React.ReactNode })
     return () => window.removeEventListener('sidebar-toggle', check);
   }, []);
 
+  useEffect(() => {
+    const updateViewportHeight = () => {
+      const height = Math.max(window.innerHeight, window.visualViewport?.height ?? 0);
+      document.documentElement.style.setProperty('--app-viewport-height', `${height}px`);
+    };
+    let delayedUpdate: ReturnType<typeof setTimeout> | undefined;
+    const scheduleViewportHeightUpdate = () => {
+      updateViewportHeight();
+      if (delayedUpdate) clearTimeout(delayedUpdate);
+      delayedUpdate = setTimeout(updateViewportHeight, 250);
+    };
+
+    scheduleViewportHeightUpdate();
+    window.addEventListener('resize', scheduleViewportHeightUpdate);
+    window.addEventListener('orientationchange', scheduleViewportHeightUpdate);
+    window.addEventListener('pageshow', scheduleViewportHeightUpdate);
+    window.visualViewport?.addEventListener('resize', scheduleViewportHeightUpdate);
+    window.visualViewport?.addEventListener('scroll', scheduleViewportHeightUpdate);
+
+    return () => {
+      if (delayedUpdate) clearTimeout(delayedUpdate);
+      window.removeEventListener('resize', scheduleViewportHeightUpdate);
+      window.removeEventListener('orientationchange', scheduleViewportHeightUpdate);
+      window.removeEventListener('pageshow', scheduleViewportHeightUpdate);
+      window.visualViewport?.removeEventListener('resize', scheduleViewportHeightUpdate);
+      window.visualViewport?.removeEventListener('scroll', scheduleViewportHeightUpdate);
+    };
+  }, []);
+
   // First-run detection: show onboarding if not yet onboarded
   // Server-side onboarding state is authoritative; localStorage is only a UI hint.
   useEffect(() => {
@@ -69,14 +98,13 @@ export default function MainContent({ children }: { children: React.ReactNode })
       {showOnboarding && (
         <OnboardingWizard onClose={() => setShowOnboarding(false)} />
       )}
-    <main className={`flex-1 min-h-0 overflow-y-auto overscroll-none md:overflow-hidden flex flex-col transition-all duration-200 ${desktopMargin}`}>
+    <main className={`order-1 md:order-none flex-1 min-h-0 overflow-hidden flex flex-col transition-all duration-200 ${desktopMargin}`}>
       {isFullHeight ? (
-        <div className="flex-1 min-h-0 pb-[calc(4rem+env(safe-area-inset-bottom,0px))] md:pb-0 flex flex-col md:overflow-hidden">
+        <div className="flex-1 min-h-0 flex flex-col overflow-x-hidden overflow-y-auto md:overflow-hidden">
           {children}
         </div>
       ) : (
-        // Mobile bottom padding should only reserve the actual tab bar height plus safe area once.
-        <div className="flex-1 min-h-0 p-4 md:p-6 pb-[calc(4rem+env(safe-area-inset-bottom,0px))] md:pb-6 overflow-y-auto md:overflow-y-auto">
+        <div className="flex-1 min-h-0 p-4 md:p-6 overflow-x-hidden overflow-y-auto md:overflow-y-auto">
           <div className="max-w-7xl mx-auto">
             {children}
           </div>

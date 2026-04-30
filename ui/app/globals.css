@@ -7,6 +7,14 @@
 :root {
   --background: #1a2236;
   --foreground: #e2e8f0;
+  --app-viewport-height: 100vh;
+  --mobile-safe-area-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+@supports (height: 100dvh) {
+  :root {
+    --app-viewport-height: 100dvh;
+  }
 }
 
 html,
@@ -15,12 +23,9 @@ body {
   color: #e2e8f0;
 }
 
-body {
-  overscroll-behavior-y: none;
-}
-
-:root {
-  --mobile-safe-area-bottom: env(safe-area-inset-bottom, 0px);
+html {
+  height: 100%;
+  overflow: hidden;
 }
 
 .safe-area-inset-bottom {
