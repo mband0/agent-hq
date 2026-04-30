@@ -71,12 +71,12 @@ export default function MainContent({ children }: { children: React.ReactNode })
       )}
     <main className={`flex-1 min-h-0 md:overflow-hidden overflow-y-auto flex flex-col transition-all duration-200 ${desktopMargin}`}>
       {isFullHeight ? (
-        <div className="flex-1 min-h-0 md:overflow-hidden pb-16 md:pb-0 flex flex-col">
+        <div className="flex-1 min-h-0 md:overflow-hidden pb-[calc(4rem+env(safe-area-inset-bottom,0px))] md:pb-0 flex flex-col">
           {children}
         </div>
       ) : (
-        // pb-20 on mobile to clear the bottom tab bar; normal padding on desktop
-        <div className="flex-1 min-h-0 p-4 md:p-6 pb-20 md:pb-6 md:overflow-y-auto">
+        // Mobile bottom padding should only reserve the actual tab bar height plus safe area once.
+        <div className="flex-1 min-h-0 p-4 md:p-6 pb-[calc(4rem+env(safe-area-inset-bottom,0px))] md:pb-6 md:overflow-y-auto">
           <div className="max-w-7xl mx-auto">
             {children}
           </div>

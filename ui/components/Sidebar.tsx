@@ -160,7 +160,7 @@ export default function Sidebar() {
       </aside>
 
       {/* Mobile bottom tab bar — visible only on mobile, horizontally scrollable */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-[45] bg-slate-950 border-t border-slate-800 safe-area-inset-bottom">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-[45] bg-slate-950 border-t border-slate-800 pb-[env(safe-area-inset-bottom,0px)]">
         <div className="flex items-center overflow-x-auto scrollbar-none px-1 py-1">
           {navItems.map(({ href, label, icon: Icon }) => {
             const isActive = href === '/'
