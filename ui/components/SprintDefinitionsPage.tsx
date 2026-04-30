@@ -836,9 +836,9 @@ export default function SprintDefinitionsPage() {
                     <Button size="sm" variant="ghost" onClick={() => setOutcomeEditor(null)}>Close</Button>
                   </div>
                   <div className="grid gap-3 md:grid-cols-2">
-                    <input className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white" placeholder="task type override, or leave blank" value={outcomeEditor.task_type} onChange={e => setOutcomeEditor(editor => editor ? { ...editor, task_type: e.target.value } : editor)} />
+                    <input className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white" placeholder="task type override, or leave blank" value={outcomeEditor.task_type} onChange={e => setOutcomeEditor(editor => editor ? { ...editor, task_type: e.target.value, behavior: e.target.value.trim() ? (editor.behavior === 'base' ? 'extend' : editor.behavior) : 'base' } : editor)} />
                     <select className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white" value={outcomeEditor.behavior} onChange={e => setOutcomeEditor(editor => editor ? { ...editor, behavior: e.target.value as OutcomeForm['behavior'] } : editor)}>
-                      {['base', 'extend', 'override', 'disable'].map(mode => <option key={mode} value={mode}>{mode}</option>)}
+                      {(!outcomeEditor.task_type.trim() ? ['base'] : ['extend', 'override', 'disable']).map(mode => <option key={mode} value={mode}>{mode}</option>)}
                     </select>
                   </div>
                   <div className="grid gap-3 md:grid-cols-2">

@@ -49,7 +49,7 @@ export const ALL_VALID_OUTCOMES = new Set([
   'approved_for_merge',
 ]);
 
-const COMPATIBILITY_FALLBACK_OUTCOMES = new Set(ALL_VALID_OUTCOMES);
+const COMPATIBILITY_FALLBACK_OUTCOMES = ['completed_for_review', 'qa_pass', 'qa_fail', 'approved_for_merge', 'deployed_live', 'live_verified', 'blocked', 'failed'];
 
 interface ResolvedLifecycleOutcomeSet {
   validOutcomes: Set<string>;
@@ -546,7 +546,9 @@ export async function runPostStreamLifecycle(
   const effectiveOutcome =
     lifecycle?.outcome && allowedOutcomes.validOutcomes.has(lifecycle.outcome)
       ? lifecycle.outcome
-      : 'blocked';
+      : allowedOutcomes.validOutcomes.has('blocked')
+        ? 'blocked'
+        : allowedOutcomes.suggestedOutcome;
 
   const effectiveSummary =
     lifecycle?.summary ||

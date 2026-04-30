@@ -10,6 +10,7 @@ import type Database from 'better-sqlite3';
 import { abortChatRunBySessionKey } from '../runtimes/OpenClawRuntime';
 import { destroyAgentContext } from '../services/browserPool';
 import { recordRunCheckIn } from './runObservability';
+import { isTerminalInstanceOutcome } from './outcomeCatalog';
 
 /**
  * Terminal outcomes that should automatically close the instance and terminate
@@ -20,19 +21,8 @@ import { recordRunCheckIn } from './runObservability';
  * workflows require two sequential outcome posts and the instance must stay
  * open between them.
  */
-export const TERMINAL_OUTCOMES = new Set([
-  'completed_for_review',
-  'qa_pass',
-  'qa_fail',
-  'live_verified',
-  'approved_for_merge',
-  'retry',
-  'blocked',
-  'failed',
-]);
-
 export function isTerminalOutcome(outcome: string): boolean {
-  return TERMINAL_OUTCOMES.has(outcome);
+  return isTerminalInstanceOutcome(outcome);
 }
 
 export interface CloseInstanceOptions {

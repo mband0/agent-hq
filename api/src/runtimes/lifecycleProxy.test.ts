@@ -68,7 +68,7 @@ describe('lifecycleProxy configured outcome vocabulary', () => {
     expect(JSON.parse(String((outcomeCall?.[1] as RequestInit).body))).toMatchObject({ outcome: 'ship_it' });
   });
 
-  it('still rejects unconfigured outcomes truthfully by falling back to blocked', async () => {
+  it('still rejects unconfigured outcomes truthfully by falling back to the configured lane-safe outcome', async () => {
     const result = await runPostStreamLifecycle(
       {
         instanceId: 1906,
@@ -84,9 +84,9 @@ describe('lifecycleProxy configured outcome vocabulary', () => {
       ].join('\n'),
     );
 
-    expect(result.effectiveOutcome).toBe('blocked');
+    expect(result.effectiveOutcome).toBe('blocked_custom');
     const outcomeCall = fetchMock.mock.calls.find((call) => String(call[0]).includes('/api/v1/tasks/389/outcome'));
     expect(outcomeCall).toBeTruthy();
-    expect(JSON.parse(String((outcomeCall?.[1] as RequestInit).body))).toMatchObject({ outcome: 'blocked' });
+    expect(JSON.parse(String((outcomeCall?.[1] as RequestInit).body))).toMatchObject({ outcome: 'blocked_custom' });
   });
 });

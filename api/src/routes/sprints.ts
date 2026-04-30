@@ -314,6 +314,12 @@ function validateOutcomePayload(input: SprintTypeOutcomeInput, index = 0) {
   if (!['base', 'extend', 'override', 'disable'].includes(behaviorRaw)) {
     throw new Error(`outcomes[${index}].behavior must be one of: base, extend, override, disable`);
   }
+  if (!taskType && behaviorRaw !== 'base') {
+    throw new Error('Base sprint-type outcomes must use behavior="base"');
+  }
+  if (taskType && behaviorRaw === 'base') {
+    throw new Error('Task-type outcome overlays must use behavior extend, override, or disable');
+  }
   const stageOrder = Number.isFinite(Number(input.stage_order)) ? Number(input.stage_order) : index;
   return {
     task_type: taskType,
