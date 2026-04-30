@@ -54,13 +54,13 @@ export function DeleteProjectModal({
     setDeleting(true);
     setError(null);
     try {
-      await api.deleteProject(projectId, { confirm: hasDependents || hasActiveWork, force: hasActiveWork });
+      await api.deleteProject(projectId, { confirm: hasDependents || hasActiveWork, force: hasDependents || hasActiveWork });
       onConfirm();
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       setError(
         message.includes('Project delete requires confirmation')
-          ? 'Project deletion still needs confirmation from the server. Retry from this dialog, and if it persists the API confirmation contract likely changed.'
+          ? 'Project deletion still requires explicit confirmation from the server. If this persists from this dialog, the API confirmation contract likely changed.'
           : message,
       );
       setDeleting(false);
@@ -165,7 +165,7 @@ export function DeleteProjectModal({
             disabled={!canDelete}
           >
             <Trash2 className="w-3.5 h-3.5" />
-            {hasActiveWork ? 'Delete Anyway' : 'Delete Project'}
+            {hasDependents || hasActiveWork ? 'Delete Project and Dependents' : 'Delete Project'}
           </Button>
         </div>
       </div>
