@@ -910,7 +910,7 @@ export default function ChatWidget() {
     <>
       {/* ── Chat Panel ── */}
       {open && (
-        <div className="fixed inset-x-0 top-0 safe-area-bottom-offset z-30 flex flex-col bg-slate-900 md:inset-auto md:right-6 md:bottom-6 md:h-[min(640px,calc(100dvh-3rem))] md:w-[400px] md:max-w-[calc(100vw-3rem)] md:rounded-[28px] md:border md:border-slate-700/60 md:shadow-2xl md:shadow-black/40 chat-widget-enter md:origin-bottom-right md:bg-slate-900">
+        <div className="fixed inset-x-0 top-0 bottom-20 z-30 flex flex-col bg-slate-900 md:inset-auto md:right-6 md:bottom-6 md:h-[min(640px,calc(100dvh-3rem))] md:w-[400px] md:max-w-[calc(100vw-3rem)] md:rounded-[28px] md:border md:border-slate-700/60 md:shadow-2xl md:shadow-black/40 chat-widget-enter md:origin-bottom-right md:bg-slate-900">
           {/* Header */}
           <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-700/50 shrink-0">
             {isViewingHistory ? (
@@ -1264,7 +1264,7 @@ export default function ChatWidget() {
         <button
           data-tour-target="atlas-chat-bubble"
           onClick={() => setOpen(true)}
-          className="fixed safe-area-bottom-offset md:bottom-6 right-4 md:right-6 w-14 h-14 rounded-full bg-amber-500 hover:bg-amber-400 shadow-lg shadow-amber-500/25 flex items-center justify-center transition-all duration-200 z-30 hover:scale-105 active:scale-95"
+          className="fixed bottom-20 md:bottom-6 right-4 md:right-6 w-14 h-14 rounded-full bg-amber-500 hover:bg-amber-400 shadow-lg shadow-amber-500/25 flex items-center justify-center transition-all duration-200 z-30 hover:scale-105 active:scale-95"
           aria-label="Open chat"
         >
           <>
