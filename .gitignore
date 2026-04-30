@@ -30,4 +30,6 @@ cli/.npmrc
 .claude/
 *.log
 logs/
+!ui/app/logs/
+!ui/app/logs/**
 backups/
