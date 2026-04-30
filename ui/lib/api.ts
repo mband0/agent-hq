@@ -1399,10 +1399,16 @@ export interface WorkflowTemplateInput {
   transitions: Array<Pick<SprintWorkflowTransition, 'from_status_key' | 'to_status_key' | 'transition_key' | 'label' | 'outcome' | 'stage_order' | 'metadata'>>;
 }
 
+export interface ResolvedSprintOutcomes {
+  base: SprintTypeOutcome[];
+  by_task_type: Record<string, SprintTypeOutcome[]>;
+}
+
 export interface SprintTypeConfig extends SprintType {
   task_types: SprintTypeTaskType[];
   field_schemas: TaskFieldSchema[];
   outcomes: SprintTypeOutcome[];
+  resolved_outcomes: ResolvedSprintOutcomes | null;
   workflow_templates: SprintWorkflowTemplate[];
 }
 

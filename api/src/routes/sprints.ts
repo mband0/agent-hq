@@ -482,6 +482,7 @@ function buildWorkflowConfigSnapshot(db: ReturnType<typeof getDb>) {
       task_types: getTaskTypesForSprintType(db, sprintType.key),
       field_schemas: getFieldSchemasForSprintType(db, sprintType.key),
       outcomes: getOutcomesForSprintType(db, sprintType.key),
+      resolved_outcomes: getResolvedOutcomesForSprintType(db, sprintType.key),
       workflow_templates: getWorkflowTemplatesDetailed(db, sprintType.key),
     })),
   };
