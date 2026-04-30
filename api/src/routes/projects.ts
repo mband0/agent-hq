@@ -160,9 +160,16 @@ router.get('/:id/cascade-check', (req: Request, res: Response) => {
       WHERE a.project_id = ? AND ji.status IN ('queued', 'dispatched', 'running')
     `).get(req.params.id) as { count: number };
 
+    const sprintCountRow = db.prepare(`SELECT COUNT(*) as count FROM sprints WHERE project_id = ?`).get(req.params.id) as { count: number };
+    const taskCountRow = db.prepare(`SELECT COUNT(*) as count FROM tasks WHERE project_id = ?`).get(req.params.id) as { count: number };
+    const agentCountRow = db.prepare(`SELECT COUNT(*) as count FROM agents WHERE project_id = ?`).get(req.params.id) as { count: number };
+
     return res.json({
       active_tasks: activeTasksRow.count ?? 0,
       running_instances: runningInstancesRow.count ?? 0,
+      dependent_sprints: sprintCountRow.count ?? 0,
+      dependent_tasks: taskCountRow.count ?? 0,
+      dependent_agents: agentCountRow.count ?? 0,
     });
   } catch (err) {
     return res.status(500).json({ error: String(err) });

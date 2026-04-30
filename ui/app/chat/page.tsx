@@ -1355,7 +1355,7 @@ function ChatPanel({
           {/* Attachment previews */}
           <AttachmentPreviewStrip attachments={pendingAttachments} onRemove={onRemoveAttachment} />
 
-          <div className="px-5 py-4">
+          <div className="px-5 py-4 safe-area-bottom-padding">
             <div className="flex gap-2 items-end rounded-xl border border-slate-700/60 bg-slate-800/60 focus-within:border-amber-500/50 transition-colors px-2 py-2">
               {/* Attach button */}
               <AttachmentUploadButton onFiles={onAddFiles} disabled={sending} />

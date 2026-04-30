@@ -8,6 +8,9 @@ import { AlertTriangle, Trash2, X } from 'lucide-react';
 interface CascadeInfo {
   active_tasks: number;
   running_instances: number;
+  dependent_sprints?: number;
+  dependent_tasks?: number;
+  dependent_agents?: number;
 }
 
 interface DeleteProjectModalProps {
@@ -39,6 +42,9 @@ export function DeleteProjectModal({
   const hasActiveWork = cascade
     ? cascade.active_tasks > 0 || cascade.running_instances > 0
     : false;
+  const hasDependents = cascade
+    ? (cascade.dependent_sprints ?? 0) > 0 || (cascade.dependent_tasks ?? 0) > 0 || (cascade.dependent_agents ?? 0) > 0
+    : false;
 
   const nameMatches = confirmText.trim() === projectName.trim();
   const canDelete = nameMatches && !cascadeLoading;
@@ -48,10 +54,15 @@ export function DeleteProjectModal({
     setDeleting(true);
     setError(null);
     try {
-      await api.deleteProject(projectId, hasActiveWork);
+      await api.deleteProject(projectId, { confirm: hasDependents || hasActiveWork, force: hasActiveWork });
       onConfirm();
     } catch (e) {
-      setError(String(e));
+      const message = e instanceof Error ? e.message : String(e);
+      setError(
+        message.includes('Project delete requires confirmation')
+          ? 'Project deletion still needs confirmation from the server. Retry from this dialog, and if it persists the API confirmation contract likely changed.'
+          : message,
+      );
       setDeleting(false);
     }
   };
@@ -110,6 +121,11 @@ export function DeleteProjectModal({
             <p className="text-amber-200/70 text-xs pt-1">
               Deleting will cascade-remove all tasks and sprints. Jobs will be unassigned.
             </p>
+            {hasDependents ? (
+              <p className="text-amber-200/70 text-xs">
+                This project still owns {cascade?.dependent_sprints ?? 0} sprint{(cascade?.dependent_sprints ?? 0) !== 1 ? 's' : ''}, {cascade?.dependent_tasks ?? 0} task{(cascade?.dependent_tasks ?? 0) !== 1 ? 's' : ''}, and {cascade?.dependent_agents ?? 0} agent{(cascade?.dependent_agents ?? 0) !== 1 ? 's' : ''}.
+              </p>
+            ) : null}
           </div>
         ) : (
           <div className="bg-slate-700/40 border border-slate-600/50 rounded-lg px-4 py-3 text-slate-300 text-sm">
@@ -133,7 +149,7 @@ export function DeleteProjectModal({
         </div>
 
         {error && (
-          <p className="text-red-400 text-xs">{error}</p>
+          <p className="text-red-400 text-xs">{error.replace(/^Error:\s*/, '')}</p>
         )}
 
         {/* Actions */}

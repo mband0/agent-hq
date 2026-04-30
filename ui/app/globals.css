@@ -14,6 +14,22 @@ body {
   color: #e2e8f0;
 }
 
+:root {
+  --mobile-safe-area-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.safe-area-inset-bottom {
+  padding-bottom: var(--mobile-safe-area-bottom);
+}
+
+.safe-area-bottom-offset {
+  bottom: calc(5rem + var(--mobile-safe-area-bottom));
+}
+
+.safe-area-bottom-padding {
+  padding-bottom: calc(1rem + var(--mobile-safe-area-bottom));
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 6px;

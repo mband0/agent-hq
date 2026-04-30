@@ -260,10 +260,15 @@ export const api = {
     apiFetch<Project>('/api/v1/projects', { method: 'POST', body: JSON.stringify(data) }),
   updateProject: (id: number, data: Partial<Project>) =>
     apiFetch<Project>(`/api/v1/projects/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  deleteProject: (id: number, force = false) =>
-    apiFetch<{ ok: boolean }>(`/api/v1/projects/${id}${force ? '?force=true' : ''}`, { method: 'DELETE' }),
+  deleteProject: (id: number, options?: { force?: boolean; confirm?: boolean }) => {
+    const params = new URLSearchParams();
+    if (options?.force) params.set('force', 'true');
+    if (options?.confirm) params.set('confirm', 'true');
+    const query = params.toString();
+    return apiFetch<{ ok: boolean }>(`/api/v1/projects/${id}${query ? `?${query}` : ''}`, { method: 'DELETE' });
+  },
   checkProjectCascade: (id: number) =>
-    apiFetch<{ active_tasks: number; running_instances: number }>(`/api/v1/projects/${id}/cascade-check`),
+    apiFetch<{ active_tasks: number; running_instances: number; dependent_sprints: number; dependent_tasks: number; dependent_agents: number }>(`/api/v1/projects/${id}/cascade-check`),
   // Artifacts / Workspaces
   getArtifactTree: (agentId?: number) => {
     const qs = agentId ? `?agentId=${agentId}` : '';
