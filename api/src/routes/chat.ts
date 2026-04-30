@@ -19,6 +19,7 @@ import {
   buildGatewayDirectSessionKey,
   buildGatewayRunSessionKey,
   parseAgentSessionKey,
+  parseRunSessionKey,
   parseHookSessionKey,
   resolveRuntimeAgentSlug,
   toGatewaySessionKey,
@@ -210,9 +211,11 @@ function resolveGatewayUrl(sessionKey: string | null | undefined): string {
     let hooksUrl: string | null = null;
 
     // Patterns:
-    //   hook:atlas:jobrun:<id>                     — bare hook key
-    //   agent:<slug>:hook:atlas:jobrun:<id>        — agent-prefixed hook key (reconstructed)
-    const hook = parseHookSessionKey(sessionKey);
+    //   run:<id>                                   — canonical short run key
+    //   hook:atlas:jobrun:<id>                     — legacy short run key
+    //   agent:<project>:<agent>:<role>:run:<id>    — canonical agent-prefixed run key
+    //   agent:<slug>:hook:atlas:jobrun:<id>        — legacy agent-prefixed run key
+    const hook = parseRunSessionKey(sessionKey);
     if (hook) {
       const row = db.prepare(`
         SELECT a.hooks_url, a.session_key, a.openclaw_agent_id, a.name FROM job_instances ji
@@ -984,8 +987,8 @@ function normalizeChatRole(role: unknown, eventType?: unknown) {
 function resolveSessionContext(sessionKey: string): SessionContext | null {
   try {
     const db = getDb();
-    // hook:atlas:jobrun:<id> → instance ID is in the key
-    const hook = parseHookSessionKey(sessionKey);
+    // canonical or legacy run-session key → instance ID is in the key
+    const hook = parseRunSessionKey(sessionKey);
     if (hook) {
       const instanceId = hook.instanceId;
       const row = db.prepare('SELECT agent_id FROM job_instances WHERE id = ?')

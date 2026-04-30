@@ -625,7 +625,7 @@ const activeCaptures = new Map<string, GatewayTranscriptCapture>();
  *
  * @param instanceId   job_instances.id
  * @param agentId      agents.id
- * @param sessionKey   Full gateway session key (e.g. "agent:<slug>:hook:atlas:jobrun:<id>")
+ * @param sessionKey   Full gateway session key (e.g. "agent:<project>:<agent>:<role>:run:<id>")
  * @param opts         Optional: timeoutMs override
  */
 export function startTranscriptCapture(

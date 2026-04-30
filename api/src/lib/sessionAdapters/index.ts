@@ -40,7 +40,8 @@ export function resolveSessionAdapter(runtime: string): SessionAdapter | null {
  * Key patterns:
  *   claude-code:<uuid>    → ClaudeCodeSessionAdapter
  *   cron:<jobId>...       → CronSessionAdapter
- *   hook:atlas:jobrun:... → OpenClawSessionAdapter
+ *   run:<instanceId>      → OpenClawSessionAdapter
+ *   hook:atlas:jobrun:... → OpenClawSessionAdapter (legacy)
  *   agent:...:cron:...    → CronSessionAdapter (cron run via openclaw)
  *   anything else         → OpenClawSessionAdapter (default)
  */

@@ -48,7 +48,7 @@ function buildTokenMap(sessions: SessionEntry[]): TokenMap {
   const tokenMap: TokenMap = new Map();
 
   for (const session of sessions) {
-    if (!session.key || !session.key.includes('hook:atlas:jobrun')) continue;
+    if (!session.key) continue;
 
     const instanceId = extractInstanceId(session.key);
     if (instanceId === null) continue;
@@ -95,11 +95,13 @@ function parseSessionsListOutput(stdout: string): SessionEntry[] {
 
 /**
  * Extract instance ID from session key patterns:
+ *   agent:<project>:<agent>:<role>:run:<id>
  *   agent:<slug>:hook:atlas:jobrun:<id>
  *   hook:atlas:jobrun:<id>
+ *   run:<id>
  */
 function extractInstanceId(sessionKey: string): number | null {
-  const match = sessionKey.match(/hook:atlas:jobrun:(\d+)/);
+  const match = sessionKey.match(/(?:^|:)(?:run|hook:atlas:jobrun):(\d+)$/);
   if (!match) return null;
   const n = parseInt(match[1], 10);
   return Number.isFinite(n) ? n : null;
@@ -112,7 +114,7 @@ function toPositiveInt(v: unknown): number | null {
 
 /**
  * Fetch sessions from OpenClaw gateway and return a map of
- * instanceId → token data for all hook:atlas:jobrun sessions.
+ * instanceId → token data for all canonical or legacy dispatched run sessions.
  */
 export function fetchHookSessionTokens(): TokenMap {
   const result = spawnSync(

@@ -8,8 +8,11 @@
  *   - job_instances for instance context (status, agent, task, project)
  *
  * Session key format:
- *   hook:atlas:jobrun:<instanceId>
- *   agent:<slug>:cron:<jobId>:run:<uuid>  (for cron-dispatched openclaw sessions)
+ *   run:<instanceId>                                  (canonical new write format)
+ *   hook:atlas:jobrun:<instanceId>                    (legacy compatibility)
+ *   agent:<project>:<agent>:<role>:run:<instanceId>   (canonical reconstructed gateway key)
+ *   agent:<slug>:hook:atlas:jobrun:<instanceId>       (legacy reconstructed gateway key)
+ *   agent:<slug>:cron:<jobId>:run:<uuid>              (for cron-dispatched openclaw sessions)
  *   Any key that references a job_instances.session_key
  *
  * Live chat: fully supported — returns the gateway WS URL for the agent.
@@ -135,7 +138,7 @@ export class OpenClawSessionAdapter implements SessionAdapter {
     }
 
     if (!ctx) {
-      // Try parsing instance ID from hook:atlas:jobrun:<id> pattern
+      // Try parsing instance ID from canonical or legacy run-session patterns
       const hook = parseHookSessionKey(externalKey);
       if (hook) {
         ctx = db.prepare(`

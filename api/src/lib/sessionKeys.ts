@@ -1,4 +1,5 @@
-export const OPENCLAW_HOOK_PREFIX = 'hook:atlas:jobrun:';
+export const OPENCLAW_LEGACY_HOOK_PREFIX = 'hook:atlas:jobrun:';
+export const OPENCLAW_RUN_PREFIX = 'run:';
 export const OPENCLAW_DIRECT_KIND = 'direct';
 export const OPENCLAW_MAIN_SCOPE = 'main';
 
@@ -13,14 +14,14 @@ export interface AgentSessionIdentity {
 export interface ParsedAgentSessionKey {
   raw: string;
   format: 'legacy' | 'canonical';
-  scope: 'main' | 'direct' | 'hook' | 'unknown';
+  scope: 'main' | 'direct' | 'run' | 'unknown';
   runtimeSlug: string | null;
   projectSlug: string | null;
   agentNameSlug: string | null;
   roleSlug: string | null;
   channel: string | null;
   uniqueId: string | null;
-  hookSessionKey: string | null;
+  runSessionKey: string | null;
   instanceId: number | null;
 }
 
@@ -83,21 +84,52 @@ export function slugifySessionKeyPart(value: string | null | undefined, fallback
   return slug || fallback;
 }
 
+export function buildRunSessionKey(instanceId: number): string {
+  return `${OPENCLAW_RUN_PREFIX}${instanceId}`;
+}
+
 export function buildHookSessionKey(instanceId: number): string {
-  return `${OPENCLAW_HOOK_PREFIX}${instanceId}`;
+  return buildRunSessionKey(instanceId);
+}
+
+export function parseRunSessionKey(sessionKey: string | null | undefined): {
+  shortKey: string;
+  instanceId: number;
+  format: 'legacy' | 'canonical';
+} | null {
+  const key = normalized(sessionKey);
+  if (!key) return null;
+
+  const canonicalMatch = key.match(/(?:^|:)run:(\d+)$/);
+  if (canonicalMatch) {
+    return {
+      shortKey: `${OPENCLAW_RUN_PREFIX}${canonicalMatch[1]}`,
+      instanceId: Number(canonicalMatch[1]),
+      format: 'canonical',
+    };
+  }
+
+  const legacyMatch = key.match(/(?:^|:)hook:atlas:jobrun:(\d+)$/);
+  if (legacyMatch) {
+    return {
+      shortKey: `${OPENCLAW_LEGACY_HOOK_PREFIX}${legacyMatch[1]}`,
+      instanceId: Number(legacyMatch[1]),
+      format: 'legacy',
+    };
+  }
+
+  return null;
 }
 
 export function parseHookSessionKey(sessionKey: string | null | undefined): {
   shortKey: string;
   instanceId: number;
 } | null {
-  const key = normalized(sessionKey);
-  if (!key) return null;
-  const match = key.match(/hook:atlas:jobrun:(\d+)$/);
-  if (!match) return null;
+  const parsed = parseRunSessionKey(sessionKey);
+  if (!parsed) return null;
   return {
-    shortKey: `${OPENCLAW_HOOK_PREFIX}${match[1]}`,
-    instanceId: Number(match[1]),
+    shortKey: parsed.shortKey,
+    instanceId: parsed.instanceId,
   };
 }
 
@@ -135,7 +167,7 @@ export function parseAgentSessionKey(sessionKey: string | null | undefined): Par
       roleSlug: null,
       channel: null,
       uniqueId: null,
-      hookSessionKey: null,
+      runSessionKey: null,
       instanceId: null,
     };
   }
@@ -151,25 +183,25 @@ export function parseAgentSessionKey(sessionKey: string | null | undefined): Par
       roleSlug: null,
       channel: parts[2] || null,
       uniqueId: parts[4] || null,
-      hookSessionKey: null,
+      runSessionKey: null,
       instanceId: null,
     };
   }
 
-  const hook = parseHookSessionKey(raw);
-  if (parts.length === 6 && parts[2] === 'hook' && parts[3] === 'atlas' && parts[4] === 'jobrun' && hook) {
+  const run = parseRunSessionKey(raw);
+  if (parts.length === 6 && parts[2] === 'hook' && parts[3] === 'atlas' && parts[4] === 'jobrun' && run) {
     return {
       raw,
       format: 'legacy',
-      scope: 'hook',
+      scope: 'run',
       runtimeSlug: parts[1] || null,
       projectSlug: null,
       agentNameSlug: parts[1] || null,
       roleSlug: null,
       channel: null,
-      uniqueId: String(hook.instanceId),
-      hookSessionKey: hook.shortKey,
-      instanceId: hook.instanceId,
+      uniqueId: String(run.instanceId),
+      runSessionKey: run.shortKey,
+      instanceId: run.instanceId,
     };
   }
 
@@ -184,24 +216,40 @@ export function parseAgentSessionKey(sessionKey: string | null | undefined): Par
       roleSlug: parts[3] || null,
       channel: null,
       uniqueId: null,
-      hookSessionKey: null,
+      runSessionKey: null,
       instanceId: null,
     };
   }
 
-  if (parts.length === 8 && parts[4] === 'hook' && parts[5] === 'atlas' && parts[6] === 'jobrun' && hook) {
+  if (parts.length === 6 && parts[4] === 'run' && run?.format === 'canonical') {
     return {
       raw,
       format: 'canonical',
-      scope: 'hook',
+      scope: 'run',
       runtimeSlug: null,
       projectSlug: parts[1] || null,
       agentNameSlug: parts[2] || null,
       roleSlug: parts[3] || null,
       channel: null,
-      uniqueId: String(hook.instanceId),
-      hookSessionKey: hook.shortKey,
-      instanceId: hook.instanceId,
+      uniqueId: String(run.instanceId),
+      runSessionKey: run.shortKey,
+      instanceId: run.instanceId,
+    };
+  }
+
+  if (parts.length === 8 && parts[4] === 'hook' && parts[5] === 'atlas' && parts[6] === 'jobrun' && run) {
+    return {
+      raw,
+      format: 'canonical',
+      scope: 'run',
+      runtimeSlug: null,
+      projectSlug: parts[1] || null,
+      agentNameSlug: parts[2] || null,
+      roleSlug: parts[3] || null,
+      channel: null,
+      uniqueId: String(run.instanceId),
+      runSessionKey: run.shortKey,
+      instanceId: run.instanceId,
     };
   }
 
@@ -216,7 +264,7 @@ export function parseAgentSessionKey(sessionKey: string | null | undefined): Par
       roleSlug: parts[3] || null,
       channel: parts[4] || null,
       uniqueId: parts[6] || null,
-      hookSessionKey: null,
+      runSessionKey: null,
       instanceId: null,
     };
   }
@@ -231,8 +279,8 @@ export function parseAgentSessionKey(sessionKey: string | null | undefined): Par
     roleSlug: parts.length > 3 ? parts[3] || null : null,
     channel: null,
     uniqueId: null,
-    hookSessionKey: hook?.shortKey ?? null,
-    instanceId: hook?.instanceId ?? null,
+    runSessionKey: run?.shortKey ?? null,
+    instanceId: run?.instanceId ?? null,
   };
 }
 
@@ -267,12 +315,12 @@ export function buildGatewayDirectSessionKey(
 
 export function buildGatewayRunSessionKey(
   agent: AgentSessionIdentity | null | undefined,
-  shortHookKey: string,
+  shortRunKey: string,
 ): string | null {
   const slug = resolveRuntimeAgentSlug(agent);
-  const hook = parseHookSessionKey(shortHookKey);
-  if (!slug || !hook) return null;
-  return `agent:${slug}:${hook.shortKey}`;
+  const run = parseRunSessionKey(shortRunKey);
+  if (!slug || !run) return null;
+  return `agent:${slug}:${run.shortKey}`;
 }
 
 export function toGatewaySessionKey(
@@ -281,8 +329,8 @@ export function toGatewaySessionKey(
 ): string | null {
   const key = normalized(sessionKey);
   if (!key) return null;
-  const hook = parseHookSessionKey(key);
-  if (hook && !key.startsWith('agent:')) return hook.shortKey;
+  const run = parseRunSessionKey(key);
+  if (run && !key.startsWith('agent:')) return run.shortKey;
 
   const parsed = parseAgentSessionKey(key);
   if (!parsed) return key;
@@ -295,8 +343,8 @@ export function toGatewaySessionKey(
     return buildGatewayDirectSessionKey(agent, parsed.channel ?? 'web', parsed.uniqueId ?? '') ?? key;
   }
 
-  if (parsed.scope === 'hook') {
-    return buildGatewayRunSessionKey(agent, parsed.hookSessionKey ?? key) ?? key;
+  if (parsed.scope === 'run') {
+    return buildGatewayRunSessionKey(agent, parsed.runSessionKey ?? key) ?? key;
   }
 
   return key;
