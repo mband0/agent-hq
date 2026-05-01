@@ -232,6 +232,17 @@ function buildStructuredNote(input: Required<Pick<RunCheckInInput, 'stage'>> & O
   return lines.join('\n');
 }
 
+function isMissingLifecycleHandoffCompletion(input: RunCheckInInput, instance: (InstanceRow & {
+  lifecycle_outcome_posted_at?: string | null;
+  task_outcome?: string | null;
+}) | undefined): boolean {
+  return input.stage === 'completion'
+    && !instance?.lifecycle_outcome_posted_at
+    && !instance?.task_outcome
+    && input.runtimeEndSuccess === false
+    && input.summary === 'OpenClaw runtime ended without required lifecycle outcome';
+}
+
 export function recordRunCheckIn(db: Database.Database, input: RunCheckInInput): { taskId: number | null; noteCreated: boolean } {
   const nowIso = new Date().toISOString();
   const changedFiles = parseChangedFiles(input.changedFiles);
@@ -252,11 +263,7 @@ export function recordRunCheckIn(db: Database.Database, input: RunCheckInInput):
   }
 
   const trustedStartSignal = ['start', 'heartbeat', 'progress', 'blocker', 'completion'].includes(input.stage);
-  const suppressCompletionNote = input.stage === 'completion'
-    && !instance?.lifecycle_outcome_posted_at
-    && !instance?.task_outcome
-    && input.runtimeEndSuccess === false
-    && input.runtimeEndError === 'Runtime ended without required lifecycle outcome';
+  const suppressCompletionNote = isMissingLifecycleHandoffCompletion(input, instance);
 
   db.prepare(`
     INSERT INTO instance_artifacts (
