@@ -11,7 +11,7 @@ import {
 import { buildContractInstructions, resolveTransportMode } from '../services/contracts';
 import { backfillInstanceTokensAsync } from '../lib/tokenBackfill';
 import { writeTaskStatusChange } from '../lib/taskHistory';
-import { taskRequiresSemanticOutcome } from '../lib/lifecycleHandoff';
+import { markTaskNeedsAttentionForMissingSemanticHandoff, taskRequiresSemanticOutcome } from '../lib/lifecycleHandoff';
 import { getNeedsAttentionEligibleStatuses } from '../lib/reconcilerConfig';
 import { buildHookSessionKey, resolveRuntimeAgentSlug } from '../lib/sessionKeys';
 
@@ -628,29 +628,19 @@ function reconcileMissingLifecycleOutcomeAfterRuntimeEnd(db: Database.Database):
       continue;
     }
 
-    db.prepare(`
-      UPDATE tasks
-      SET status = 'needs_attention',
-          previous_status = COALESCE(previous_status, status),
-          updated_at = datetime('now')
-      WHERE id = ?
-        AND status = ?
-    `).run(task.id, task.status);
-
-    writeTaskStatusChange(db, task.id, 'reconciler', task.status, 'needs_attention', {
+    markTaskNeedsAttentionForMissingSemanticHandoff(db, {
+      taskId: task.id,
       instanceId: task.active_instance_id,
-      reason: 'Runtime ended without lifecycle outcome',
-      projectId: task.project_id,
-      agentId: task.agent_id,
+      changedBy: 'reconciler',
+      lane: task.status,
+      priorTaskStatus: task.status,
+      runtimeEnd: {
+        source: task.runtime_end_source,
+        success: task.instance_status === 'done' ? true : task.runtime_end_error ? false : null,
+        endedAt: withZ,
+        error: task.runtime_end_error,
+      },
     });
-
-    const reason = task.runtime_end_error
-      ? `Runtime ended without a semantic lifecycle outcome. Runtime source=${task.runtime_end_source ?? 'unknown'}; error=${task.runtime_end_error}`
-      : `Runtime ended without a semantic lifecycle outcome. Runtime source=${task.runtime_end_source ?? 'unknown'}`;
-    db.prepare(`
-      INSERT INTO task_notes (task_id, author, content)
-      VALUES (?, 'reconciler', ?)
-    `).run(task.id, reason);
 
     log(db,
       `Lifecycle recovery: task #${task.id} "${task.title}" (${task.status} → needs_attention) — runtime ended on instance #${task.active_instance_id} without lifecycle outcome after ${elapsedMin}m (grace=${Math.floor(MISSING_LIFECYCLE_OUTCOME_GRACE_MS / 60000)}m)`,
