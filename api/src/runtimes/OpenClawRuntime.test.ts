@@ -188,13 +188,7 @@ describe('OpenClawRuntime terminal failure handling', () => {
       outcome: 'failed',
       summary: 'OpenClaw runtime ended without required lifecycle outcome',
     }));
-    expect(applyTaskOutcome).toHaveBeenCalledWith(db, expect.objectContaining({
-      taskId: 383,
-      outcome: 'failed',
-      instanceId: 1757,
-      failureClass: 'runtime_failure',
-      failureDetail: 'missing_lifecycle_outcome',
-    }));
+    expect(applyTaskOutcome).not.toHaveBeenCalled();
     expect(markTaskNeedsAttentionForMissingSemanticHandoff).toHaveBeenCalledWith(db, expect.objectContaining({
       taskId: 383,
       instanceId: 1757,

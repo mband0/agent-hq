@@ -1710,16 +1710,22 @@ export class OpenClawRuntime implements AgentRuntime {
               },
             });
           }
-          await applyTaskOutcome(db, {
-            taskId: taskRow.task_id,
-            outcome: 'failed',
-            changedBy: taskRow.agent_id ? `agent:${taskRow.agent_id}` : 'openclaw-runtime',
-            summary: failureSummary ?? 'OpenClaw runtime failed',
-            instanceId,
-            failureClass: missingRequiredLifecycleOutcome ? 'runtime_failure' : classifyOpenClawRuntimeFailure(failureSummary ?? normalizedEvent.error ?? 'OpenClaw runtime failed'),
-            failureDetail: missingRequiredLifecycleOutcome ? 'missing_lifecycle_outcome' : (normalizedEvent.error ?? null),
-          });
+          if (!missingRequiredLifecycleOutcome) {
+            await applyTaskOutcome(db, {
+              taskId: taskRow.task_id,
+              outcome: 'failed',
+              changedBy: taskRow.agent_id ? `agent:${taskRow.agent_id}` : 'openclaw-runtime',
+              summary: failureSummary ?? 'OpenClaw runtime failed',
+              instanceId,
+              failureClass: classifyOpenClawRuntimeFailure(failureSummary ?? normalizedEvent.error ?? 'OpenClaw runtime failed'),
+              failureDetail: normalizedEvent.error ?? null,
+            });
+          }
         }
+      }
+
+      if (missingRequiredLifecycleOutcome) {
+        console.info(`[OpenClawRuntime] Prevented automatic failed outcome/redispatch for instance #${instanceId} because runtime ended without required lifecycle outcome`);
       }
 
       await onRuntimeEnd?.(normalizedEvent);
