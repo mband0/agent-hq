@@ -1567,13 +1567,19 @@ router.delete('/transition-requirements/:id', (req: Request, res: Response) => {
 // AGENT CONTRACTS — editable sprint-type dispatch SOP templates
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// __dirname at runtime = api/dist/routes → 3 levels up = repo root
-const AGENT_CONTRACT_ROOT = path.resolve(
-  process.env.AGENT_CONTRACT_ROOT ?? path.join(__dirname, '../../../agent-contracts')
-);
-const LEGACY_AGENT_CONTRACT_PATH = path.resolve(
-  process.env.AGENT_CONTRACT_PATH ?? path.join(__dirname, '../../../agent-contract.md')
-);
+// __dirname at runtime = api/dist/routes → 3 levels up = repo root.
+// Resolve lazily so tests and process managers can set env after import.
+function getAgentContractRoot(): string {
+  return path.resolve(
+    process.env.AGENT_CONTRACT_ROOT ?? path.join(__dirname, '../../../agent-contracts')
+  );
+}
+
+function getLegacyAgentContractPath(): string {
+  return path.resolve(
+    process.env.AGENT_CONTRACT_PATH ?? path.join(__dirname, '../../../agent-contract.md')
+  );
+}
 
 function normalizeSprintTypeKey(raw: unknown): string {
   const value = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
@@ -1586,7 +1592,7 @@ function ensureSprintTypeExists(db: ReturnType<typeof getDb>, sprintTypeKey: str
 }
 
 function getSprintTypeContractPath(sprintTypeKey: string): string {
-  return path.join(AGENT_CONTRACT_ROOT, `${sprintTypeKey}.md`);
+  return path.join(getAgentContractRoot(), `${sprintTypeKey}.md`);
 }
 
 function readSprintTypeContract(sprintTypeKey: string): { content: string; path: string; inheritedFrom: string | null } {
@@ -1604,10 +1610,11 @@ function readSprintTypeContract(sprintTypeKey: string): { content: string; path:
     };
   }
 
-  if (fs.existsSync(LEGACY_AGENT_CONTRACT_PATH)) {
+  const legacyAgentContractPath = getLegacyAgentContractPath();
+  if (fs.existsSync(legacyAgentContractPath)) {
     return {
-      content: fs.readFileSync(LEGACY_AGENT_CONTRACT_PATH, 'utf-8'),
-      path: LEGACY_AGENT_CONTRACT_PATH,
+      content: fs.readFileSync(legacyAgentContractPath, 'utf-8'),
+      path: legacyAgentContractPath,
       inheritedFrom: 'legacy',
     };
   }

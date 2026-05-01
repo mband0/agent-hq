@@ -126,9 +126,12 @@ function resetDb(): void {
       started_at TEXT,
       completed_at TEXT,
       runtime_ended_at TEXT,
+      runtime_completed_at TEXT,
       runtime_end_success INTEGER,
       runtime_end_error TEXT,
       runtime_end_source TEXT,
+      lifecycle_handoff_status TEXT,
+      semantic_outcome_missing INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE TABLE agents (

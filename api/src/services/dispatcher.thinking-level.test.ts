@@ -8,7 +8,7 @@ jest.mock('../runtimes', () => ({
 }));
 
 jest.mock('./worktreeManager', () => ({
-  createTaskWorktree: jest.fn(() => ({ created: false, worktreePath: null, branch: null, error: null })),
+  createTaskWorktree: jest.fn(() => ({ created: false, workspacePath: null, branch: null, error: null })),
 }));
 
 jest.mock('../lib/taskNotifications', () => ({
@@ -269,6 +269,8 @@ describe('runDispatcher thinking-level routing', () => {
         workspace_path TEXT,
         preferred_provider TEXT,
         repo_path TEXT,
+        repo_url TEXT,
+        repo_access_mode TEXT,
         os_user TEXT,
         openclaw_agent_id TEXT,
         sort_rules TEXT NOT NULL DEFAULT '[]'
@@ -383,7 +385,7 @@ describe('runDispatcher thinking-level routing', () => {
     const { createTaskWorktree } = jest.requireMock('./worktreeManager') as { createTaskWorktree: jest.Mock };
     createTaskWorktree.mockReturnValue({
       created: true,
-      worktreePath: '/Users/test/workspaces/task-375',
+      workspacePath: '/Users/test/workspaces/task-375',
       branch: 'task-375-fix',
       error: null,
     });
@@ -474,6 +476,8 @@ describe('runDispatcher thinking-level routing', () => {
           workspace_path TEXT,
           preferred_provider TEXT,
           repo_path TEXT,
+          repo_url TEXT,
+          repo_access_mode TEXT,
           os_user TEXT,
           openclaw_agent_id TEXT,
           sort_rules TEXT NOT NULL DEFAULT '[]'
@@ -577,7 +581,7 @@ describe('runDispatcher thinking-level routing', () => {
       const { createTaskWorktree } = jest.requireMock('./worktreeManager') as { createTaskWorktree: jest.Mock };
       createTaskWorktree.mockReturnValue({
         created: true,
-        worktreePath: worktreeRoot,
+        workspacePath: worktreeRoot,
         branch: 'task-375-fix',
         error: null,
       });
@@ -640,6 +644,8 @@ describe('runDispatcher thinking-level routing', () => {
         workspace_path TEXT,
         preferred_provider TEXT,
         repo_path TEXT,
+        repo_url TEXT,
+        repo_access_mode TEXT,
         os_user TEXT,
         openclaw_agent_id TEXT,
         sort_rules TEXT NOT NULL DEFAULT '[]'
@@ -743,7 +749,7 @@ describe('runDispatcher thinking-level routing', () => {
     const { createTaskWorktree } = jest.requireMock('./worktreeManager') as { createTaskWorktree: jest.Mock };
     createTaskWorktree.mockReturnValue({
       created: true,
-      worktreePath: '/parent/workspace/task-375',
+      workspacePath: '/parent/workspace/task-375',
       branch: 'task-375-fix',
       error: null,
     });

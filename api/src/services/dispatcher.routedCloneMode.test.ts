@@ -283,7 +283,8 @@ describe('dispatchTaskToJob preserves clone repo mode', () => {
     expect(runtimeParams.repoSource).toBe(`clone:${remotePath}`);
     expect(runtimeParams.repoWorkspacePath).toBe(path.join(workspaceRoot, 'task-373'));
     expect(runtimeParams.repoBranch).toBe('cinder-backend/task-373-agent-repo-source-modes');
-    expect(runtimeParams.workspaceRoot).toBe(path.join(workspaceRoot, 'task-373'));
+    expect(runtimeParams.workspaceRoot).toBe(workspaceRoot);
+    expect(runtimeParams.activeRepoRoot).toBe(path.join(workspaceRoot, 'task-373'));
     expect(runtimeParams.runtimeConfig).toEqual(expect.objectContaining({
       workingDirectory: path.join(workspaceRoot, 'task-373'),
     }));
