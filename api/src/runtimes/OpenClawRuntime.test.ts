@@ -162,9 +162,7 @@ describe('OpenClawRuntime terminal failure handling', () => {
       AND role = 'assistant'
     ORDER BY timestamp DESC
     LIMIT 8
-  `) as unknown as { all: jest.Mock }).all.mockReturnValue([
-      { content: 'Agent failed before reply: provider rate limit exceeded (429 too many requests)' },
-    ]);
+  `) as unknown as { all: jest.Mock }).all.mockReturnValue([]);
   });
 
   it('quarantines missing lifecycle handoff after runtime success on lifecycle-managed lanes', async () => {
@@ -184,8 +182,8 @@ describe('OpenClawRuntime terminal failure handling', () => {
     expect(recordRunCheckIn).toHaveBeenCalledWith(db, expect.objectContaining({
       instanceId: 1757,
       stage: 'completion',
-      runtimeEndSuccess: false,
-      outcome: 'failed',
+      runtimeEndSuccess: true,
+      outcome: 'completed',
       summary: 'OpenClaw runtime ended without required lifecycle outcome',
     }));
     expect(applyTaskOutcome).not.toHaveBeenCalled();
@@ -201,6 +199,16 @@ describe('OpenClawRuntime terminal failure handling', () => {
   it('posts a failed task outcome when provider-limit failure is detected behind a successful terminal event', async () => {
     const { taskRequiresSemanticOutcome } = jest.requireMock('../lib/lifecycleHandoff') as { taskRequiresSemanticOutcome: jest.Mock };
     taskRequiresSemanticOutcome.mockReturnValue(false);
+    (db.prepare(`
+    SELECT content
+    FROM chat_messages
+    WHERE instance_id = ?
+      AND role = 'assistant'
+    ORDER BY timestamp DESC
+    LIMIT 8
+  `) as unknown as { all: jest.Mock }).all.mockReturnValue([
+      { content: 'Agent failed before reply: provider rate limit exceeded (429 too many requests)' },
+    ]);
 
     const runtime = new OpenClawRuntime();
     const handleTurnEnd = (runtime as unknown as {

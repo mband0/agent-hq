@@ -1608,12 +1608,13 @@ export class OpenClawRuntime implements AgentRuntime {
         && !existing.lifecycle_outcome_posted_at
         && !existing.task_outcome;
 
-      const shouldPostTerminalFailureOutcome = (!normalizedEvent.success || missingRequiredLifecycleOutcome)
+      const shouldPostTerminalFailureOutcome = !missingRequiredLifecycleOutcome
         && !existing.lifecycle_outcome_posted_at
-        && !existing.task_outcome;
+        && !existing.task_outcome
+        && !normalizedEvent.success;
 
       let failureSummary: string | null = null;
-      if (shouldPostTerminalFailureOutcome) {
+      if (shouldPostTerminalFailureOutcome || missingRequiredLifecycleOutcome) {
         failureSummary = missingRequiredLifecycleOutcome
           ? 'OpenClaw runtime ended without required lifecycle outcome'
           : normalizedEvent.error
@@ -1629,7 +1630,7 @@ export class OpenClawRuntime implements AgentRuntime {
         outcome: shouldPostTerminalFailureOutcome
           ? 'failed'
           : (normalizedEvent.reason ?? (normalizedEvent.success ? 'completed' : 'error')),
-        runtimeEndSuccess: missingRequiredLifecycleOutcome ? false : normalizedEvent.success,
+        runtimeEndSuccess: normalizedEvent.success,
         runtimeEndError: missingRequiredLifecycleOutcome ? failureSummary : runtimeEndError,
         runtimeEndSource,
         meaningfulOutput: true,
@@ -1642,7 +1643,7 @@ export class OpenClawRuntime implements AgentRuntime {
         WHERE id = ?
       `).run(JSON.stringify(normalizedEvent), instanceId);
 
-      if (shouldPostTerminalFailureOutcome) {
+      if (shouldPostTerminalFailureOutcome || missingRequiredLifecycleOutcome) {
         const taskRow = db.prepare(`
           SELECT ji.task_id, ji.agent_id,
                  t.status AS task_status,
