@@ -236,11 +236,15 @@ function isMissingLifecycleHandoffCompletion(input: RunCheckInInput, instance: (
   lifecycle_outcome_posted_at?: string | null;
   task_outcome?: string | null;
 }) | undefined): boolean {
+  const summary = input.summary?.trim().toLowerCase() ?? '';
+  const runtimeEndError = input.runtimeEndError?.trim().toLowerCase() ?? '';
+  const mentionsMissingLifecycleOutcome = summary.includes('without required lifecycle outcome')
+    || runtimeEndError.includes('without required lifecycle outcome');
+
   return input.stage === 'completion'
     && !instance?.lifecycle_outcome_posted_at
     && !instance?.task_outcome
-    && input.runtimeEndSuccess === false
-    && input.summary === 'OpenClaw runtime ended without required lifecycle outcome';
+    && mentionsMissingLifecycleOutcome;
 }
 
 export function recordRunCheckIn(db: Database.Database, input: RunCheckInInput): { taskId: number | null; noteCreated: boolean } {
