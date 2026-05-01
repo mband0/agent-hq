@@ -276,9 +276,11 @@ router.put('/:id/complete', (req: Request, res: Response) => {
       outcome: outcome ?? finalStatus,
       meaningfulOutput: true,
       statusLabel: persistedStatus,
-      forceNote: true,
+      forceNote: !runtimeEndedWithoutLifecycleOutcome,
       runtimeEndSuccess: finalStatus === 'done',
-      runtimeEndError,
+      runtimeEndError: runtimeEndedWithoutLifecycleOutcome
+        ? 'Runtime ended without required lifecycle outcome'
+        : runtimeEndError,
       runtimeEndSource: 'instance_complete',
     });
 
