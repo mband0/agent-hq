@@ -232,19 +232,30 @@ function buildStructuredNote(input: Required<Pick<RunCheckInInput, 'stage'>> & O
   return lines.join('\n');
 }
 
+function mentionsMissingLifecycleOutcome(text: string): boolean {
+  if (!text) return false;
+  return (
+    text.includes('without required lifecycle outcome')
+    || text.includes('without posting lifecycle outcome')
+    || text.includes('without posting any lifecycle outcome')
+    || text.includes('did not post a required lifecycle outcome')
+    || (text.includes('without') && text.includes('lifecycle outcome'))
+  );
+}
+
 function isMissingLifecycleHandoffCompletion(input: RunCheckInInput, instance: (InstanceRow & {
   lifecycle_outcome_posted_at?: string | null;
   task_outcome?: string | null;
 }) | undefined): boolean {
   const summary = input.summary?.trim().toLowerCase() ?? '';
   const runtimeEndError = input.runtimeEndError?.trim().toLowerCase() ?? '';
-  const mentionsMissingLifecycleOutcome = summary.includes('without required lifecycle outcome')
-    || runtimeEndError.includes('without required lifecycle outcome');
+  const mentionsMissingOutcome = mentionsMissingLifecycleOutcome(summary)
+    || mentionsMissingLifecycleOutcome(runtimeEndError);
 
   return input.stage === 'completion'
     && !instance?.lifecycle_outcome_posted_at
     && !instance?.task_outcome
-    && mentionsMissingLifecycleOutcome;
+    && mentionsMissingOutcome;
 }
 
 export function recordRunCheckIn(db: Database.Database, input: RunCheckInInput): { taskId: number | null; noteCreated: boolean } {
