@@ -239,16 +239,24 @@ export function recordRunCheckIn(db: Database.Database, input: RunCheckInInput):
   const taskId = resolveTaskIdForInstance(db, input.instanceId);
 
   const instance = db.prepare(`
-    SELECT id, task_id, agent_id, status, session_key, started_at
+    SELECT id, task_id, agent_id, status, session_key, started_at, lifecycle_outcome_posted_at, task_outcome
     FROM job_instances
     WHERE id = ?
-  `).get(input.instanceId) as InstanceRow | undefined;
+  `).get(input.instanceId) as (InstanceRow & {
+    lifecycle_outcome_posted_at?: string | null;
+    task_outcome?: string | null;
+  }) | undefined;
 
   if (!instance) {
     throw new Error(`Instance ${input.instanceId} not found`);
   }
 
   const trustedStartSignal = ['start', 'heartbeat', 'progress', 'blocker', 'completion'].includes(input.stage);
+  const suppressCompletionNote = input.stage === 'completion'
+    && !instance?.lifecycle_outcome_posted_at
+    && !instance?.task_outcome
+    && input.runtimeEndSuccess === false
+    && input.runtimeEndError === 'Runtime ended without required lifecycle outcome';
 
   db.prepare(`
     INSERT INTO instance_artifacts (
@@ -326,7 +334,7 @@ export function recordRunCheckIn(db: Database.Database, input: RunCheckInInput):
 
   const previousNoteMs = normalizeTimestamp(artifact.last_note_at);
   const shouldNoteBecauseTime = previousNoteMs === null || (Date.now() - previousNoteMs) >= HEARTBEAT_NOTE_MIN_MS;
-  const shouldCreateNote = Boolean(
+  const shouldCreateNote = !suppressCompletionNote && Boolean(
     input.forceNote
     || input.stage === 'dispatch'
     || input.stage === 'start'
