@@ -102,9 +102,44 @@ describe('OpenClawRuntime terminal failure handling', () => {
         },
       ],
       [
-        `SELECT task_id, agent_id FROM job_instances WHERE id = ?`,
+        `
+          SELECT ji.task_id, ji.agent_id,
+                 t.status AS task_status,
+                 t.task_type,
+                 t.sprint_id,
+                 s.sprint_type,
+                 t.review_branch,
+                 t.review_commit,
+                 t.review_url,
+                 t.qa_verified_commit,
+                 t.qa_tested_url,
+                 t.merged_commit,
+                 t.deployed_commit,
+                 t.deploy_target,
+                 t.deployed_at
+          FROM job_instances ji
+          LEFT JOIN tasks t ON t.id = ji.task_id
+          LEFT JOIN sprints s ON s.id = t.sprint_id
+          WHERE ji.id = ?
+        `,
         {
-          get: jest.fn().mockReturnValue({ task_id: 383, agent_id: 42 }),
+          get: jest.fn().mockReturnValue({
+            task_id: 383,
+            agent_id: 42,
+            task_status: 'review',
+            task_type: null,
+            sprint_id: 9,
+            sprint_type: 'enhancement',
+            review_branch: 'cinder-backend/task-403-prevent-outcome-less-run-completions-fro',
+            review_commit: '27bf9e9fb2f32af10d3f8cbd067f76a59b535240',
+            review_url: 'http://localhost:3510/tasks/403',
+            qa_verified_commit: '27bf9e9fb2f32af10d3f8cbd067f76a59b535240',
+            qa_tested_url: 'http://localhost:3510/tasks/403',
+            merged_commit: null,
+            deployed_commit: null,
+            deploy_target: null,
+            deployed_at: null,
+          }),
         },
       ],
     ]);
@@ -163,6 +198,9 @@ describe('OpenClawRuntime terminal failure handling', () => {
     expect(markTaskNeedsAttentionForMissingSemanticHandoff).toHaveBeenCalledWith(db, expect.objectContaining({
       taskId: 383,
       instanceId: 1757,
+      lane: 'review',
+      priorTaskStatus: 'review',
+      reviewQaDeployEvidenceRecorded: 'yes',
     }));
   });
 

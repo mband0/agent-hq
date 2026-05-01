@@ -28,6 +28,7 @@ import { recordRunCheckIn } from '../lib/runObservability';
 import { syncOAuthProviderForOpenClawAgent } from '../lib/openclawOAuthProfiles';
 import { markTaskNeedsAttentionForMissingSemanticHandoff, taskRequiresSemanticOutcome } from '../lib/lifecycleHandoff';
 import { applyTaskOutcome } from '../lib/taskOutcome';
+import { resolveWorkflowLane } from '../services/contracts/workflowContract';
 
 function derivePostRuntimeInstanceStatus(
   status: string,
@@ -1642,20 +1643,65 @@ export class OpenClawRuntime implements AgentRuntime {
       `).run(JSON.stringify(normalizedEvent), instanceId);
 
       if (shouldPostTerminalFailureOutcome) {
-        const taskRow = db.prepare(`SELECT task_id, agent_id FROM job_instances WHERE id = ?`).get(instanceId) as {
+        const taskRow = db.prepare(`
+          SELECT ji.task_id, ji.agent_id,
+                 t.status AS task_status,
+                 t.task_type,
+                 t.sprint_id,
+                 s.sprint_type,
+                 t.review_branch,
+                 t.review_commit,
+                 t.review_url,
+                 t.qa_verified_commit,
+                 t.qa_tested_url,
+                 t.merged_commit,
+                 t.deployed_commit,
+                 t.deploy_target,
+                 t.deployed_at
+          FROM job_instances ji
+          LEFT JOIN tasks t ON t.id = ji.task_id
+          LEFT JOIN sprints s ON s.id = t.sprint_id
+          WHERE ji.id = ?
+        `).get(instanceId) as {
           task_id: number | null;
           agent_id: number | null;
+          task_status: string | null;
+          task_type: string | null;
+          sprint_id: number | null;
+          sprint_type: string | null;
+          review_branch: string | null;
+          review_commit: string | null;
+          review_url: string | null;
+          qa_verified_commit: string | null;
+          qa_tested_url: string | null;
+          merged_commit: string | null;
+          deployed_commit: string | null;
+          deploy_target: string | null;
+          deployed_at: string | null;
         } | undefined;
         if (taskRow?.task_id) {
+          const resolvedLane = taskRow.task_status ? resolveWorkflowLane({
+            taskStatus: taskRow.task_status,
+            taskType: taskRow.task_type,
+            sprintId: taskRow.sprint_id,
+            sprintType: taskRow.sprint_type,
+            db,
+          }) : null;
+          const evidenceRecorded = resolvedLane?.lane === 'review'
+            ? (taskRow.qa_verified_commit ? 'yes' : 'no')
+            : resolvedLane?.lane === 'release'
+              ? ((taskRow.merged_commit || taskRow.deployed_commit || taskRow.deploy_target || taskRow.deployed_at) ? 'yes' : 'no')
+              : ((taskRow.review_branch || taskRow.review_commit || taskRow.review_url) ? 'yes' : 'no');
           if (missingRequiredLifecycleOutcome) {
             console.warn(`[OpenClawRuntime] Missing lifecycle outcome after runtime end, quarantining task #${taskRow.task_id} instance #${instanceId}`);
             markTaskNeedsAttentionForMissingSemanticHandoff(db, {
               taskId: taskRow.task_id,
               instanceId,
               changedBy: taskRow.agent_id ? `agent:${taskRow.agent_id}` : 'openclaw-runtime',
-              lane: 'implementation',
-              priorTaskStatus: existing.status,
+              lane: resolvedLane?.lane ?? null,
+              priorTaskStatus: taskRow.task_status ?? existing.status,
               sessionKey: existing.session_key,
+              reviewQaDeployEvidenceRecorded: evidenceRecorded,
               runtimeEnd: {
                 source: runtimeEndSource,
                 success: normalizedEvent.success,
