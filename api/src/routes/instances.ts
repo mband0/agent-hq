@@ -193,10 +193,12 @@ router.put('/:id/complete', (req: Request, res: Response) => {
     const taskId = Number(instance.task_id ?? null);
     const requiresOutcome = taskRequiresSemanticOutcome(db, taskId);
     const runtimeEndedWithoutLifecycleOutcome = finalStatus === 'done' && requiresOutcome && !instance.lifecycle_outcome_posted_at;
-    const persistedStatus = runtimeEndedWithoutLifecycleOutcome ? 'failed' : finalStatus;
-    const runtimeEndError = finalStatus === 'failed'
-      ? (summary ?? 'Runtime reported failed terminal state')
-      : null;
+    const persistedStatus = finalStatus;
+    const runtimeEndError = runtimeEndedWithoutLifecycleOutcome
+      ? 'Runtime ended without required lifecycle outcome'
+      : finalStatus === 'failed'
+        ? (summary ?? 'Runtime reported failed terminal state')
+        : null;
 
     const taskRow = taskId
       ? db.prepare(`
@@ -256,8 +258,8 @@ router.put('/:id/complete', (req: Request, res: Response) => {
           token_total = COALESCE(?, token_total)
       WHERE id = ?
     `).run(
-      runtimeEndedWithoutLifecycleOutcome ? 'failed' : finalStatus,
-      runtimeEndedWithoutLifecycleOutcome ? 0 : (finalStatus === 'done' ? 1 : 0),
+      finalStatus,
+      finalStatus === 'done' ? 1 : 0,
       runtimeEndError,
       tokenUsage.input,
       tokenUsage.output,

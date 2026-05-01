@@ -440,9 +440,9 @@ export function recordRunCheckIn(db: Database.Database, input: RunCheckInInput):
       !existingInstance.lifecycle_outcome_posted_at &&
       !existingInstance.task_outcome
     );
-    const nextStatus = runtimeEndedWithoutLifecycleOutcome && ['queued', 'dispatched', 'running'].includes(existingInstance?.status ?? '')
-      ? 'failed'
-      : (input.statusLabel ?? existingInstance?.status ?? 'done');
+    const nextStatus = input.statusLabel
+      ?? existingInstance?.status
+      ?? 'done';
     db.prepare(`
       UPDATE job_instances
       SET status = ?,
