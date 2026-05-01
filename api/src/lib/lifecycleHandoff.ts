@@ -94,15 +94,23 @@ export function markTaskNeedsAttentionForMissingSemanticHandoff(
     lifecycleHandoff: 'missing_after_runtime_end',
   });
 
+  const runtimeEndedSuccessfully = params.runtimeEnd?.success ? 'yes' : 'no';
+  const evidenceRecorded = params.reviewQaDeployEvidenceRecorded ?? 'unknown';
   const noteLines = [
     'Summary: run ended without required lifecycle outcome',
+    'Work completed: runtime session reached a terminal state, but no valid semantic lifecycle outcome was posted for this lane',
     `Instance ID: ${params.instanceId}`,
     `Session key: ${params.sessionKey ?? 'unknown'}`,
     `Lane: ${params.lane ?? 'unknown'}`,
     `Prior task status: ${params.priorTaskStatus ?? task.status}`,
-    `Runtime ended successfully: ${params.runtimeEnd?.success ? 'yes' : 'no'}`,
-    `Review/QA/deploy evidence recorded: ${params.reviewQaDeployEvidenceRecorded ?? 'unknown'}`,
+    `Runtime ended successfully: ${runtimeEndedSuccessfully}`,
+    `Review/QA/deploy evidence recorded: ${evidenceRecorded}`,
+    'Result: needs_attention',
+    `Failure or issue observed: runtime ended ${params.runtimeEnd?.success ? 'successfully' : 'unsuccessfully'} at the session level without the required lifecycle handoff`,
+    'Root cause assessment: control-plane/lifecycle contract failure or missing outcome write',
+    `Evidence: instance_id=${params.instanceId}; session_key=${params.sessionKey ?? 'unknown'}; lane=${params.lane ?? 'unknown'}; prior_status=${params.priorTaskStatus ?? task.status}; runtime_success=${runtimeEndedSuccessfully}; review_qa_deploy_evidence_recorded=${evidenceRecorded}`,
     'Recommended next action: operator review before any redispatch or lane re-entry',
+    'Next owner: PM/operator',
   ];
   if (params.runtimeEnd?.source) noteLines.push(`Runtime end source: ${params.runtimeEnd.source}`);
   if (params.runtimeEnd?.endedAt) noteLines.push(`Runtime ended at: ${params.runtimeEnd.endedAt}`);
