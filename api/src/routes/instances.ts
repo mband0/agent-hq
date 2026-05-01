@@ -6,6 +6,7 @@ import { getDb } from '../db/client';
 import { normalizeStopBehavior } from '../lib/instanceStop';
 import { markTaskNeedsAttentionForMissingSemanticHandoff, taskRequiresSemanticOutcome } from '../lib/lifecycleHandoff';
 import { recordRunCheckIn } from '../lib/runObservability';
+import { resolveWorkflowLane } from '../services/contracts/workflowContract';
 import { writeTaskRuntimeEndHistory } from '../lib/taskHistory';
 import { normalizeTokenUsage } from '../lib/tokenUsage';
 import { createAgentContext, destroyAgentContext } from '../services/browserPool';
@@ -189,12 +190,51 @@ router.put('/:id/complete', (req: Request, res: Response) => {
     if (!instance) return res.status(404).json({ error: 'Instance not found' });
 
     const finalStatus = ['done', 'failed'].includes(status) ? status : 'done';
-    const requiresOutcome = taskRequiresSemanticOutcome(db, Number(instance.task_id ?? null));
+    const taskId = Number(instance.task_id ?? null);
+    const requiresOutcome = taskRequiresSemanticOutcome(db, taskId);
     const runtimeEndedWithoutLifecycleOutcome = finalStatus === 'done' && requiresOutcome && !instance.lifecycle_outcome_posted_at;
     const persistedStatus = runtimeEndedWithoutLifecycleOutcome ? 'failed' : finalStatus;
     const runtimeEndError = finalStatus === 'failed'
       ? (summary ?? 'Runtime reported failed terminal state')
       : null;
+
+    const taskRow = taskId
+      ? db.prepare(`
+          SELECT t.status, t.task_type, t.sprint_id, s.sprint_type,
+                 t.review_branch, t.review_commit, t.review_url,
+                 t.qa_verified_commit, t.qa_tested_url,
+                 t.merged_commit, t.deployed_commit, t.deploy_target, t.deployed_at
+          FROM tasks t
+          LEFT JOIN sprints s ON s.id = t.sprint_id
+          WHERE t.id = ?
+        `).get(taskId) as {
+          status: string;
+          task_type: string | null;
+          sprint_id: number | null;
+          sprint_type: string | null;
+          review_branch: string | null;
+          review_commit: string | null;
+          review_url: string | null;
+          qa_verified_commit: string | null;
+          qa_tested_url: string | null;
+          merged_commit: string | null;
+          deployed_commit: string | null;
+          deploy_target: string | null;
+          deployed_at: string | null;
+        } | undefined
+      : undefined;
+    const resolvedLane = taskRow ? resolveWorkflowLane({
+      taskStatus: taskRow.status,
+      taskType: taskRow.task_type,
+      sprintId: taskRow.sprint_id,
+      sprintType: taskRow.sprint_type,
+      db,
+    }) : null;
+    const evidenceRecorded = resolvedLane?.lane === 'review'
+      ? (taskRow?.qa_verified_commit ? 'yes' : 'no')
+      : resolvedLane?.lane === 'release'
+        ? ((taskRow?.merged_commit || taskRow?.deployed_commit || taskRow?.deploy_target || taskRow?.deployed_at) ? 'yes' : 'no')
+        : ((taskRow?.review_branch || taskRow?.review_commit || taskRow?.review_url) ? 'yes' : 'no');
 
     const tokenUsage = normalizeTokenUsage(
       { input_tokens: token_input, output_tokens: token_output, total_tokens: token_total },
@@ -246,15 +286,16 @@ router.put('/:id/complete', (req: Request, res: Response) => {
       markTaskNeedsAttentionForMissingSemanticHandoff(
         db,
         {
-          taskId: Number(instance.task_id),
+          taskId,
           instanceId: id,
           changedBy: instance.agent_id ? `agent:${instance.agent_id}` : 'system',
-          lane: 'implementation',
-          priorTaskStatus: String(instance.status ?? ''),
+          lane: resolvedLane?.lane ?? null,
+          priorTaskStatus: taskRow?.status ?? String(instance.status ?? ''),
           sessionKey: typeof instance.session_key === 'string' ? instance.session_key : null,
+          reviewQaDeployEvidenceRecorded: evidenceRecorded,
           runtimeEnd: {
             source: 'instance_complete',
-            success: false,
+            success: true,
             endedAt: new Date().toISOString(),
             error: 'Runtime ended without required lifecycle outcome',
           },
