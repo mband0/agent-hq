@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import { OpenClawRuntime } from './OpenClawRuntime';
 import { recordRunCheckIn } from '../lib/runObservability';
+import { markTaskNeedsAttentionForMissingSemanticHandoff } from '../lib/lifecycleHandoff';
 import { applyTaskOutcome } from '../lib/taskOutcome';
 
 jest.mock('../db/client', () => ({
@@ -15,6 +16,11 @@ jest.mock('../lib/taskOutcome', () => ({
   applyTaskOutcome: jest.fn(),
 }));
 
+jest.mock('../lib/lifecycleHandoff', () => ({
+  taskRequiresSemanticOutcome: jest.fn(() => true),
+  markTaskNeedsAttentionForMissingSemanticHandoff: jest.fn(),
+}));
+
 describe('OpenClawRuntime terminal failure handling', () => {
   let db: Pick<Database.Database, 'prepare'>;
 
@@ -24,7 +30,7 @@ describe('OpenClawRuntime terminal failure handling', () => {
     const statements = new Map<string, { get?: jest.Mock; run?: jest.Mock }>([
       [
         `
-        SELECT status, lifecycle_outcome_posted_at, task_outcome
+        SELECT status, lifecycle_outcome_posted_at, task_outcome, task_id, session_key
         FROM job_instances
         WHERE id = ?
       `,
@@ -33,6 +39,8 @@ describe('OpenClawRuntime terminal failure handling', () => {
             status: 'running',
             lifecycle_outcome_posted_at: null,
             task_outcome: null,
+            task_id: 383,
+            session_key: 'agent:test:hook:atlas:jobrun:1757',
           }),
         },
       ],
@@ -124,7 +132,44 @@ describe('OpenClawRuntime terminal failure handling', () => {
     ]);
   });
 
+  it('quarantines missing lifecycle handoff after runtime success on lifecycle-managed lanes', async () => {
+    const runtime = new OpenClawRuntime();
+    const handleTurnEnd = (runtime as unknown as {
+      handleTurnEnd: (instanceId: number, event: { success: boolean; reason: string; sessionKey: string; endedAt: string; type: string }, onRuntimeEnd?: jest.Mock) => Promise<void>;
+    }).handleTurnEnd.bind(runtime);
+
+    await handleTurnEnd(1757, {
+      type: 'runEnded',
+      success: true,
+      reason: 'completed',
+      sessionKey: 'agent:test:hook:atlas:jobrun:1757',
+      endedAt: new Date().toISOString(),
+    });
+
+    expect(recordRunCheckIn).toHaveBeenCalledWith(db, expect.objectContaining({
+      instanceId: 1757,
+      stage: 'completion',
+      runtimeEndSuccess: false,
+      outcome: 'failed',
+      summary: expect.stringContaining('rate limit exceeded'),
+    }));
+    expect(applyTaskOutcome).toHaveBeenCalledWith(db, expect.objectContaining({
+      taskId: 383,
+      outcome: 'failed',
+      instanceId: 1757,
+      failureClass: 'runtime_failure',
+      failureDetail: 'missing_lifecycle_outcome',
+    }));
+    expect(markTaskNeedsAttentionForMissingSemanticHandoff).toHaveBeenCalledWith(db, expect.objectContaining({
+      taskId: 383,
+      instanceId: 1757,
+    }));
+  });
+
   it('posts a failed task outcome when provider-limit failure is detected behind a successful terminal event', async () => {
+    const { taskRequiresSemanticOutcome } = jest.requireMock('../lib/lifecycleHandoff') as { taskRequiresSemanticOutcome: jest.Mock };
+    taskRequiresSemanticOutcome.mockReturnValue(false);
+
     const runtime = new OpenClawRuntime();
     const handleTurnEnd = (runtime as unknown as {
       handleTurnEnd: (instanceId: number, event: { success: boolean; reason: string; sessionKey: string; endedAt: string; type: string }, onRuntimeEnd?: jest.Mock) => Promise<void>;

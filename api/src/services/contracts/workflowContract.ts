@@ -38,6 +38,7 @@ export interface ResolvedWorkflowLane {
   suggestedOutcome: string;
   validOutcomes: string[];
   outcomeHelp: OutcomeHelpEntry[];
+  requiresSemanticOutcome: boolean;
   source: 'sprint_type_config' | 'compatibility';
   sprintType?: string | null;
   workflowTemplateKey?: string | null;
@@ -86,6 +87,7 @@ function buildResolvedLane(
         suggestedOutcome,
         validOutcomes,
         outcomeHelp: options.outcomeHelp ?? validOutcomes.map((outcome) => buildOutcomeHelp(outcome)),
+        requiresSemanticOutcome: true,
         source,
         sprintType,
         workflowTemplateKey,
@@ -99,6 +101,7 @@ function buildResolvedLane(
         suggestedOutcome,
         validOutcomes,
         outcomeHelp: options.outcomeHelp ?? validOutcomes.map((outcome) => buildOutcomeHelp(outcome)),
+        requiresSemanticOutcome: true,
         source,
         sprintType,
         workflowTemplateKey,
@@ -112,6 +115,7 @@ function buildResolvedLane(
         suggestedOutcome,
         validOutcomes,
         outcomeHelp: options.outcomeHelp ?? validOutcomes.map((outcome) => buildOutcomeHelp(outcome)),
+        requiresSemanticOutcome: true,
         source,
         sprintType,
         workflowTemplateKey,
@@ -125,6 +129,7 @@ function buildResolvedLane(
         suggestedOutcome,
         validOutcomes,
         outcomeHelp: options.outcomeHelp ?? validOutcomes.map((outcome) => buildOutcomeHelp(outcome)),
+        requiresSemanticOutcome: true,
         source,
         sprintType,
         workflowTemplateKey,

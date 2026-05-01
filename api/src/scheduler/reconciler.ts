@@ -11,6 +11,7 @@ import {
 import { buildContractInstructions, resolveTransportMode } from '../services/contracts';
 import { backfillInstanceTokensAsync } from '../lib/tokenBackfill';
 import { writeTaskStatusChange } from '../lib/taskHistory';
+import { taskRequiresSemanticOutcome } from '../lib/lifecycleHandoff';
 import { getNeedsAttentionEligibleStatuses } from '../lib/reconcilerConfig';
 import { buildHookSessionKey, resolveRuntimeAgentSlug } from '../lib/sessionKeys';
 
@@ -613,6 +614,8 @@ function reconcileMissingLifecycleOutcomeAfterRuntimeEnd(db: Database.Database):
   }>;
 
   for (const task of candidates) {
+    if (!taskRequiresSemanticOutcome(db, task.id)) continue;
+
     const normalized = task.runtime_ended_at.includes('T')
       ? task.runtime_ended_at
       : task.runtime_ended_at.replace(' ', 'T');

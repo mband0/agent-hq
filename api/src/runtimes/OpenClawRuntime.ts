@@ -26,6 +26,7 @@ import { openClawGatewayWsOptions } from '../lib/openclawGatewayWs';
 import { startTranscriptCapture, stopTranscriptCapture } from '../lib/gatewayTranscriptCapture';
 import { recordRunCheckIn } from '../lib/runObservability';
 import { syncOAuthProviderForOpenClawAgent } from '../lib/openclawOAuthProfiles';
+import { markTaskNeedsAttentionForMissingSemanticHandoff, taskRequiresSemanticOutcome } from '../lib/lifecycleHandoff';
 import { applyTaskOutcome } from '../lib/taskOutcome';
 
 function derivePostRuntimeInstanceStatus(
@@ -34,8 +35,10 @@ function derivePostRuntimeInstanceStatus(
   lifecycleOutcomePostedAt: string | null | undefined,
   taskOutcome: string | null | undefined,
   runtimeEndSuccess: boolean,
+  requiresSemanticOutcome: boolean,
 ): string {
   if (runtimeEndedAt && !lifecycleOutcomePostedAt && !taskOutcome && (status === 'running' || status === 'dispatched' || status === 'queued')) {
+    if (requiresSemanticOutcome) return 'failed';
     return runtimeEndSuccess ? 'done' : 'failed';
   }
   return status;
@@ -1503,16 +1506,19 @@ export class OpenClawRuntime implements AgentRuntime {
     try {
       const db = getDb();
       const existing = db.prepare(`
-        SELECT status, lifecycle_outcome_posted_at, task_outcome
+        SELECT status, lifecycle_outcome_posted_at, task_outcome, task_id, session_key
         FROM job_instances
         WHERE id = ?
       `).get(instanceId) as {
         status: string;
         lifecycle_outcome_posted_at: string | null;
         task_outcome: string | null;
+        task_id: number | null;
+        session_key: string | null;
       } | undefined;
       if (!existing) return;
 
+      const requiresSemanticOutcome = taskRequiresSemanticOutcome(db, existing.task_id);
       let normalizedEvent = event;
       if (event.success) {
         const failureText = detectOpenClawPreReplyFailure(db, instanceId);
@@ -1542,6 +1548,7 @@ export class OpenClawRuntime implements AgentRuntime {
         existing.lifecycle_outcome_posted_at,
         existing.task_outcome,
         normalizedEvent.success,
+        requiresSemanticOutcome,
       );
       const claim = db.prepare(`
         UPDATE job_instances
@@ -1596,13 +1603,19 @@ export class OpenClawRuntime implements AgentRuntime {
         instanceId,
       );
 
-      const shouldPostTerminalFailureOutcome = !normalizedEvent.success
+      const missingRequiredLifecycleOutcome = requiresSemanticOutcome
+        && !existing.lifecycle_outcome_posted_at
+        && !existing.task_outcome;
+
+      const shouldPostTerminalFailureOutcome = (!normalizedEvent.success || missingRequiredLifecycleOutcome)
         && !existing.lifecycle_outcome_posted_at
         && !existing.task_outcome;
 
       let failureSummary: string | null = null;
       if (shouldPostTerminalFailureOutcome) {
-        failureSummary = normalizedEvent.error
+        failureSummary = missingRequiredLifecycleOutcome
+          ? 'OpenClaw runtime ended without required lifecycle outcome'
+          : normalizedEvent.error
           ? `OpenClaw runtime failed: ${normalizedEvent.error}`
           : `OpenClaw runtime failed (${normalizedEvent.reason ?? 'error'})`;
       }
@@ -1615,8 +1628,8 @@ export class OpenClawRuntime implements AgentRuntime {
         outcome: shouldPostTerminalFailureOutcome
           ? 'failed'
           : (normalizedEvent.reason ?? (normalizedEvent.success ? 'completed' : 'error')),
-        runtimeEndSuccess: normalizedEvent.success,
-        runtimeEndError,
+        runtimeEndSuccess: missingRequiredLifecycleOutcome ? false : normalizedEvent.success,
+        runtimeEndError: missingRequiredLifecycleOutcome ? failureSummary : runtimeEndError,
         runtimeEndSource,
         meaningfulOutput: true,
         forceNote: true,
@@ -1634,14 +1647,31 @@ export class OpenClawRuntime implements AgentRuntime {
           agent_id: number | null;
         } | undefined;
         if (taskRow?.task_id) {
+          if (missingRequiredLifecycleOutcome) {
+            console.warn(`[OpenClawRuntime] Missing lifecycle outcome after runtime end, quarantining task #${taskRow.task_id} instance #${instanceId}`);
+            markTaskNeedsAttentionForMissingSemanticHandoff(db, {
+              taskId: taskRow.task_id,
+              instanceId,
+              changedBy: taskRow.agent_id ? `agent:${taskRow.agent_id}` : 'openclaw-runtime',
+              lane: 'implementation',
+              priorTaskStatus: existing.status,
+              sessionKey: existing.session_key,
+              runtimeEnd: {
+                source: runtimeEndSource,
+                success: normalizedEvent.success,
+                endedAt: normalizedEvent.endedAt,
+                error: failureSummary,
+              },
+            });
+          }
           await applyTaskOutcome(db, {
             taskId: taskRow.task_id,
             outcome: 'failed',
             changedBy: taskRow.agent_id ? `agent:${taskRow.agent_id}` : 'openclaw-runtime',
             summary: failureSummary ?? 'OpenClaw runtime failed',
             instanceId,
-            failureClass: classifyOpenClawRuntimeFailure(failureSummary ?? normalizedEvent.error ?? 'OpenClaw runtime failed'),
-            failureDetail: normalizedEvent.error ?? null,
+            failureClass: missingRequiredLifecycleOutcome ? 'runtime_failure' : classifyOpenClawRuntimeFailure(failureSummary ?? normalizedEvent.error ?? 'OpenClaw runtime failed'),
+            failureDetail: missingRequiredLifecycleOutcome ? 'missing_lifecycle_outcome' : (normalizedEvent.error ?? null),
           });
         }
       }

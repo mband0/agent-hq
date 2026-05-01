@@ -4,11 +4,10 @@ import * as os from 'os';
 import * as path from 'path';
 import { getDb } from '../db/client';
 import { normalizeStopBehavior } from '../lib/instanceStop';
+import { markTaskNeedsAttentionForMissingSemanticHandoff, taskRequiresSemanticOutcome } from '../lib/lifecycleHandoff';
 import { recordRunCheckIn } from '../lib/runObservability';
-import { writeTaskRuntimeEndHistory, writeTaskStatusChange } from '../lib/taskHistory';
-import { notifyTaskStatusChange } from '../lib/taskNotifications';
+import { writeTaskRuntimeEndHistory } from '../lib/taskHistory';
 import { normalizeTokenUsage } from '../lib/tokenUsage';
-import { isNeedsAttentionEligibleStatus } from '../lib/reconcilerConfig';
 import { createAgentContext, destroyAgentContext } from '../services/browserPool';
 import { stopInstanceExecution } from '../lib/stopInstanceExecution';
 
@@ -20,54 +19,6 @@ const NODE_BIN = NODE_BIN_DIR;
 const CRON_RUNS_DIR = path.join(os.homedir(), '.openclaw', 'cron', 'runs');
 
 const router = Router();
-
-function markTaskNeedsAttentionForMissingSemanticHandoff(
-  db: ReturnType<typeof getDb>,
-  taskId: number | null | undefined,
-  changedBy: string,
-  summary?: string | null,
-  runtimeEnd?: { source?: string | null; success?: boolean | null; endedAt?: string | null; error?: string | null },
-) {
-  if (!taskId) return false;
-
-  const task = db.prepare(`SELECT id, title, status FROM tasks WHERE id = ?`).get(taskId) as
-    | { id: number; title: string; status: string }
-    | undefined;
-  if (!task) return false;
-  if (['done', 'cancelled', 'failed', 'needs_attention'].includes(task.status)) return false;
-  if (!isNeedsAttentionEligibleStatus(db, task.status)) return false;
-
-  db.prepare(`
-    UPDATE tasks
-    SET status = 'needs_attention',
-        previous_status = COALESCE(previous_status, status),
-        updated_at = datetime('now')
-    WHERE id = ?
-  `).run(taskId);
-  writeTaskStatusChange(db, taskId, changedBy, task.status, 'needs_attention');
-  notifyTaskStatusChange(db, { taskId, fromStatus: task.status, toStatus: 'needs_attention', source: changedBy });
-
-  writeTaskRuntimeEndHistory(db, taskId, changedBy, {
-    endedAt: runtimeEnd?.endedAt,
-    success: runtimeEnd?.success ?? null,
-    source: runtimeEnd?.source ?? null,
-    error: runtimeEnd?.error ?? null,
-    lifecycleHandoff: 'missing_after_runtime_end',
-  });
-
-  const noteLines = [
-    'Moved to Needs Attention because the runtime ended without a semantic lifecycle outcome.',
-    'Lifecycle handoff: missing after runtime end',
-  ];
-  if (runtimeEnd?.source) noteLines.push(`Runtime end source: ${runtimeEnd.source}`);
-  if (runtimeEnd?.success !== undefined && runtimeEnd?.success !== null) noteLines.push(`Runtime end success: ${runtimeEnd.success ? 'yes' : 'no'}`);
-  if (runtimeEnd?.endedAt) noteLines.push(`Runtime ended at: ${runtimeEnd.endedAt}`);
-  if (runtimeEnd?.error) noteLines.push(`Runtime end error: ${runtimeEnd.error}`);
-  if (summary) noteLines.push(`Runtime summary: ${summary}`);
-
-  db.prepare(`INSERT INTO task_notes (task_id, author, content) VALUES (?, ?, ?)`).run(taskId, changedBy, noteLines.join('\n'));
-  return true;
-}
 
 // PUT /api/v1/instances/:id/start
 // Called by agents at the beginning of a job run to register their session key
@@ -238,8 +189,9 @@ router.put('/:id/complete', (req: Request, res: Response) => {
     if (!instance) return res.status(404).json({ error: 'Instance not found' });
 
     const finalStatus = ['done', 'failed'].includes(status) ? status : 'done';
-    const runtimeEndedWithoutLifecycleOutcome = finalStatus === 'done' && !instance.lifecycle_outcome_posted_at;
-    const persistedStatus = runtimeEndedWithoutLifecycleOutcome ? 'done' : finalStatus;
+    const requiresOutcome = taskRequiresSemanticOutcome(db, Number(instance.task_id ?? null));
+    const runtimeEndedWithoutLifecycleOutcome = finalStatus === 'done' && requiresOutcome && !instance.lifecycle_outcome_posted_at;
+    const persistedStatus = runtimeEndedWithoutLifecycleOutcome ? 'failed' : finalStatus;
     const runtimeEndError = finalStatus === 'failed'
       ? (summary ?? 'Runtime reported failed terminal state')
       : null;
@@ -264,8 +216,8 @@ router.put('/:id/complete', (req: Request, res: Response) => {
           token_total = COALESCE(?, token_total)
       WHERE id = ?
     `).run(
-      runtimeEndedWithoutLifecycleOutcome ? 'done' : finalStatus,
-      finalStatus === 'done' ? 1 : 0,
+      runtimeEndedWithoutLifecycleOutcome ? 'failed' : finalStatus,
+      runtimeEndedWithoutLifecycleOutcome ? 0 : (finalStatus === 'done' ? 1 : 0),
       runtimeEndError,
       tokenUsage.input,
       tokenUsage.output,
@@ -290,17 +242,22 @@ router.put('/:id/complete', (req: Request, res: Response) => {
       runtimeEndSource: 'instance_complete',
     });
 
-    if (finalStatus === 'done' && instance.task_id && !instance.lifecycle_outcome_posted_at) {
+    if (runtimeEndedWithoutLifecycleOutcome && instance.task_id) {
       markTaskNeedsAttentionForMissingSemanticHandoff(
         db,
-        Number(instance.task_id),
-        instance.agent_id ? `agent:${instance.agent_id}` : 'system',
-        summary ?? null,
         {
-          source: 'instance_complete',
-          success: true,
-          endedAt: new Date().toISOString(),
-          error: null,
+          taskId: Number(instance.task_id),
+          instanceId: id,
+          changedBy: instance.agent_id ? `agent:${instance.agent_id}` : 'system',
+          lane: 'implementation',
+          priorTaskStatus: String(instance.status ?? ''),
+          sessionKey: typeof instance.session_key === 'string' ? instance.session_key : null,
+          runtimeEnd: {
+            source: 'instance_complete',
+            success: false,
+            endedAt: new Date().toISOString(),
+            error: 'Runtime ended without required lifecycle outcome',
+          },
         },
       );
     }
