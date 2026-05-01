@@ -97,7 +97,8 @@ interface IntegrityEventInput {
     | 'deployed_not_verified'
     | 'stale_outcome_write'
     | 'branch_missing_on_origin'
-    | 'evidence_placeholder';
+    | 'evidence_placeholder'
+    | 'missing_lifecycle_handoff';
   detail?: string | null;
   instanceId?: number | null;
   projectId?: number | null;

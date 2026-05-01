@@ -151,7 +151,7 @@ describe('OpenClawRuntime terminal failure handling', () => {
       stage: 'completion',
       runtimeEndSuccess: false,
       outcome: 'failed',
-      summary: expect.stringContaining('rate limit exceeded'),
+      summary: 'OpenClaw runtime ended without required lifecycle outcome',
     }));
     expect(applyTaskOutcome).toHaveBeenCalledWith(db, expect.objectContaining({
       taskId: 383,

@@ -768,9 +768,12 @@ export interface JobInstance {
   started_at: string | null;
   completed_at: string | null;
   runtime_ended_at?: string | null;
+  runtime_completed_at?: string | null;
   runtime_end_success?: number | null;
   runtime_end_error?: string | null;
   runtime_end_source?: string | null;
+  lifecycle_handoff_status?: 'posted' | 'missing' | 'reconciled' | null;
+  semantic_outcome_missing?: number | null;
   lifecycle_outcome_posted_at?: string | null;
   payload_sent: string | null;
   response: string | null;

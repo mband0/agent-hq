@@ -755,6 +755,7 @@ const INTEGRITY_ANOMALY_TYPES = [
   { type: 'stale_outcome_write',      label: 'Stale Outcome Write',      description: 'Outcome submitted by a non-authoritative instance.' },
   { type: 'branch_missing_on_origin', label: 'Branch Missing on Origin', description: 'Review branch recorded but not found on remote.' },
   { type: 'evidence_placeholder',     label: 'Evidence Placeholder',     description: 'Evidence fields contain placeholder/dummy values.' },
+  { type: 'missing_lifecycle_handoff', label: 'Missing Lifecycle Handoff', description: 'Runtime ended without the required semantic lifecycle outcome.' },
 ];
 
 // GET /api/v1/telemetry/pipeline-health

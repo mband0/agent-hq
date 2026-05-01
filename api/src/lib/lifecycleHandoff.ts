@@ -1,10 +1,11 @@
 import type Database from 'better-sqlite3';
 import { resolveWorkflowLane } from '../services/contracts/workflowContract';
 import { isNeedsAttentionEligibleStatus } from './reconcilerConfig';
-import { writeTaskRuntimeEndHistory, writeTaskStatusChange } from './taskHistory';
+import { emitIntegrityEvent, writeTaskRuntimeEndHistory, writeTaskStatusChange } from './taskHistory';
 import { notifyTaskStatusChange } from './taskNotifications';
 
 export type LifecycleHandoffStatus = 'posted' | 'missing' | 'reconciled';
+export type HandoffEvidencePresence = 'yes' | 'no';
 
 interface TaskLifecycleContractRow {
   status: string;
@@ -27,6 +28,7 @@ interface MarkMissingHandoffParams {
   lane: string | null;
   priorTaskStatus: string | null;
   sessionKey?: string | null;
+  reviewQaDeployEvidenceRecorded?: HandoffEvidencePresence;
   runtimeEnd?: MissingHandoffRuntimeMeta;
 }
 
@@ -55,6 +57,16 @@ export function markTaskNeedsAttentionForMissingSemanticHandoff(
   db: Database.Database,
   params: MarkMissingHandoffParams,
 ): boolean {
+  db.prepare(`
+    UPDATE job_instances
+    SET lifecycle_handoff_status = 'missing',
+        semantic_outcome_missing = 1,
+        runtime_completed_at = COALESCE(runtime_completed_at, runtime_ended_at, ?)
+    WHERE id = ?
+      AND COALESCE(task_outcome, '') = ''
+      AND lifecycle_outcome_posted_at IS NULL
+  `).run(params.runtimeEnd?.endedAt ?? new Date().toISOString(), params.instanceId);
+
   if (!params.taskId) return false;
 
   const task = db.prepare(`SELECT id, title, status FROM tasks WHERE id = ?`).get(params.taskId) as
@@ -89,7 +101,7 @@ export function markTaskNeedsAttentionForMissingSemanticHandoff(
     `Lane: ${params.lane ?? 'unknown'}`,
     `Prior task status: ${params.priorTaskStatus ?? task.status}`,
     `Runtime ended successfully: ${params.runtimeEnd?.success ? 'yes' : 'no'}`,
-    'Review/QA/deploy evidence recorded: unknown from recovery hook',
+    `Review/QA/deploy evidence recorded: ${params.reviewQaDeployEvidenceRecorded ?? 'unknown'}`,
     'Recommended next action: operator review before any redispatch or lane re-entry',
   ];
   if (params.runtimeEnd?.source) noteLines.push(`Runtime end source: ${params.runtimeEnd.source}`);
@@ -97,5 +109,12 @@ export function markTaskNeedsAttentionForMissingSemanticHandoff(
   if (params.runtimeEnd?.error) noteLines.push(`Runtime end error: ${params.runtimeEnd.error}`);
 
   db.prepare(`INSERT INTO task_notes (task_id, author, content) VALUES (?, ?, ?)`).run(params.taskId, params.changedBy, noteLines.join('\n'));
+
+  emitIntegrityEvent(db, {
+    taskId: params.taskId,
+    anomalyType: 'missing_lifecycle_handoff',
+    detail: `Runtime ended on instance #${params.instanceId} without required lifecycle outcome`,
+    instanceId: params.instanceId,
+  });
   return true;
 }

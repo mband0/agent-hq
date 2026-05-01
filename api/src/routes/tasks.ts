@@ -331,9 +331,12 @@ const TASK_SELECT = `
     ji.started_at as active_instance_started_at,
     ji.completed_at as active_instance_completed_at,
     ji.runtime_ended_at as active_instance_runtime_ended_at,
+    ji.runtime_completed_at as active_instance_runtime_completed_at,
     ji.runtime_end_success as active_instance_runtime_end_success,
     ji.runtime_end_error as active_instance_runtime_end_error,
     ji.runtime_end_source as active_instance_runtime_end_source,
+    ji.lifecycle_handoff_status as active_instance_lifecycle_handoff_status,
+    ji.semantic_outcome_missing as active_instance_semantic_outcome_missing,
     ji.lifecycle_outcome_posted_at as active_instance_lifecycle_outcome_posted_at,
     ia.current_stage as latest_run_stage,
     ia.last_agent_heartbeat_at,
@@ -1902,9 +1905,12 @@ router.get('/:id/instances', (req: Request, res: Response) => {
              ia.stale as run_is_stale, ia.stale_at,
              ji.task_outcome,
              ji.runtime_ended_at,
+             ji.runtime_completed_at,
              ji.runtime_end_success,
              ji.runtime_end_error,
              ji.runtime_end_source,
+             ji.lifecycle_handoff_status,
+             ji.semantic_outcome_missing,
              ji.lifecycle_outcome_posted_at
       FROM job_instances ji
       LEFT JOIN agents a ON a.id = ji.agent_id

@@ -578,7 +578,13 @@ export async function applyTaskOutcome(db: Database.Database, input: ApplyTaskOu
       UPDATE job_instances
       SET task_outcome = ?,
           failure_class = ?,
-          lifecycle_outcome_posted_at = COALESCE(lifecycle_outcome_posted_at, datetime('now'))
+          lifecycle_outcome_posted_at = COALESCE(lifecycle_outcome_posted_at, datetime('now')),
+          lifecycle_handoff_status = CASE
+            WHEN runtime_ended_at IS NOT NULL THEN 'reconciled'
+            ELSE 'posted'
+          END,
+          semantic_outcome_missing = 0,
+          runtime_completed_at = COALESCE(runtime_completed_at, runtime_ended_at)
       WHERE id = ?
     `).run(input.outcome, resolvedFailureClass, input.instanceId);
   } else if (reloadedExisting.active_instance_id != null) {
@@ -588,7 +594,13 @@ export async function applyTaskOutcome(db: Database.Database, input: ApplyTaskOu
       UPDATE job_instances
       SET task_outcome = ?,
           failure_class = ?,
-          lifecycle_outcome_posted_at = COALESCE(lifecycle_outcome_posted_at, datetime('now'))
+          lifecycle_outcome_posted_at = COALESCE(lifecycle_outcome_posted_at, datetime('now')),
+          lifecycle_handoff_status = CASE
+            WHEN runtime_ended_at IS NOT NULL THEN 'reconciled'
+            ELSE 'posted'
+          END,
+          semantic_outcome_missing = 0,
+          runtime_completed_at = COALESCE(runtime_completed_at, runtime_ended_at)
       WHERE id = ?
     `).run(input.outcome, resolvedFailureClass, reloadedExisting.active_instance_id);
   }

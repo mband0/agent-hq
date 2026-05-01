@@ -2184,9 +2184,12 @@ router.get('/:id/instances', (req: Request, res: Response) => {
              ia.stale as run_is_stale, ia.stale_at,
              ji.task_outcome,
              ji.runtime_ended_at,
+             ji.runtime_completed_at,
              ji.runtime_end_success,
              ji.runtime_end_error,
              ji.runtime_end_source,
+             ji.lifecycle_handoff_status,
+             ji.semantic_outcome_missing,
              ji.lifecycle_outcome_posted_at
       FROM job_instances ji
       LEFT JOIN agents a ON a.id = ji.agent_id
