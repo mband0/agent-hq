@@ -41,7 +41,7 @@ flowchart TB
 - `UI`: the operator surface for tasks, agents, chat, routing, projects, sprints, logs, and telemetry.
 - `API`: the central control plane. It owns task state, lifecycle transitions, transcript persistence, MCP endpoints, and runtime integration.
 - `Reconciler`: periodically finds tasks that are eligible to move forward and hands them to the dispatcher.
-- `Dispatcher`: resolves the correct execution lane from routing rules, creates job instances, materializes runtime context, and launches the run.
+- `Dispatcher`: resolves the correct agent from routing rules, creates job instances, materializes runtime context, and launches the run.
 - `Watchdog`: monitors stale or orphaned runs and applies recovery behavior.
 - `SQLite`: the durable system of record for projects, tasks, agents, instances, routing, artifacts, and transcripts.
 
@@ -52,6 +52,17 @@ Agent HQ supports multiple execution backends behind one workflow model:
 - `OpenClaw`: local agents with hooks, chat sessions, shell access, and workspace tools.
 - `Claude Code`: local SDK/subprocess-based runs with Agent HQ-provided context and callback contracts.
 The dispatcher chooses the correct runtime from the agent record. Task lifecycle and routing semantics stay consistent across runtimes.
+
+## Workflow model
+
+The workflow configuration is the source of truth for task movement:
+
+- `sprint_task_routing_rules` decide which agent handles a task for a given sprint, task type, and status.
+- `sprint_task_transitions` decide which outcomes are valid from the current status and what status each outcome moves to.
+- `sprint_task_transition_requirements` define sprint-specific evidence gates; global `transition_requirements` are the fallback.
+- Lanes such as `implementation`, `review`, `release`, and `pm` are contract categories. They shape prompt guidance but do not make evidence fields required.
+
+Outcome validation and contract generation both read this configuration. The system should not infer blocking evidence requirements from lane names, status names, outcome names, or contract examples.
 
 ## Primary data flow
 
@@ -83,7 +94,7 @@ At a high level:
 
 1. A task is created or moved into a routable state such as `ready`.
 2. The reconciler evaluates routing rules using sprint, task type, and current status.
-3. The dispatcher picks the correct route and launches a job instance.
+3. The dispatcher picks the correct agent route, builds a contract from configured outcomes and evidence gates, and launches a job instance.
 4. The runtime sends progress and completion signals back to the API.
 5. The API records transcripts, evidence, and outcome transitions.
 6. The watchdog intervenes if a run becomes stale or orphaned.

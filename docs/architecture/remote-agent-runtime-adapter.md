@@ -347,7 +347,7 @@ Every task run, regardless of runtime, follows this lifecycle:
 2. HEARTBEAT    POST /instances/:id/check-in  (stage: heartbeat)
 3. PROGRESS     POST /instances/:id/check-in  (stage: progress, meaningful_output: true)
 4. BLOCKER      POST /instances/:id/check-in  (stage: blocker, blocker_reason: "...")
-5. EVIDENCE     PUT  /tasks/:id/review-evidence  (branch, commit, dev_url)
+5. EVIDENCE     PUT  /tasks/:id/<evidence-endpoint> (configured gate fields)
 6. OUTCOME      POST /tasks/:id/outcome          (terminal: closes instance + session)
 ```
 
@@ -358,7 +358,7 @@ Every task run, regardless of runtime, follows this lifecycle:
 | START           | Agent calls via curl/SDK     | Adapter calls before stream      |
 | HEARTBEAT       | Agent calls periodically     | Adapter sends on timer           |
 | PROGRESS        | Agent calls at milestones    | Adapter detects from stream      |
-| EVIDENCE        | Agent calls with git data    | Adapter parses from structured output |
+| EVIDENCE        | Agent calls with configured evidence | Adapter parses from structured output |
 | OUTCOME         | Agent calls via curl/SDK     | Adapter parses from structured output |
 
 ### 6.3 Structured Output Protocol (for proxied agents)
@@ -387,9 +387,11 @@ with a diagnostic summary.
 
 ### 6.4 Agent Contract Template
 
-The `agent-contract.md` template is the single source of truth for lifecycle
-instructions included in dispatch messages. It uses `{{placeholder}}` syntax
-and is interpolated at dispatch time with instance-specific values.
+The workflow configuration is the single source of truth for valid outcomes and
+blocking evidence requirements. Contract templates provide the transport-specific
+language included in dispatch messages. They use `{{placeholder}}` syntax and
+are interpolated at dispatch time with instance-specific values plus configured
+workflow context.
 
 Self-callback agents receive the full contract with curl examples.
 Proxied agents receive a simplified version instructing them to emit the
@@ -509,24 +511,26 @@ All agents report evidence through the same API surface:
 ```
 PUT /api/v1/tasks/:id/review-evidence
 {
-  "branch": "forge/task-123-feature",
-  "commit": "abc1234def",
-  "dev_url": "http://localhost:3511/api/endpoint",
-  "notes": "Optional context"
+  "review_branch": "forge/task-123-feature",
+  "review_commit": "abc1234def",
+  "review_url": "http://localhost:3511/api/endpoint",
+  "summary": "Optional context"
 }
 ```
 
 - **Self-callback agents** call this directly via curl/SDK.
 - **Proxied agents** include these fields in the `atlas_lifecycle` block;
-  the adapter extracts and posts them.
+  the adapter extracts and posts them. Proxied output may use `branch` and
+  `commit` aliases, which the adapter maps to `review_branch` and
+  `review_commit`.
 
 ### 9.2 QA Evidence (QA lane)
 
 ```
 PUT /api/v1/tasks/:id/qa-evidence
 {
-  "qa_url": "http://localhost:3511/tested-endpoint",
-  "verified_commit": "abc1234def",
+  "qa_tested_url": "http://localhost:3511/tested-endpoint",
+  "qa_verified_commit": "abc1234def",
   "notes": "QA findings"
 }
 ```
@@ -732,5 +736,5 @@ ALTER TABLE agents ADD COLUMN max_concurrent INTEGER DEFAULT 1;
 | Self-Callback       | Agent drives its own lifecycle via HTTP calls to Atlas         |
 | Proxied Lifecycle   | Runtime adapter drives lifecycle on behalf of the agent       |
 | Workspace Provider  | Implementation of `WorkspaceProvider` for local or remote FS  |
-| Dispatch Contract   | The `agent-contract.md` template injected into task messages  |
+| Dispatch Contract   | Workflow-configured lifecycle guidance rendered through a transport template |
 | Structured Output   | `atlas_lifecycle` JSON block emitted by proxied agents        |

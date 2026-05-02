@@ -99,19 +99,19 @@ Tasks are the canonical work units. They store project/sprint placement, agent a
 
 ### 6.2 Routing system
 Routing is deterministic, built from:
-- **routing transitions** — from_status + outcome → to_status
-- **task routing rules** — project + task_type + status → agent (multi-rule, priority-ordered)
-- **lifecycle rules** — task-type-specific overrides (PM tasks skip QA)
-- **transition requirements** — evidence gates per outcome
+- **sprint task transitions** — sprint + task_type + from_status + outcome → to_status + lane
+- **sprint task routing rules** — sprint + task_type + status → agent (multi-rule, priority-ordered)
+- **transition requirements** — evidence gates per outcome, with sprint-specific rows preferred over global fallback rows
 - **system policies** — stall detection, auto-retry, dispatched_unclaim
 
 ### 6.3 Contract system (task #632)
 Separates **workflow semantics** from **runtime transport**.
 
 **Workflow contract** (`services/contracts/workflowContract.ts`):
-- Single source of truth for task lifecycle
-- `resolveWorkflowLane()` determines valid outcomes per status/type
-- PM task types skip QA via `approved_for_merge`
+- Reads the configured workflow for the task's sprint, task type, and current status
+- `resolveWorkflowLane()` returns the current lane and valid configured outcomes
+- `resolveEvidenceRequirements()` returns the configured gate fields for those outcomes
+- Treats lanes as prompt categories only; lanes do not create evidence requirements
 
 **Transport adapters** (`services/contracts/transportAdapters.ts`):
 - `local` — curl to localhost
@@ -123,7 +123,15 @@ Separates **workflow semantics** from **runtime transport**.
 Job instances track: dispatched/started/completed timestamps, session key, heartbeats, artifacts, token usage, abort state, and worktree path.
 
 ### 6.5 Release truth
-Evidence fields per lane: review (branch, commit, URL), QA (verified commit, tested URL), deploy (commit, target, timestamp), live verification (verified at/by). PM tasks skip QA and post `approved_for_merge` directly.
+Evidence gates are config-driven. Code validates configured requirement rows and does not infer required evidence from lane names, status names, or outcome names.
+
+Canonical evidence fields:
+- Review: `review_branch`, `review_commit`, `review_url`
+- QA: `qa_verified_commit`, `qa_tested_url`
+- Deploy: `merged_commit`, `deployed_commit`, `deploy_target`, `deployed_at`
+- Live verification: `live_verified_by`, `live_verified_at`
+
+Requirement rows can be blocking or warning-only. `required` checks can use `field_a|field_b` when either evidence field is acceptable, `match` checks compare one field to another, and `from_status` checks ensure an outcome is only accepted from the configured task status.
 
 Dev environment: `3510/3511`. Production: `3500/3501`.
 
@@ -149,7 +157,7 @@ Task cycle time, QA breakdown, model usage, agent efficiency, creation/outcome q
 | `project-files.ts` | `/api/v1/projects/:id/files` | Project file uploads |
 | `projects.ts` | `/api/v1/projects` | Project CRUD + stats |
 | `providers.ts` | `/api/v1/providers` | Provider config CRUD + validation |
-| `routing.ts` | `/api/v1/routing` | Rules, transitions, statuses, types, lifecycle, requirements, policies |
+| `routing.ts` | `/api/v1/routing` | Rules, transitions, statuses, types, requirements, policies |
 | `settings.ts` | `/api/v1/settings` | Telegram config |
 | `setup.ts` | `/api/v1/setup` | Onboarding/health check |
 | `skills.ts` | `/api/v1/skills` | Skill directory management |
@@ -163,7 +171,7 @@ Task cycle time, QA breakdown, model usage, agent efficiency, creation/outcome q
 ## 8. Data model
 
 ### 8.1 agents
-1:1 mapping between identity and execution lane. Merged from job_templates (task #459).
+1:1 mapping between identity and execution configuration. Merged from job_templates (task #459).
 
 Key fields: id, name, role, session_key, workspace_path, status, runtime_type, runtime_config, hooks_url, hooks_auth_header, github_identity_id, model, job_title, project_id, sprint_id, schedule, dispatch_mode, pre_instructions, skill_names, enabled, timeout_seconds, os_user.
 
@@ -174,10 +182,11 @@ Concrete runs. Key fields: id, agent_id, task_id, status, session_key, dispatche
 Key fields: id, title, description, status, priority, agent_id, project_id, sprint_id, task_type, story_points, active_instance_id, retry_count, max_retries, routing_reason, review_owner_agent_id. Release evidence: review_branch/commit/url, qa_verified_commit/tested_url, merged_commit, deployed_commit/at/target, live_verified_at/by, evidence_json.
 
 ### 8.4 Routing tables
-- `routing_config` — state transitions (project, from_status, outcome, to_status, lane)
-- `task_routing_rules` — task→agent routing (project, task_type, status, agent, priority)
-- `lifecycle_rules` — task-type overrides (PM skip QA)
-- `transition_requirements` — evidence gates per outcome
+- `sprint_task_transitions` — primary workflow transitions (sprint, task_type, from_status, outcome, to_status, lane)
+- `sprint_task_routing_rules` — primary task→agent routing (sprint, task_type, status, agent, priority)
+- `sprint_task_transition_requirements` — sprint-specific evidence gates per outcome
+- `transition_requirements` — global fallback evidence gates per outcome
+- `routing_config` / `lifecycle_rules` — compatibility/default transition surfaces retained for older configuration paths
 - `system_policies` — stall detection, auto-retry
 
 ### 8.5 Observability tables
@@ -198,11 +207,10 @@ projects, sprints, sprint_job_schedules, sprint_job_assignments, task_notes, tas
 
 Also: `stalled`, `failed`, `cancelled`.
 
-### Lane ownership
-- Implementation: `in_progress`
-- Review/QA: `review` → `qa_pass`
-- PM (skip QA): `in_progress` → `review` → `ready_to_merge` via `approved_for_merge`
-- Release: `ready_to_merge` → `deployed` → `done`
+### Statuses, outcomes, lanes
+Statuses are task board states. Outcomes are agent-reported transition requests such as `completed_for_review`, `qa_pass`, `approved_for_merge`, `deployed_live`, `live_verified`, `blocked`, or `failed`. Lanes are contract categories such as `implementation`, `review`, `release`, or `pm`.
+
+The configured transition rows decide which outcomes are valid from each status and where they move the task next. The configured requirement rows decide which evidence fields block that outcome.
 
 ---
 

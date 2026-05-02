@@ -2,7 +2,7 @@
 
 **Agent HQ** is a source-available task routing and agent orchestration system. It sits between your planning work and your AI agents — giving every run structured context, deterministic routing, and verifiable workflow evidence.
 
-Built for teams running multiple AI agents across multiple projects, sprints, and execution lanes.
+Built for teams running multiple AI agents across multiple projects, sprints, and workflow stages.
 
 ![Agent HQ overview](docs/assets/agent-hq-social-preview.svg)
 
@@ -13,7 +13,7 @@ Built for teams running multiple AI agents across multiple projects, sprints, an
 | Capability | Description |
 |---|---|
 | **Task system** | Projects, sprints, tasks, blockers, notes, history, attachments |
-| **Deterministic routing** | Rules map task state → correct execution lane |
+| **Deterministic routing** | Rules map task state → the next responsible agent |
 | **Agent orchestration** | Dispatch jobs, track live runs, record artifacts |
 | **Context distribution** | Agents start with the right project/sprint/task brief |
 | **Workflow evidence** | Structured evidence and gated handoffs before work can move forward |
@@ -166,7 +166,7 @@ See [docs/ARCHITECTURE_OVERVIEW.md](docs/ARCHITECTURE_OVERVIEW.md) for the fulle
 The unit of planned work. Each task carries a title, description, status, priority, project/sprint placement, blockers, notes, attachments, and any workflow-specific evidence fields your team uses.
 
 ### Agents
-Execution lanes. Each agent is a 1:1 mapping between an identity (name, role, session key) and an execution configuration (schedule, pre-instructions, skills, timeout, dispatch mode). Agents are assigned to projects and process tasks routed to them.
+Each agent is a 1:1 mapping between an identity (name, role, session key) and an execution configuration (schedule, pre-instructions, skills, timeout, dispatch mode). Agents are assigned to projects and process tasks routed to them.
 
 Agents support multiple runtime backends:
 - **OpenClaw** — local agent with shell/file/tool access via the OpenClaw gateway
@@ -174,13 +174,20 @@ Agents support multiple runtime backends:
 - **Webhook** — generic HTTP dispatch to any endpoint
 
 ### Routing rules
-Routing is deterministic. Rules match `(sprint, task_type, status)` and decide which agent picks up work next and which status transition fires. Multiple rules for the same combination are allowed — the dispatcher tries all matching rules in priority order and picks the first available agent.
+Routing is deterministic. Rules match `(sprint, task_type, status)` and decide which agent picks up work next. Multiple rules for the same combination are allowed — the dispatcher tries all matching rules in priority order and picks the first available agent.
+
+Workflow transitions are configured separately from agent routing. A transition maps `(current status, outcome, task type, sprint)` to the next status, while transition requirements define the evidence gates that must pass before that outcome can move the task.
+
+### Lanes
+Lanes are prompt/contract categories such as `implementation`, `review`, `release`, or `pm`. They help Agent HQ phrase the dispatch contract, but they do not make evidence fields required on their own. Required fields come only from configured transition requirement rows.
 
 ### Contracts (workflow + transport)
 The contract system separates **workflow semantics** (what outcomes are valid, what evidence is required) from **runtime transport** (how the agent communicates results back). Three transport modes:
 - **local** — agent runs curl against localhost
 - **remote-direct** — agent makes HTTP calls to an external URL
 - **proxy-managed** — agent emits structured JSON; the runtime handles callbacks
+
+The workflow side is generated from the current task, sprint, task type, status, configured transitions, and configured gate requirements. Contract examples are examples only; the validator does not infer requirements from lane names, outcome names, or sample payloads.
 
 ### Job instances
 Each dispatch creates a job instance with timestamps, session key, artifacts, heartbeat signals, and stale detection.
@@ -190,7 +197,7 @@ One common software-delivery workflow moves through verifiable states like:
 ```
 todo → ready → dispatched → in_progress → review → qa_pass → ready_to_merge → deployed → done
 ```
-Agent HQ can require structured evidence at each gate — for example branch name, commit SHA, QA URL, or deploy target — before allowing progression. Teams using non-software workflows can define different statuses, gates, and evidence rules.
+Agent HQ can require structured evidence at each gate — for example branch name, commit SHA, QA URL, deploy target, or live verification metadata — before allowing progression. Teams using non-software workflows can define different statuses, outcomes, gates, and evidence rules. A configured field can also use `a|b` syntax when either evidence field is acceptable.
 
 ---
 
@@ -206,7 +213,7 @@ Agent HQ can require structured evidence at each gate — for example branch nam
 | Sprints | `/sprints` | Sprint list, detail view with metrics and task board |
 | Capabilities | `/capabilities` | Skills library + tools registry with enable/disable toggles |
 | Workspaces | `/workspaces` | Artifact browser with file editing and syntax highlighting |
-| Routing | `/routing` | Routing statuses, transitions, rules, lifecycle rules |
+| Routing | `/routing` | Routing statuses, transitions, agent rules, gate requirements |
 | Logs | `/logs` | Execution logs filtered by agent/level/date |
 | Telemetry | `/telemetry` | Task cycle time, QA breakdown, model usage, agent efficiency |
 | Projects | `/projects` | Project CRUD with context markdown and file uploads |
@@ -247,7 +254,7 @@ All configuration is via environment variables.
 
 ## Agent contract
 
-Agents interact with Agent HQ via a structured callback protocol injected at dispatch time. The contract adapts based on the agent's transport mode.
+Agents interact with Agent HQ via a structured callback protocol injected at dispatch time. The contract adapts based on the agent's transport mode and current workflow configuration.
 
 ### Local agents (OpenClaw, Claude Code)
 
@@ -269,6 +276,15 @@ POST /api/v1/tasks/:id/outcome
 {"outcome": "completed_for_review", "summary": "...", "changed_by": "<agent-slug>", "instance_id": <id>}
 ```
 
+Common evidence endpoints use canonical field names:
+
+| Evidence endpoint | Canonical fields |
+|---|---|
+| `PUT /api/v1/tasks/:id/review-evidence` | `review_branch`, `review_commit`, `review_url`, `summary` |
+| `PUT /api/v1/tasks/:id/qa-evidence` | `qa_verified_commit`, `qa_tested_url`, `notes` |
+| `PUT /api/v1/tasks/:id/deploy-evidence` | `merged_commit`, `deployed_commit`, `deploy_target`, `deployed_at` |
+| `PUT /api/v1/tasks/:id/live-verification` | `live_verified_by`, `live_verified_at`, `summary` |
+
 ### Proxy-managed agents
 
 Proxy-managed agents emit a structured JSON block at the end of their response:
@@ -282,11 +298,13 @@ Proxy-managed agents emit a structured JSON block at the end of their response:
 }
 ```
 
-The runtime parses this block and makes lifecycle callbacks on behalf of the agent.
+The runtime parses this block and makes lifecycle callbacks on behalf of the agent. In proxy-managed output, `branch` and `commit` are accepted as lifecycle aliases for `review_branch` and `review_commit`; direct HTTP calls should use the canonical field names above.
 
-### Outcomes
+### Common outcomes
 
-| Outcome | Task moves to |
+Outcomes are valid only when the workflow transition config allows them from the task's current status. The table below shows the default software-delivery flow, not a hardcoded universal rule.
+
+| Outcome | Typical next status |
 |---|---|
 | `completed_for_review` | `review` |
 | `approved_for_merge` | `ready_to_merge` (PM tasks, skips QA) |
