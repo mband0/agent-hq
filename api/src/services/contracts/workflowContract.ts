@@ -20,14 +20,6 @@ import {
 } from '../../lib/sprintWorkflow';
 import { resolveSprintOutcomeMap, getLegacyOutcomeMeta } from '../../lib/sprintOutcomes';
 
-// ── PM task types ────────────────────────────────────────────────────────────
-
-/**
- * PM-family task types that skip QA and post approved_for_merge directly
- * from in_progress (or review). Kept in sync with routing_transitions
- * and transition_requirements in schema/routing.ts.
- */
-export const PM_TASK_TYPES = new Set(['pm', 'pm_analysis', 'pm_operational']);
 
 // ── Workflow lane resolution ─────────────────────────────────────────────────
 
@@ -149,16 +141,19 @@ function buildOutcomeHelp(outcome: string, transition?: ResolvedSprintWorkflowTr
 
 function legacyResolveWorkflowLane(
   taskStatus: string,
-  taskType?: string | null,
+  _taskType?: string | null,
   sprintType?: string | null,
 ): ResolvedWorkflowLane {
   const normalizedSprintType = normalizeSprintType(sprintType);
-  const isReviewLane = taskStatus === 'review';
+  const isReviewLane = taskStatus === 'review' || taskStatus === 'qa_pass';
   const isReleaseLane = taskStatus === 'ready_to_merge' || taskStatus === 'deployed';
-  const isPmLane = !isReviewLane && !isReleaseLane && PM_TASK_TYPES.has(taskType ?? '');
 
   if (isReviewLane) {
-    return buildResolvedLane('review', 'compatibility', { sprintType: normalizedSprintType });
+    return buildResolvedLane('review', 'compatibility', {
+      sprintType: normalizedSprintType,
+      suggestedOutcome: taskStatus === 'qa_pass' ? 'approved_for_merge' : 'qa_pass',
+      validOutcomes: taskStatus === 'qa_pass' ? ['approved_for_merge', 'qa_fail', 'blocked', 'failed'] : ['qa_pass', 'qa_fail', 'blocked', 'failed'],
+    });
   }
 
   if (isReleaseLane) {
@@ -170,10 +165,6 @@ function legacyResolveWorkflowLane(
       });
     }
     return buildResolvedLane('release', 'compatibility', { sprintType: normalizedSprintType });
-  }
-
-  if (isPmLane) {
-    return buildResolvedLane('pm', 'compatibility', { sprintType: normalizedSprintType });
   }
 
   return buildResolvedLane('implementation', 'compatibility', { sprintType: normalizedSprintType });
@@ -222,10 +213,7 @@ function getSuggestedOutcome(
     stalled: ['retry'],
   };
 
-  const defaultPreferred = PM_TASK_TYPES.has(taskType ?? '')
-    ? ['approved_for_merge', 'completed_for_review', 'blocked', 'failed']
-    : ['completed_for_review', 'approved_for_merge', 'blocked', 'failed'];
-  const preferred = preferredByStatus[taskStatus] ?? defaultPreferred;
+  const preferred = preferredByStatus[taskStatus] ?? ['completed_for_review', 'approved_for_merge', 'blocked', 'failed'];
 
   for (const outcome of preferred) {
     if (validOutcomes.includes(outcome)) return outcome;
@@ -236,13 +224,12 @@ function getSuggestedOutcome(
 
 function inferWorkflowLane(
   taskStatus: string,
-  taskType: string | null | undefined,
+  _taskType: string | null | undefined,
   suggestedOutcome: string,
 ): WorkflowLane {
   if (taskStatus === 'review' || taskStatus === 'qa_pass') return 'review';
   if (taskStatus === 'ready_to_merge' || taskStatus === 'deployed') return 'release';
-  if (suggestedOutcome === 'deployed_live' || suggestedOutcome === 'live_verified') return 'release';
-  if (suggestedOutcome === 'approved_for_merge' && PM_TASK_TYPES.has(taskType ?? '')) return 'pm';
+  if (suggestedOutcome === 'deployed_live' || suggestedOutcome === 'live_verified' || suggestedOutcome === 'approved_for_merge') return 'release';
   return 'implementation';
 }
 
@@ -377,7 +364,7 @@ export function getEvidenceRequirements(lane: WorkflowLane): EvidenceRequirement
     case 'pm':
       return {
         fields: [],
-        description: 'No evidence recording required for PM tasks',
+        description: 'No PM-specific evidence defaults are inferred here; rely on configured gate requirements for the active workflow transition',
       };
   }
 }

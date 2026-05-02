@@ -5,7 +5,6 @@
  */
 
 export {
-  PM_TASK_TYPES,
   resolveWorkflowLane,
   getAllowedTaskTypesForSprintType,
   isTaskTypeAllowedForSprintType,

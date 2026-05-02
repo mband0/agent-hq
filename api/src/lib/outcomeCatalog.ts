@@ -13,10 +13,9 @@ function normalizeTaskType(taskType?: string | null): string | null {
   return value.length > 0 ? value : null;
 }
 
-function inferLaneHint(outcomeKey: string, taskType?: string | null): ResolvedTaskOutcomeCatalogEntry['laneHint'] {
+function inferLaneHint(outcomeKey: string, _taskType?: string | null): ResolvedTaskOutcomeCatalogEntry['laneHint'] {
   if (outcomeKey === 'completed_for_review') return 'implementation';
   if (outcomeKey === 'qa_pass' || outcomeKey === 'qa_fail') return 'review';
-  if (outcomeKey === 'approved_for_merge' && ['pm', 'pm_analysis', 'pm_operational'].includes(taskType ?? '')) return 'pm';
   if (outcomeKey === 'approved_for_merge' || outcomeKey === 'deployed_live' || outcomeKey === 'live_verified') return 'release';
   if (outcomeKey === 'blocked' || outcomeKey === 'failed' || outcomeKey.startsWith('failed:')) return 'generic';
   return 'generic';

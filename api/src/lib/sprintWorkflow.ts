@@ -46,12 +46,6 @@ const LEGACY_FALLBACK_TRANSITIONS: ResolvedSprintWorkflowTransition[] = [
   { fromStatus: 'deployed', outcome: 'qa_fail', toStatus: 'ready', taskType: null, priority: 0, isProtected: false },
   { fromStatus: 'deployed', outcome: 'failed', toStatus: 'failed', taskType: null, priority: 0, isProtected: false },
   { fromStatus: 'stalled', outcome: 'retry', toStatus: 'ready', taskType: null, priority: 0, isProtected: false },
-  { fromStatus: 'in_progress', outcome: 'approved_for_merge', toStatus: 'ready_to_merge', taskType: 'pm', priority: 10, isProtected: false },
-  { fromStatus: 'review', outcome: 'approved_for_merge', toStatus: 'ready_to_merge', taskType: 'pm', priority: 10, isProtected: false },
-  { fromStatus: 'in_progress', outcome: 'approved_for_merge', toStatus: 'ready_to_merge', taskType: 'pm_analysis', priority: 10, isProtected: false },
-  { fromStatus: 'review', outcome: 'approved_for_merge', toStatus: 'ready_to_merge', taskType: 'pm_analysis', priority: 10, isProtected: false },
-  { fromStatus: 'in_progress', outcome: 'approved_for_merge', toStatus: 'ready_to_merge', taskType: 'pm_operational', priority: 10, isProtected: false },
-  { fromStatus: 'review', outcome: 'approved_for_merge', toStatus: 'ready_to_merge', taskType: 'pm_operational', priority: 10, isProtected: false },
 ];
 
 const LEGACY_FALLBACK_STATUSES: ResolvedSprintWorkflowStatus[] = [

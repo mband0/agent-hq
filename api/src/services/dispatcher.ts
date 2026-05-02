@@ -35,7 +35,6 @@ import {
   buildContractInstructions,
   resolveTransportMode,
   resolveWorkflowLane,
-  PM_TASK_TYPES as PM_TASK_TYPES_CONTRACT,
   type TransportContext,
 } from './contracts';
 import { getSkillMaterializationAdapter } from '../runtimes/skillMaterialization';

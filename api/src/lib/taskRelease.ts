@@ -155,20 +155,15 @@ function statusRequiresQaEvidence(
 ): boolean {
   const status = task.status ?? null;
   if (status !== 'qa_pass' && status !== 'ready_to_merge') return false;
+  if (!db) return false;
 
-  if (db) {
-    try {
-      const outcome = status === 'qa_pass' ? 'qa_pass' : 'approved_for_merge';
-      const reqs = loadTransitionRequirements(db, outcome, task.sprint_id ?? null, task.task_type);
-      if (reqs.length > 0) {
-        return reqs.some(req => req.severity !== 'warn' && req.field_name === 'qa_verified_commit');
-      }
-    } catch {
-      // Fall through to legacy behavior below when the table is unavailable.
-    }
+  try {
+    const outcome = status === 'qa_pass' ? 'qa_pass' : 'approved_for_merge';
+    const reqs = loadTransitionRequirements(db, outcome, task.sprint_id ?? null, task.task_type);
+    return reqs.some(req => req.severity !== 'warn' && req.field_name === 'qa_verified_commit');
+  } catch {
+    return false;
   }
-
-  return status === 'qa_pass' || (status === 'ready_to_merge' && task.task_type !== 'pm' && task.task_type !== 'pm_analysis' && task.task_type !== 'pm_operational');
 }
 
 export function evaluateTaskIntegrity(
@@ -278,14 +273,11 @@ export function requireReleaseGate(
   try {
     reqs = loadTransitionRequirements(db, outcome, task.sprint_id ?? null, taskType);
   } catch {
-    // Table may not exist yet (e.g. test DBs) — fall back to legacy
-    return legacyRequireReleaseGate(task, outcome);
+    return { errors: [], warnings: [] };
   }
 
-  // If no data-driven requirements, fall back to legacy hardcoded checks
   if (reqs.length === 0) {
-    console.warn(`[DEPRECATED] requireReleaseGate falling back to hardcoded checks for outcome="${outcome}". Migrate to transition_requirements table.`);
-    return legacyRequireReleaseGate(task, outcome);
+    return { errors: [], warnings: [] };
   }
 
   const taskRecord = task as unknown as Record<string, unknown>;
@@ -365,80 +357,6 @@ export function requireReleaseGate(
  * table has no matching rows for an outcome. Will be removed once all
  * requirements are confirmed migrated.
  */
-function legacyRequireReleaseGate(task: TaskReleaseRecord, outcome: string): ReleaseGateResult {
-  const errors: string[] = [];
-
-  if (outcome === 'completed_for_review') {
-    if (!task.review_branch) errors.push('completed_for_review requires review_branch');
-    if (!task.review_commit) errors.push('completed_for_review requires review_commit');
-  } else if (outcome === 'qa_pass') {
-    if (task.status !== 'review') errors.push('qa_pass requires task status review');
-    if (!task.qa_verified_commit) errors.push('qa_pass requires qa_verified_commit');
-    if (!task.review_commit) errors.push('qa_pass requires review_commit');
-    if (task.qa_verified_commit && task.review_commit && task.qa_verified_commit !== task.review_commit) {
-      errors.push('qa_pass requires qa_verified_commit to match review_commit');
-    }
-  } else if (outcome === 'approved_for_merge') {
-    if (task.status !== 'qa_pass') errors.push('approved_for_merge requires task status qa_pass');
-    if (!task.qa_verified_commit) errors.push('approved_for_merge requires qa_verified_commit');
-    if (!task.review_commit) errors.push('approved_for_merge requires review_commit');
-    if (task.qa_verified_commit && task.review_commit && task.qa_verified_commit !== task.review_commit) {
-      errors.push('approved_for_merge requires qa_verified_commit to match review_commit');
-    }
-  } else if (outcome === 'deployed_live') {
-    if (task.status !== 'ready_to_merge') errors.push('deployed_live requires task status ready_to_merge');
-    if (!(task.merged_commit || task.deployed_commit)) errors.push('deployed_live requires merged_commit or deployed_commit');
-    if (!task.deploy_target) errors.push('deployed_live requires deploy_target');
-    if (!task.deployed_at) errors.push('deployed_live requires deployed_at');
-  } else if (outcome === 'live_verified') {
-    if (task.status !== 'deployed') errors.push('live_verified requires task status deployed');
-    if (!task.deployed_commit) errors.push('live_verified requires deployed_commit');
-    if (!task.live_verified_by) errors.push('live_verified requires live_verified_by');
-    if (!task.live_verified_at) errors.push('live_verified requires live_verified_at');
-  }
-
-  const result: ReleaseGateResult = { errors, warnings: [] };
-
-  if (outcome === 'completed_for_review') {
-    if (isPlaceholderValue(task.review_branch)) {
-      result.errors.push('completed_for_review requires review_branch, blank placeholder values are not allowed');
-    } else if (isMainlineBranch(task.review_branch)) {
-      result.errors.push('completed_for_review requires review_branch to be a feature branch, not main/master');
-    }
-
-    if (isPlaceholderValue(task.review_commit)) {
-      result.errors.push('completed_for_review requires review_commit, blank placeholder values are not allowed');
-    } else if (normalizedString(task.review_commit) && !isValidSha(task.review_commit)) {
-      result.errors.push('completed_for_review requires review_commit to be a valid git SHA');
-    }
-
-    if (isPlaceholderValue(task.review_url)) {
-      result.errors.push('completed_for_review requires review_url, blank placeholder values are not allowed');
-    } else if (!isHttpUrl(task.review_url)) {
-      result.errors.push('completed_for_review requires valid review_url');
-    } else if (isProductionLikeUrl(task.review_url)) {
-      result.errors.push('completed_for_review requires review_url to reference a non-production review artifact');
-    }
-  }
-
-  if (outcome === 'qa_pass') {
-    if (isPlaceholderValue(task.qa_verified_commit)) {
-      result.errors.push('qa_pass requires qa_verified_commit, blank placeholder values are not allowed');
-    } else if (normalizedString(task.qa_verified_commit) && !isValidSha(task.qa_verified_commit)) {
-      result.errors.push('qa_pass requires qa_verified_commit to be a valid git SHA');
-    }
-
-    if (isPlaceholderValue(task.qa_tested_url)) {
-      result.errors.push('qa_pass requires qa_tested_url, blank placeholder values are not allowed');
-    } else if (!isHttpUrl(task.qa_tested_url)) {
-      result.errors.push('qa_pass requires valid qa_tested_url');
-    } else if (isProductionLikeUrl(task.qa_tested_url)) {
-      result.errors.push('qa_pass requires qa_tested_url to reference a non-production QA artifact');
-    }
-  }
-
-  return result;
-}
 
 /**
  * Actors considered human/user-originated. These are allowed to change task
@@ -574,23 +492,6 @@ export function assertAtlasDirectStatusGate(
  * table has no matching row. Will be removed once all transitions are
  * confirmed migrated.
  */
-const LEGACY_OUTCOME_ROUTES: Record<string, string> = {
-  'in_progress:completed_for_review': 'review',
-  'review:qa_pass': 'qa_pass',
-  'review:qa_fail': 'ready',
-  'review:blocked': 'stalled',
-  'review:failed': 'failed',
-  'qa_pass:approved_for_merge': 'ready_to_merge',
-  'qa_pass:qa_fail': 'ready',
-  'qa_pass:failed': 'failed',
-  'ready_to_merge:deployed_live': 'deployed',
-  'ready_to_merge:qa_fail': 'ready',
-  'ready_to_merge:failed': 'failed',
-  'deployed:live_verified': 'done',
-  'deployed:failed': 'failed',
-  'deployed:qa_fail': 'ready',
-  'stalled:retry': 'ready',
-};
 
 /**
  * Resolve the next status for a given (from_status, outcome) pair.
@@ -606,7 +507,6 @@ const LEGACY_OUTCOME_ROUTES: Record<string, string> = {
  *     (global default transition)
  *  3. lifecycle_rules WHERE task_type = ? AND enabled = 1  (legacy compat)
  *  4. lifecycle_rules WHERE task_type IS NULL AND enabled = 1  (legacy compat)
- *  5. Hardcoded legacy map (final fallback with deprecation warning)
  */
 export function canonicalOutcomeRoute(
   db: Database.Database,
@@ -686,10 +586,5 @@ export function canonicalOutcomeRoute(
     // lifecycle_rules table may not exist yet (test DBs) — fall through
   }
 
-  // 5. Hardcoded legacy map (final fallback with deprecation warning)
-  const legacyResult = LEGACY_OUTCOME_ROUTES[`${priorStatus}:${outcome}`] ?? null;
-  if (legacyResult) {
-    console.warn(`[DEPRECATED] canonicalOutcomeRoute: no routing_transitions row for ${priorStatus}:${outcome}. Add a row to routing_transitions.`);
-  }
-  return legacyResult;
+  return null;
 }

@@ -13,6 +13,7 @@ import {
   validateReviewEvidence,
   validateQaEvidence,
   validateDeployEvidence,
+  type GateRequirement,
 } from '../lib/evidenceValidation';
 import { triggerDispatch } from '../services/dispatchTrigger';
 import { notifyTaskStatusChange } from '../lib/taskNotifications';
@@ -24,6 +25,7 @@ import { emitTaskEvent } from '../lib/taskHistory';
 import { RELEASE_TASK_STATUSES, isTaskStatus } from '../lib/taskStatuses';
 import { resolveDefaultProjectSprintId } from '../lib/starterSetup';
 import { stopTaskAndPause } from '../lib/taskStop';
+import { loadSprintTaskTransitionRequirements } from '../lib/sprintTaskPolicy';
 
 const UPLOADS_BASE = path.resolve(__dirname, '../../uploads/tasks');
 
@@ -1188,6 +1190,7 @@ router.post('/:id/outcome', async (req: Request, res: Response) => {
     ).get(id) as {
       id: number;
       task_type: string | null;
+      sprint_id: number | null;
       review_branch: string | null;
       review_commit: string | null;
       review_url: string | null;
@@ -1213,14 +1216,22 @@ router.post('/:id/outcome', async (req: Request, res: Response) => {
     const hasInline = hasAnyEvidence(inlineEvidence);
 
     // Validate inline evidence coherence for this outcome
+    const transitionRequirements = loadSprintTaskTransitionRequirements(db, existing.sprint_id ?? null, outcome, existing.task_type ?? null)
+      .map((row): GateRequirement => ({
+        field_name: row.field_name,
+        requirement_type: row.requirement_type,
+        match_field: row.match_field,
+        severity: row.severity,
+        message: row.message,
+      }));
+
     const evidenceValidation = validateInlineEvidenceForOutcome(outcome, inlineEvidence, {
       review_branch: existing.review_branch,
       review_commit: existing.review_commit,
       review_url: existing.review_url,
       qa_verified_commit: existing.qa_verified_commit,
       qa_tested_url: existing.qa_tested_url,
-      task_type: existing.task_type,
-    });
+    }, transitionRequirements);
 
     const rawInstanceId = instance_id ?? instanceId;
     const authoritativeInstanceId = rawInstanceId == null ? null : Number(rawInstanceId);

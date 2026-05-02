@@ -39,6 +39,14 @@ export interface ValidationResult {
   errors: string[];
 }
 
+export interface GateRequirement {
+  field_name: string;
+  requirement_type: string;
+  match_field: string | null;
+  severity: string;
+  message: string;
+}
+
 // ── Validators ───────────────────────────────────────────────────────────────
 
 const SHA_PATTERN = /^[0-9a-f]{7,40}$/i;
@@ -204,16 +212,16 @@ export function validateInlineEvidenceForOutcome(
     review_url?: string | null;
     qa_verified_commit?: string | null;
     qa_tested_url?: string | null;
-    task_type?: string | null;
   },
+  requirements?: GateRequirement[],
 ): ValidationResult {
   const errors: string[] = [];
+  const blockingRequirements = (requirements ?? []).filter((requirement) => requirement.severity !== 'warn');
+  const requiresField = (fieldName: string) => blockingRequirements.some((requirement) => requirement.field_name === fieldName && requirement.requirement_type === 'required');
+  const requiresFromStatus = blockingRequirements.some((requirement) => requirement.requirement_type === 'from_status');
+  const requiresMatch = (fieldName: string, matchField: string) => blockingRequirements.some((requirement) => requirement.field_name === fieldName && requirement.requirement_type === 'match' && requirement.match_field === matchField);
 
-  // PM tasks are exempt from implementation evidence requirements
-  const exemptTypes = ['ops', 'adhoc', 'pm_analysis', 'pm_operational'];
-  const isExempt = exemptTypes.includes(taskRecord.task_type ?? '');
-
-  if (outcome === 'completed_for_review' && !isExempt) {
+  if (outcome === 'completed_for_review' && requiresField('review_branch')) {
     // Merge incoming evidence with existing task record
     const effectiveBranch = evidence.review_branch ?? taskRecord.review_branch;
     const effectiveCommit = evidence.review_commit ?? taskRecord.review_commit;
@@ -222,18 +230,18 @@ export function validateInlineEvidenceForOutcome(
     if (!isNonEmpty(effectiveBranch)) {
       errors.push('completed_for_review requires review_branch (provide inline or record beforehand)');
     }
-    if (!isNonEmpty(effectiveCommit)) {
+    if (requiresField('review_commit') && !isNonEmpty(effectiveCommit)) {
       errors.push('completed_for_review requires review_commit (provide inline or record beforehand)');
     }
-    if (isPlaceholderValue(effectiveBranch)) {
+    if (requiresField('review_branch') && isPlaceholderValue(effectiveBranch)) {
       errors.push('completed_for_review requires review_branch, blank placeholder values are not allowed');
     } else if (isMainlineBranch(effectiveBranch)) {
       errors.push('completed_for_review requires review_branch to be a feature branch, not main/master');
     }
-    if (isPlaceholderValue(effectiveCommit)) {
+    if (requiresField('review_commit') && isPlaceholderValue(effectiveCommit)) {
       errors.push('completed_for_review requires review_commit, blank placeholder values are not allowed');
     }
-    if (isPlaceholderValue(effectiveUrl)) {
+    if (requiresField('review_url') && isPlaceholderValue(effectiveUrl)) {
       errors.push('completed_for_review requires review_url, blank placeholder values are not allowed');
     } else if (!isValidUrl(effectiveUrl)) {
       errors.push('completed_for_review requires valid review_url');
@@ -247,18 +255,18 @@ export function validateInlineEvidenceForOutcome(
     }
   }
 
-  if (outcome === 'qa_pass') {
+  if (outcome === 'qa_pass' || requiresFromStatus || requiresField('qa_verified_commit') || requiresField('qa_tested_url')) {
     const effectiveQaCommit = evidence.qa_verified_commit ?? taskRecord.qa_verified_commit;
     const effectiveReviewCommit = evidence.review_commit ?? taskRecord.review_commit;
     const effectiveQaUrl = evidence.qa_tested_url ?? taskRecord.qa_tested_url;
 
-    if (!isNonEmpty(effectiveQaCommit)) {
+    if (requiresField('qa_verified_commit') && !isNonEmpty(effectiveQaCommit)) {
       errors.push('qa_pass requires qa_verified_commit (provide inline or record beforehand)');
     }
-    if (isPlaceholderValue(effectiveQaCommit)) {
+    if (requiresField('qa_verified_commit') && isPlaceholderValue(effectiveQaCommit)) {
       errors.push('qa_pass requires qa_verified_commit, blank placeholder values are not allowed');
     }
-    if (isPlaceholderValue(effectiveQaUrl)) {
+    if (requiresField('qa_tested_url') && isPlaceholderValue(effectiveQaUrl)) {
       errors.push('qa_pass requires qa_tested_url, blank placeholder values are not allowed');
     } else if (!isValidUrl(effectiveQaUrl)) {
       errors.push('qa_pass requires valid qa_tested_url');
@@ -271,7 +279,7 @@ export function validateInlineEvidenceForOutcome(
     }
 
     // Coherence check: qa commit must match review commit
-    if (isNonEmpty(effectiveQaCommit) && isNonEmpty(effectiveReviewCommit)) {
+    if (requiresMatch('qa_verified_commit', 'review_commit') && isNonEmpty(effectiveQaCommit) && isNonEmpty(effectiveReviewCommit)) {
       if (effectiveQaCommit!.trim() !== effectiveReviewCommit!.trim()) {
         errors.push(
           `qa_verified_commit ("${effectiveQaCommit}") does not match review_commit ("${effectiveReviewCommit}"). ` +

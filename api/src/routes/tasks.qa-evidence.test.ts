@@ -490,8 +490,16 @@ describe('tasks qa-evidence aliases', () => {
     expect(result.errors).toEqual([]);
   });
 
-  it('rejects premature or malformed live_verified release-gate validation', () => {
+  it('rejects premature or malformed live_verified release-gate validation when the workflow config requires it', () => {
     const db = getDb();
+    db.prepare(`
+      INSERT INTO sprint_task_transition_requirements (sprint_id, task_type, outcome, field_name, requirement_type, match_field, severity, message)
+      VALUES
+        (10, NULL, 'live_verified', 'status', 'from_status', 'deployed', 'block', 'live_verified requires task status deployed'),
+        (10, NULL, 'live_verified', 'live_verified_by', 'required', NULL, 'block', 'live_verified requires live_verified_by'),
+        (10, NULL, 'live_verified', 'live_verified_at', 'required', NULL, 'block', 'live_verified requires live_verified_at')
+    `).run();
+
     const result = requireReleaseGate(db, {
       id: 383,
       status: 'ready_to_merge',
