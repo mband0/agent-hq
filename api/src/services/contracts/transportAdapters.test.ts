@@ -197,6 +197,8 @@ describe('transportAdapters sprint-type contract templates', () => {
     expect(repoTemplate).toContain('"qa_tested_url":"<tested-url>"');
     expect(repoTemplate).toContain('"live_verified_by":"{{agentSlug}}"');
     expect(repoTemplate).toContain('"live_verified_at":"<ISO timestamp>"');
+    expect(repoTemplate).toContain('Always use `{{baseUrl}}` for lifecycle writes');
+    expect(repoTemplate).toContain('Do not substitute the application API you are testing');
     expect(repoTemplate).not.toMatch(/"verified_commit"\s*:/);
     expect(repoTemplate).not.toMatch(/"qa_url"\s*:/);
   });

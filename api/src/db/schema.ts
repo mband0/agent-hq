@@ -3799,6 +3799,10 @@ export function ensurePipelineIntelligenceTelemetry(): void {
       db.exec(`ALTER TABLE agents ADD COLUMN instructions_version INTEGER NOT NULL DEFAULT 0`);
       console.log('[schema] Task #586: added instructions_version to agents');
     }
+    if (!agentCols.some(c => c.name === 'deleted_at')) {
+      db.exec(`ALTER TABLE agents ADD COLUMN deleted_at TEXT DEFAULT NULL`);
+      console.log('[schema] Task #404: added deleted_at to agents');
+    }
   } catch (err) {
     console.error('[schema] Task #586: agent column migration failed:', err);
   }

@@ -9,6 +9,7 @@ import { Badge, StatusDot } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Bot, Plus, Pencil, Trash2, X, Check, FolderOpen, ChevronDown, Zap, CheckCircle, AlertCircle, Loader2, ChevronRight, Clock, Power } from 'lucide-react';
 import Link from 'next/link';
+import { AgentDeleteNotice, buildAgentDeleteNotice, type AgentDeleteNoticeData } from '@/components/AgentDeleteNotice';
 import {
   getAgentModelLabel,
   getAgentModelOptionsForProvider,
@@ -143,6 +144,7 @@ export default function AgentsPage() {
   const [dynamicModels, setDynamicModels] = useState<Array<{ id: string; label: string }>>([]);
   const [dynamicModelsLoading, setDynamicModelsLoading] = useState(false);
   const [dynamicModelsError, setDynamicModelsError] = useState<string | null>(null);
+  const [deleteNotice, setDeleteNotice] = useState<AgentDeleteNoticeData | null>(null);
   const toSlug = (name: string) =>
     name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
@@ -162,6 +164,15 @@ export default function AgentsPage() {
   };
 
   useEffect(() => { load(filterProjectId); }, [filterProjectId]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const deletedAgentName = params.get('deleted_agent');
+    if (!deletedAgentName) return;
+    const deletedAgentArchived = params.get('deleted_agent_archived') === '1';
+    setDeleteNotice(buildAgentDeleteNotice(deletedAgentName, { archived: deletedAgentArchived }));
+    router.replace('/agents', { scroll: false });
+  }, [router]);
 
   // (Legacy ?edit=<id> param removed — edit flow now uses /agents/:id?mode=edit)
 
@@ -387,9 +398,10 @@ export default function AgentsPage() {
   };
 
   const handleDelete = async (id: number, name: string) => {
-    if (!confirm(`Delete agent "${name}"? This will also delete all their runs, logs, and chat history.`)) return;
+    if (!confirm(`Delete agent "${name}"? Historical tasks and runs will be preserved.`)) return;
     try {
-      await api.deleteAgent(id);
+      const result = await api.deleteAgent(id);
+      setDeleteNotice(buildAgentDeleteNotice(name, result));
       load(filterProjectId);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -426,6 +438,13 @@ export default function AgentsPage() {
           <Plus className="w-4 h-4" /> New Agent
         </Button>
       </div>
+
+      {deleteNotice && (
+        <AgentDeleteNotice
+          notice={deleteNotice}
+          onDismiss={() => setDeleteNotice(null)}
+        />
+      )}
 
       {/* Project filter */}
       <div className="flex items-center gap-2">

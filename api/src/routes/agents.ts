@@ -37,6 +37,37 @@ const DEFAULT_AGENT_MODEL_BY_PROVIDER: Record<string, string> = {
   'openai-codex': 'openai-codex/gpt-5.5',
 };
 
+type AgentReferenceCheck = {
+  table: string;
+  column: string;
+  label: string;
+  historical: boolean;
+};
+
+type AgentReferenceCount = AgentReferenceCheck & {
+  count: number;
+};
+
+const AGENT_REFERENCE_CHECKS: AgentReferenceCheck[] = [
+  { table: 'tasks', column: 'agent_id', label: 'assigned tasks', historical: true },
+  { table: 'tasks', column: 'review_owner_agent_id', label: 'review owner tasks', historical: true },
+  { table: 'job_instances', column: 'agent_id', label: 'job instances', historical: true },
+  { table: 'sessions', column: 'agent_id', label: 'captured sessions', historical: true },
+  { table: 'task_events', column: 'agent_id', label: 'task events', historical: true },
+  { table: 'dispatch_log', column: 'agent_id', label: 'dispatch log entries', historical: true },
+  { table: 'task_creation_events', column: 'agent_id', label: 'task creation events', historical: true },
+  { table: 'task_outcome_metrics', column: 'agent_id', label: 'task outcome metrics', historical: true },
+  { table: 'logs', column: 'agent_id', label: 'logs', historical: true },
+  { table: 'chat_messages', column: 'agent_id', label: 'chat messages', historical: true },
+  { table: 'chat_attachments', column: 'agent_id', label: 'chat attachments', historical: true },
+  { table: 'canonical_chat_sessions', column: 'agent_id', label: 'canonical chat sessions', historical: true },
+  { table: 'integrity_events', column: 'agent_id', label: 'integrity events', historical: true },
+  { table: 'security_events', column: 'agent_id', label: 'security events', historical: true },
+  { table: 'sprint_task_routing_rules', column: 'agent_id', label: 'routing rules', historical: false },
+  { table: 'agent_tool_assignments', column: 'agent_id', label: 'tool assignments', historical: false },
+  { table: 'agent_mcp_assignments', column: 'agent_id', label: 'MCP assignments', historical: false },
+];
+
 function makeStableSkillId(name: string): number {
   let hash = 0;
   for (const ch of name) hash = ((hash * 31) + ch.charCodeAt(0)) | 0;
@@ -112,6 +143,65 @@ function validateAgentProviderSelection(preferredProvider: string | null | undef
 function defaultAgentModelForProvider(preferredProvider: string | null | undefined): string | null {
   if (!preferredProvider) return null;
   return DEFAULT_AGENT_MODEL_BY_PROVIDER[preferredProvider] ?? null;
+}
+
+function tableHasColumn(db: ReturnType<typeof getDb>, table: string, column: string): boolean {
+  try {
+    const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+    return columns.some((entry) => entry.name === column);
+  } catch {
+    return false;
+  }
+}
+
+function countAgentReferences(db: ReturnType<typeof getDb>, agentId: number): AgentReferenceCount[] {
+  const counts: AgentReferenceCount[] = [];
+  for (const check of AGENT_REFERENCE_CHECKS) {
+    if (!tableHasColumn(db, check.table, check.column)) continue;
+    const row = db.prepare(`SELECT COUNT(*) AS n FROM ${check.table} WHERE ${check.column} = ?`).get(agentId) as { n: number };
+    counts.push({ ...check, count: Number(row.n ?? 0) });
+  }
+  return counts;
+}
+
+function buildArchivedSessionKey(agentId: number, existingSessionKey: unknown): string {
+  const existing = typeof existingSessionKey === 'string' && existingSessionKey.trim()
+    ? existingSessionKey.trim()
+    : `agent:${agentId}`;
+  return existing.startsWith(`deleted:${agentId}:`) ? existing : `deleted:${agentId}:${existing}`;
+}
+
+function archiveAgentForDeletion(db: ReturnType<typeof getDb>, agent: Record<string, unknown>, referenceCounts: AgentReferenceCount[]): void {
+  const agentId = Number(agent.id);
+  const archivedSessionKey = buildArchivedSessionKey(agentId, agent.session_key);
+  const tx = db.transaction(() => {
+    if (tableHasColumn(db, 'agent_tool_assignments', 'agent_id')) {
+      db.prepare('DELETE FROM agent_tool_assignments WHERE agent_id = ?').run(agentId);
+    }
+    if (tableHasColumn(db, 'agent_mcp_assignments', 'agent_id')) {
+      db.prepare('DELETE FROM agent_mcp_assignments WHERE agent_id = ?').run(agentId);
+    }
+    if (tableHasColumn(db, 'sprint_task_routing_rules', 'agent_id')) {
+      db.prepare('DELETE FROM sprint_task_routing_rules WHERE agent_id = ?').run(agentId);
+    }
+    db.prepare(`
+      UPDATE agents
+      SET enabled = 0,
+          status = 'idle',
+          schedule = '',
+          openclaw_agent_id = NULL,
+          session_key = ?,
+          deleted_at = COALESCE(deleted_at, datetime('now'))
+      WHERE id = ?
+    `).run(archivedSessionKey, agentId);
+  });
+  tx();
+
+  const historicalSummary = referenceCounts
+    .filter((entry) => entry.historical && entry.count > 0)
+    .map((entry) => `${entry.label}: ${entry.count}`)
+    .join(', ');
+  console.log(`[agents] Archived agent #${agentId} instead of hard delete; preserved historical references${historicalSummary ? ` (${historicalSummary})` : ''}`);
 }
 
 function getProjectName(projectId: number | null | undefined): string | null {
@@ -472,6 +562,7 @@ router.get('/', (req: Request, res: Response) => {
   try {
     const db = getDb();
     const projectId = req.query.project_id !== undefined ? Number(req.query.project_id) : null;
+    const includeDeleted = req.query.include_deleted === '1' || req.query.include_deleted === 'true';
 
     // Task #594: agents table is the canonical entity.
     const baseQuery = `
@@ -483,9 +574,9 @@ router.get('/', (req: Request, res: Response) => {
 
     let agents: unknown[];
     if (projectId !== null) {
-      agents = db.prepare(`${baseQuery} WHERE a.project_id = ? ORDER BY a.created_at ASC`).all(projectId);
+      agents = db.prepare(`${baseQuery} WHERE a.project_id = ? ${includeDeleted ? '' : 'AND a.deleted_at IS NULL'} ORDER BY a.created_at ASC`).all(projectId);
     } else {
-      agents = db.prepare(`${baseQuery} ORDER BY a.created_at ASC`).all();
+      agents = db.prepare(`${baseQuery} ${includeDeleted ? '' : 'WHERE a.deleted_at IS NULL'} ORDER BY a.created_at ASC`).all();
     }
 
     res.json(parseAgents(agents));
@@ -617,7 +708,7 @@ router.post('/provision-full', (req: Request, res: Response) => {
       });
     }
 
-    const duplicateName = db.prepare('SELECT id FROM agents WHERE lower(name) = lower(?) LIMIT 1').get(body.name) as { id: number } | undefined;
+    const duplicateName = db.prepare('SELECT id FROM agents WHERE lower(name) = lower(?) AND deleted_at IS NULL LIMIT 1').get(body.name) as { id: number } | undefined;
     if (duplicateName) {
       return res.status(409).json({
         ok: false,
@@ -627,7 +718,7 @@ router.post('/provision-full', (req: Request, res: Response) => {
       });
     }
 
-    const duplicateSlug = db.prepare('SELECT id FROM agents WHERE openclaw_agent_id = ? LIMIT 1').get(runtimeSlug) as { id: number } | undefined;
+    const duplicateSlug = db.prepare('SELECT id FROM agents WHERE openclaw_agent_id = ? AND deleted_at IS NULL LIMIT 1').get(runtimeSlug) as { id: number } | undefined;
     if (duplicateSlug) {
       return res.status(409).json({
         ok: false,
@@ -637,7 +728,7 @@ router.post('/provision-full', (req: Request, res: Response) => {
       });
     }
 
-    const duplicateSession = db.prepare('SELECT id FROM agents WHERE session_key = ? LIMIT 1').get(sessionKey) as { id: number } | undefined;
+    const duplicateSession = db.prepare('SELECT id FROM agents WHERE session_key = ? AND deleted_at IS NULL LIMIT 1').get(sessionKey) as { id: number } | undefined;
     if (duplicateSession) {
       return res.status(409).json({
         ok: false,
@@ -773,13 +864,26 @@ router.post('/provision-full', (req: Request, res: Response) => {
         INSERT INTO sprint_task_routing_rules (sprint_id, task_type, status, agent_id, priority)
         VALUES (?, ?, ?, ?, ?)
       `);
+      const activeProjectSprintIds = body.project_id == null
+        ? []
+        : db.prepare(`
+            SELECT id
+            FROM sprints
+            WHERE project_id = ?
+              AND status IN ('planning', 'active', 'paused')
+          `).all(body.project_id).map((row: any) => Number(row.id));
       for (const rule of body.routing_rules ?? []) {
-        if (rule.sprint_id == null) {
-          throw new Error('routing_rules entries must include sprint_id');
+        const targetSprintIds = rule.sprint_id != null
+          ? [Number(rule.sprint_id)]
+          : activeProjectSprintIds;
+        if (targetSprintIds.length === 0) {
+          throw new Error('routing_rules entries must include sprint_id or the agent project must have at least one non-closed sprint');
         }
-        seedSprintTaskPolicy(db, rule.sprint_id);
-        const result = sprintRoutingStmt.run(rule.sprint_id, rule.task_type, rule.status, agentId, rule.priority ?? 0);
-        createdRoutingRuleIds.push(Number(result.lastInsertRowid));
+        for (const sprintId of targetSprintIds) {
+          seedSprintTaskPolicy(db, sprintId);
+          const result = sprintRoutingStmt.run(sprintId, rule.task_type, rule.status, agentId, rule.priority ?? 0);
+          createdRoutingRuleIds.push(Number(result.lastInsertRowid));
+        }
       }
       report.routing = {
         ok: true,
@@ -926,7 +1030,8 @@ router.get('/:id', (req: Request, res: Response) => {
       FROM agents a
       LEFT JOIN projects p ON p.id = a.project_id
       WHERE a.id = ?
-    `).get(req.params.id) as Record<string, unknown> | undefined;
+        AND (? = 1 OR a.deleted_at IS NULL)
+    `).get(req.params.id, req.query.include_deleted === '1' || req.query.include_deleted === 'true' ? 1 : 0) as Record<string, unknown> | undefined;
     if (!agent) return res.status(404).json({ error: 'Agent not found' });
     return res.json(parseAgentRuntimeConfig(agent));
   } catch (err) {
@@ -1030,7 +1135,7 @@ router.post('/', (req: Request, res: Response) => {
 
     const result = db.prepare(`
       INSERT INTO agents (name, role, session_key, workspace_path, repo_path, repo_url, repo_access_mode, status, openclaw_agent_id, runtime_type, runtime_config, project_id, preferred_provider, model, system_role)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       name,
       resolvedRole,
@@ -2285,7 +2390,10 @@ router.put('/:id/routing-config', (req: Request, res: Response) => {
 router.delete('/:id', (req: Request, res: Response) => {
   try {
     const db = getDb();
-    const id = req.params.id;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ error: 'Invalid agent id' });
+    }
     const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(id) as Record<string, unknown> | undefined;
     if (!agent) return res.status(404).json({ error: 'Agent not found' });
     const previousProjectId = (agent.project_id as number | null | undefined) ?? null;
@@ -2318,13 +2426,42 @@ router.delete('/:id', (req: Request, res: Response) => {
       console.log(`[agents] Removed workspace: ${workspacePath}`);
     }
 
-    // DB cleanup
+    const referenceCounts = countAgentReferences(db, id);
+    const nonZeroReferences = referenceCounts.filter((entry) => entry.count > 0);
+    const historicalReferences = nonZeroReferences.filter((entry) => entry.historical);
+
+    if (historicalReferences.length > 0) {
+      archiveAgentForDeletion(db, agent, referenceCounts);
+      syncStarterRoutingForProject(db, previousProjectId);
+      return res.json({
+        ok: true,
+        deleted: true,
+        hard_deleted: false,
+        archived: true,
+        message: 'Agent was archived instead of hard-deleted because historical task, run, chat, or audit records still reference it.',
+        dependency_counts: nonZeroReferences,
+      });
+    }
+
     db.prepare('DELETE FROM agents WHERE id = ?').run(id);
     syncStarterRoutingForProject(db, previousProjectId);
 
-    return res.json({ ok: true, deleted: true });
+    return res.json({
+      ok: true,
+      deleted: true,
+      hard_deleted: true,
+      archived: false,
+      dependency_counts: nonZeroReferences,
+    });
   } catch (err) {
-    return res.status(500).json({ error: String(err) });
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes('FOREIGN KEY constraint failed')) {
+      return res.status(409).json({
+        error: 'Cannot hard-delete agent because existing records still reference it. Disable or archive the agent instead.',
+        detail: message,
+      });
+    }
+    return res.status(500).json({ error: message });
   }
 });
 

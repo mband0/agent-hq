@@ -19,6 +19,7 @@ import Link from 'next/link';
 import ProjectFiles from '@/components/ProjectFiles';
 import { DeleteProjectModal } from '@/components/DeleteProjectModal';
 import ProjectAuditLog from '@/components/ProjectAuditLog';
+import { AgentDeleteNotice, buildAgentDeleteNotice, type AgentDeleteNoticeData } from '@/components/AgentDeleteNotice';
 
 type TabMode = 'preview' | 'edit';
 type PageTab = 'agents' | 'files' | 'sprints' | 'audit';
@@ -60,6 +61,7 @@ export default function ProjectDetailPage() {
   // Agent actions
   const [addAgentId, setAddAgentId] = useState<string>('');
   const [addingAgent, setAddingAgent] = useState(false);
+  const [deleteNotice, setDeleteNotice] = useState<AgentDeleteNoticeData | null>(null);
 
   const load = useCallback(() => {
     Promise.all([
@@ -111,10 +113,11 @@ export default function ProjectDetailPage() {
     setSaveError(null);
   };
 
-  const handleDeleteAgent = async (id: number, title: string) => {
-    if (!confirm(`Delete agent "${title}"?`)) return;
+  const handleDeleteAgent = async (id: number, name: string) => {
+    if (!confirm(`Delete agent "${name}"? Historical tasks and runs will be preserved.`)) return;
     try {
-      await api.deleteAgent(id);
+      const result = await api.deleteAgent(id);
+      setDeleteNotice(buildAgentDeleteNotice(name, result));
       load();
     } catch (e) {
       alert(String(e));
@@ -225,6 +228,13 @@ export default function ProjectDetailPage() {
           )}
         </div>
       </div>
+
+      {deleteNotice && (
+        <AgentDeleteNotice
+          notice={deleteNotice}
+          onDismiss={() => setDeleteNotice(null)}
+        />
+      )}
 
       {/* Project Info Card */}
       <Card>
@@ -547,7 +557,7 @@ export default function ProjectDetailPage() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => handleDeleteAgent(agent.id, agent.job_title ?? agent.name)}
+                      onClick={() => handleDeleteAgent(agent.id, agent.name)}
                       title="Delete agent"
                     >
                       <Trash2 className="w-3.5 h-3.5 text-red-400" />

@@ -406,8 +406,14 @@ export default function AgentDetailPage() {
   const handleDelete = async () => {
     setDeleting(true);
     try {
-      await api.deleteAgent(id);
-      router.push('/agents');
+      const result = await api.deleteAgent(id);
+      const redirectParams = new URLSearchParams({
+        deleted_agent: agent?.name ?? 'Agent',
+      });
+      if (result.archived) {
+        redirectParams.set('deleted_agent_archived', '1');
+      }
+      router.push(`/agents?${redirectParams.toString()}`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       alert(`Failed to delete agent: ${msg}`);
@@ -1060,7 +1066,7 @@ export default function AgentDetailPage() {
               </div>
             </div>
             <p className="text-sm text-slate-300 mb-6">
-              Are you sure you want to delete <strong className="text-white">{agent.name}</strong>? This will also delete all their runs, logs, and chat history.
+              Are you sure you want to delete <strong className="text-white">{agent.name}</strong>? Historical tasks and runs will be preserved.
             </p>
             <div className="flex justify-end gap-2">
               <Button variant="ghost" size="sm" onClick={() => setDeleteConfirmOpen(false)} disabled={deleting}>

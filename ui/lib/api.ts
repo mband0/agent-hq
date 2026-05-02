@@ -60,7 +60,7 @@ export const api = {
   updateAgent: (id: number, data: Partial<Agent>) =>
     apiFetch<Agent>(`/api/v1/agents/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteAgent: (id: number) =>
-    apiFetch<{ ok: boolean }>(`/api/v1/agents/${id}`, { method: 'DELETE' }),
+    apiFetch<DeleteAgentResponse>(`/api/v1/agents/${id}`, { method: 'DELETE' }),
 
   // Task Instances
   getTaskInstances: (taskId: number) => apiFetch<JobInstance[]>(`/api/v1/tasks/${taskId}/instances`),
@@ -751,6 +751,15 @@ export interface Agent {
   heartbeat_stale_seconds: number | null;
   /** FK to github_identities — per-agent or shared GitHub credential (T#613). */
   github_identity_id: number | null;
+}
+
+export interface DeleteAgentResponse {
+  ok: boolean;
+  deleted?: boolean;
+  hard_deleted?: boolean;
+  archived?: boolean;
+  message?: string;
+  dependency_counts?: Record<string, number>;
 }
 
 export interface JobInstance {

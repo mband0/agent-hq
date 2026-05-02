@@ -21,6 +21,14 @@ You are working inside the Agent HQ task lifecycle. Your job is not just to do t
 - Current task status: `{{taskStatus}}`
 - Transport mode: `{{transportMode}}`
 
+### Lifecycle callback target
+
+The Base URL above is the Agent HQ control-plane callback API for start, check-in, note, evidence, and outcome writes.
+
+Always use `{{baseUrl}}` for lifecycle writes in this contract, even when the feature under test runs on a different dev or production API.
+
+Do not substitute the application API you are testing for the lifecycle callback Base URL.
+
 ---
 
 ## Core rule

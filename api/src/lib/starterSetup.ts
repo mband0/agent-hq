@@ -68,10 +68,12 @@ function loadSprintRow(db: Database.Database, sprintId: number): SprintRow | nul
 }
 
 function loadProjectAgents(db: Database.Database, projectId: number): AgentRow[] {
+  const deletedFilter = tableHasColumn(db, 'agents', 'deleted_at') ? 'AND deleted_at IS NULL' : '';
   return db.prepare(`
     SELECT id, name, role, job_title, system_role, session_key, openclaw_agent_id
     FROM agents
     WHERE project_id = ?
+      ${deletedFilter}
     ORDER BY id ASC
   `).all(projectId) as AgentRow[];
 }
