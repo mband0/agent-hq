@@ -34,6 +34,14 @@ export interface AtlasLifecycleData {
   commit?: string;
   review_url?: string;
   dev_url?: string;
+  qa_verified_commit?: string;
+  qa_tested_url?: string;
+  merged_commit?: string;
+  deployed_commit?: string;
+  deploy_target?: string;
+  deployed_at?: string;
+  live_verified_by?: string;
+  live_verified_at?: string;
   blocker_reason?: string;
   notes?: string;
 }
@@ -460,6 +468,7 @@ export async function proxyOutcome(
   summary: string,
   blockerReason?: string | null,
   config?: LifecycleProxyConfig,
+  lifecycle?: AtlasLifecycleData | null,
 ): Promise<boolean> {
   const body: Record<string, unknown> = {
     outcome,
@@ -467,6 +476,17 @@ export async function proxyOutcome(
     changed_by: ctx.changedBy,
     instance_id: ctx.instanceId,
   };
+  if (lifecycle?.branch) body.review_branch = lifecycle.branch;
+  if (lifecycle?.commit) body.review_commit = lifecycle.commit;
+  if (lifecycle?.review_url) body.review_url = lifecycle.review_url;
+  if (lifecycle?.qa_verified_commit) body.qa_verified_commit = lifecycle.qa_verified_commit;
+  if (lifecycle?.qa_tested_url) body.qa_tested_url = lifecycle.qa_tested_url;
+  if (lifecycle?.merged_commit) body.merged_commit = lifecycle.merged_commit;
+  if (lifecycle?.deployed_commit) body.deployed_commit = lifecycle.deployed_commit;
+  if (lifecycle?.deploy_target) body.deploy_target = lifecycle.deploy_target;
+  if (lifecycle?.deployed_at) body.deployed_at = lifecycle.deployed_at;
+  if (lifecycle?.live_verified_by) body.live_verified_by = lifecycle.live_verified_by;
+  if (lifecycle?.live_verified_at) body.live_verified_at = lifecycle.live_verified_at;
   if (outcome === 'blocked' && blockerReason) {
     body.blocker_reason = blockerReason;
   }
@@ -586,6 +606,7 @@ export async function runPostStreamLifecycle(
     effectiveSummary,
     blockerReason,
     config,
+    lifecycle,
   );
 
   // Step 6: Complete the instance

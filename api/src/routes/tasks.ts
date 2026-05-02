@@ -1428,6 +1428,8 @@ router.put('/:id/qa-evidence', (req: Request, res: Response) => {
     const id = Number(req.params.id);
     const {
       qa_verified_commit,
+      verified_commit,
+      qa_url,
       tested_url,
       qa_tested_url,
       summary,
@@ -1436,6 +1438,8 @@ router.put('/:id/qa-evidence', (req: Request, res: Response) => {
       force_clear,
     } = req.body as {
       qa_verified_commit?: string | null;
+      verified_commit?: string | null;
+      qa_url?: string | null;
       tested_url?: string | null;
       qa_tested_url?: string | null;
       summary?: string | null;
@@ -1444,7 +1448,8 @@ router.put('/:id/qa-evidence', (req: Request, res: Response) => {
       force_clear?: boolean;
     };
 
-    const resolvedQaTestedUrl = qa_tested_url ?? tested_url;
+    const resolvedQaVerifiedCommit = qa_verified_commit ?? verified_commit;
+    const resolvedQaTestedUrl = qa_tested_url ?? tested_url ?? qa_url;
 
     const db = getDb();
 
@@ -1471,12 +1476,16 @@ router.put('/:id/qa-evidence', (req: Request, res: Response) => {
     const explicitClears = new Set<string>();
     if (force_clear === true) {
       const body = req.body as Record<string, unknown>;
-      if (Object.prototype.hasOwnProperty.call(body, 'qa_verified_commit') && body.qa_verified_commit === null) {
+      if (
+        (Object.prototype.hasOwnProperty.call(body, 'qa_verified_commit') && body.qa_verified_commit === null)
+        || (Object.prototype.hasOwnProperty.call(body, 'verified_commit') && body.verified_commit === null)
+      ) {
         explicitClears.add('qa_verified_commit');
       }
       if (
         (Object.prototype.hasOwnProperty.call(body, 'qa_tested_url') && body.qa_tested_url === null)
         || (Object.prototype.hasOwnProperty.call(body, 'tested_url') && body.tested_url === null)
+        || (Object.prototype.hasOwnProperty.call(body, 'qa_url') && body.qa_url === null)
       ) {
         explicitClears.add('qa_tested_url');
       }
@@ -1486,11 +1495,11 @@ router.put('/:id/qa-evidence', (req: Request, res: Response) => {
     // (clearing fields doesn't need coherence checks against review_commit).
     // Also skip when qa_verified_commit isn't substantively provided — partial
     // updates (e.g. just tested_url) don't need full QA evidence validation.
-    const hasSubstantiveCommit = qa_verified_commit !== undefined && qa_verified_commit !== null && qa_verified_commit !== '';
+    const hasSubstantiveCommit = resolvedQaVerifiedCommit !== undefined && resolvedQaVerifiedCommit !== null && resolvedQaVerifiedCommit !== '';
     if (explicitClears.size === 0 && hasSubstantiveCommit) {
       const taskRow = db.prepare('SELECT review_commit FROM tasks WHERE id = ?').get(id) as { review_commit: string | null } | undefined;
       const qaValidation = validateQaEvidence(
-        { qa_verified_commit, qa_tested_url: resolvedQaTestedUrl },
+        { qa_verified_commit: resolvedQaVerifiedCommit, qa_tested_url: resolvedQaTestedUrl },
         taskRow?.review_commit,
       );
       if (!qaValidation.valid) {
@@ -1502,14 +1511,14 @@ router.put('/:id/qa-evidence', (req: Request, res: Response) => {
     }
 
     updateTaskEvidence(id, changed_by, {
-      qa_verified_commit: qa_verified_commit ?? null,
+      qa_verified_commit: resolvedQaVerifiedCommit ?? null,
       qa_tested_url: resolvedQaTestedUrl ?? null,
     }, { explicitClears });
 
     // Build an informative note that distinguishes clears from normal writes
     const commitDisplay = explicitClears.has('qa_verified_commit')
       ? '[cleared]'
-      : (qa_verified_commit ?? '—');
+      : (resolvedQaVerifiedCommit ?? '—');
     const urlDisplay = explicitClears.has('qa_tested_url')
       ? '[cleared]'
       : (resolvedQaTestedUrl ?? '—');

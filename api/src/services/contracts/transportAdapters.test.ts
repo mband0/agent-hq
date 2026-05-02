@@ -7,8 +7,10 @@ let buildContractInstructions: typeof import('./transportAdapters').buildContrac
 type TransportContext = import('./transportAdapters').TransportContext;
 
 const originalRoot = process.env.AGENT_CONTRACT_ROOT;
+const originalPath = process.env.AGENT_CONTRACT_PATH;
 const originalCwd = process.cwd();
 let tempDir: string;
+let extraTempDirs: string[] = [];
 
 function loadTransportAdapters() {
   let loaded: typeof import('./transportAdapters');
@@ -35,11 +37,24 @@ function reloadWithContractRoot(contractRoot: string): void {
   ({ buildContractInstructions } = loadTransportAdapters());
 }
 
+function reloadWithoutFileTemplates(): void {
+  jest.resetModules();
+  const emptyRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'transport-contracts-empty-'));
+  extraTempDirs.push(emptyRoot);
+  process.env.AGENT_CONTRACT_ROOT = emptyRoot;
+  process.env.AGENT_CONTRACT_PATH = path.join(emptyRoot, 'missing-agent-contract.md');
+  ({ buildContractInstructions } = loadTransportAdapters());
+}
+
 afterEach(() => {
   if (originalRoot == null) delete process.env.AGENT_CONTRACT_ROOT;
   else process.env.AGENT_CONTRACT_ROOT = originalRoot;
+  if (originalPath == null) delete process.env.AGENT_CONTRACT_PATH;
+  else process.env.AGENT_CONTRACT_PATH = originalPath;
   process.chdir(originalCwd);
   if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
+  for (const dir of extraTempDirs) fs.rmSync(dir, { recursive: true, force: true });
+  extraTempDirs = [];
 });
 
 function buildContext(overrides: Partial<TransportContext> = {}): TransportContext {
@@ -113,6 +128,45 @@ describe('transportAdapters sprint-type contract templates', () => {
     expect(contract).not.toContain('## Atlas HQ enhancement contract for this dispatched instance');
   });
 
+  it('renders live_verified in the initial ready_to_merge release prompt', () => {
+    const contract = buildContractInstructions(buildContext({
+      sprintType: 'generic',
+      taskStatus: 'ready_to_merge',
+      transportMode: 'remote-direct',
+    }));
+
+    expect(contract).toContain('Use ONE of these outcomes: deployed_live, live_verified');
+  });
+
+  it('uses canonical QA evidence field names in generated transport guidance', () => {
+    reloadWithoutFileTemplates();
+    const contract = buildContractInstructions(buildContext({
+      taskStatus: 'review',
+      transportMode: 'local',
+      sprintType: 'generic',
+    }));
+
+    expect(contract).toContain('"qa_verified_commit":"<sha>"');
+    expect(contract).toContain('"qa_tested_url":"<tested-url>"');
+    expect(contract).not.toMatch(/"verified_commit"\s*:/);
+    expect(contract).not.toMatch(/"qa_url"\s*:/);
+  });
+
+  it('spells out one-pass release verification fields in generated transport guidance', () => {
+    reloadWithoutFileTemplates();
+    const contract = buildContractInstructions(buildContext({
+      taskStatus: 'ready_to_merge',
+      transportMode: 'local',
+      sprintType: 'generic',
+    }));
+
+    expect(contract).toContain('Use ONE of these outcomes: deployed_live, live_verified');
+    expect(contract).toContain('record deploy evidence, post deployed_live, record live verification, then post live_verified');
+    expect(contract).toContain('Do not post live_verified before deployed_live');
+    expect(contract).toContain('"live_verified_by":"cinder-backend"');
+    expect(contract).toContain('"live_verified_at":"<ISO timestamp>"');
+  });
+
   it('ships the real enhancement template with lane expectations and evidence guidance', () => {
     reloadWithContractRoot(repoContractRoot);
     const repoTemplate = fs.readFileSync(path.join(repoContractRoot, 'enhancements.md'), 'utf-8');
@@ -133,5 +187,17 @@ describe('transportAdapters sprint-type contract templates', () => {
     expect(repoTemplate).toContain('Sprint type: {{sprintType}}');
     expect(repoTemplate).toContain('REQUIRED OUTPUTS FOR BUGS');
     expect(repoTemplate).toContain('EVIDENCE EXPECTATIONS FOR BUGS');
+  });
+
+  it('ships the real generic template with canonical QA and live verification fields', () => {
+    reloadWithContractRoot(repoContractRoot);
+    const repoTemplate = fs.readFileSync(path.join(repoContractRoot, 'generic.md'), 'utf-8');
+
+    expect(repoTemplate).toContain('"qa_verified_commit":"<sha>"');
+    expect(repoTemplate).toContain('"qa_tested_url":"<tested-url>"');
+    expect(repoTemplate).toContain('"live_verified_by":"{{agentSlug}}"');
+    expect(repoTemplate).toContain('"live_verified_at":"<ISO timestamp>"');
+    expect(repoTemplate).not.toMatch(/"verified_commit"\s*:/);
+    expect(repoTemplate).not.toMatch(/"qa_url"\s*:/);
   });
 });

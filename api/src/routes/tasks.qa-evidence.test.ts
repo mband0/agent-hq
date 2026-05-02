@@ -300,6 +300,41 @@ describe('tasks qa-evidence aliases', () => {
     }
   });
 
+  it('accepts older QA contract aliases without silently dropping evidence', async () => {
+    const { server, baseUrl } = await startTestServer();
+    try {
+      const response = await fetch(`${baseUrl}/api/v1/tasks/383/qa-evidence`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          verified_commit: '6d614b3b104ae36d1dd75210b9f9fb0342673329',
+          qa_url: 'http://localhost:3501/api/v1/tasks/383?contract=old',
+          changed_by: 'talon-qa',
+          instance_id: 1784,
+        }),
+      });
+      const body = await response.json() as { qa_verified_commit?: string | null; qa_tested_url?: string | null; error?: string };
+
+      if (response.status !== 200) {
+        throw new Error(`Expected 200, received ${response.status}: ${JSON.stringify(body)}`);
+      }
+      expect(body.qa_verified_commit).toBe('6d614b3b104ae36d1dd75210b9f9fb0342673329');
+      expect(body.qa_tested_url).toBe('http://localhost:3501/api/v1/tasks/383?contract=old');
+
+      const db = getDb();
+      const row = db.prepare(`SELECT qa_verified_commit, qa_tested_url FROM tasks WHERE id = ?`).get(383) as {
+        qa_verified_commit: string | null;
+        qa_tested_url: string | null;
+      };
+      expect(row).toEqual({
+        qa_verified_commit: '6d614b3b104ae36d1dd75210b9f9fb0342673329',
+        qa_tested_url: 'http://localhost:3501/api/v1/tasks/383?contract=old',
+      });
+    } finally {
+      await stopTestServer(server);
+    }
+  });
+
   it('refreshes review evidence to the latest commit on re-submission for review', async () => {
     const db = getDb();
     db.exec(`
@@ -453,5 +488,24 @@ describe('tasks qa-evidence aliases', () => {
 
     const result = requireReleaseGate(db, task, 'qa_pass', task.task_type);
     expect(result.errors).toEqual([]);
+  });
+
+  it('rejects premature or malformed live_verified release-gate validation', () => {
+    const db = getDb();
+    const result = requireReleaseGate(db, {
+      id: 383,
+      status: 'ready_to_merge',
+      task_type: 'backend',
+      sprint_id: 10,
+      deployed_commit: '6d614b3b104ae36d1dd75210b9f9fb0342673329',
+      live_verified_by: null,
+      live_verified_at: null,
+    }, 'live_verified', 'backend');
+
+    expect(result.errors).toEqual(expect.arrayContaining([
+      'live_verified requires task status deployed',
+      'live_verified requires live_verified_by',
+      'live_verified requires live_verified_at',
+    ]));
   });
 });

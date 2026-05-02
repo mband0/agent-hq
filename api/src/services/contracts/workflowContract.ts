@@ -329,14 +329,18 @@ export const PIPELINE_REFERENCE = `Pipeline reference: ${PIPELINE_STAGES.join(' 
  * setups.
  */
 export const RELEASE_LANE_NOTES = [
-  `⚠️ DEPLOYMENT-STAGE WORKFLOW ONLY: This task requires TWO distinct handoff steps. Do not stop after deployment alone.`,
+  `DEPLOYMENT-STAGE WORKFLOW ONLY: This task can require TWO distinct handoff steps in the same authoritative run. Do not stop after deployment alone.`,
   `  Step A — merge and deploy:`,
   `    Post outcome deployed_live → task moves to "deployed"`,
   `    deployed_live is NOT terminal and does NOT mean the task is done.`,
   `  Step B — live verification against the real deployed target:`,
   `    Post outcome live_verified → task moves to "done"`,
   `    live_verified is the terminal completion step for deployment-stage work.`,
+  `One-pass happy path: record deploy evidence, post deployed_live, then record live verification and post live_verified before ending the run.`,
+  `Do not post live_verified before deployed_live has moved the task to deployed and deploy evidence has been recorded.`,
+  `live_verified requires live_verified_by and live_verified_at; deployed_commit must already be recorded from deploy evidence.`,
   `If deployment succeeds but live verification is not yet complete, do NOT treat the task as finished.`,
+  `Truthful fallback: if deployment completed but live verification could not be completed in this run, post deployed_live and leave the task in deployed for follow-up verification.`,
   `If live verification cannot be completed truthfully, post blocked or failed with the exact reason.`,
 ].join('\n');
 
@@ -362,13 +366,13 @@ export function getEvidenceRequirements(lane: WorkflowLane): EvidenceRequirement
       };
     case 'review':
       return {
-        fields: ['qa_url', 'verified_commit', 'notes'],
-        description: 'Record QA evidence: tested URL and verified commit SHA',
+        fields: ['qa_verified_commit', 'qa_tested_url', 'notes'],
+        description: 'Record QA evidence: verified commit SHA and tested URL',
       };
     case 'release':
       return {
-        fields: ['merged_commit', 'deployed_commit', 'deploy_target', 'deployed_at'],
-        description: 'Record deploy evidence: merged/deployed commits, deploy target, timestamp',
+        fields: ['merged_commit', 'deployed_commit', 'deploy_target', 'deployed_at', 'live_verified_by', 'live_verified_at'],
+        description: 'Record deploy evidence and, when verified in the same run, live verification evidence',
       };
     case 'pm':
       return {

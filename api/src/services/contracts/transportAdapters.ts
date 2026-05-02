@@ -67,6 +67,27 @@ function buildPreamble(ctx: TransportContext): string {
   ].join('\n');
 }
 
+function getPromptOutcomeHelp(workflow: ResolvedWorkflowLane): Array<{ outcome: string; description: string }> {
+  const outcomeHelp = [...workflow.outcomeHelp];
+  if (
+    workflow.lane === 'release'
+    && workflow.validOutcomes.includes('deployed_live')
+    && !outcomeHelp.some((entry) => entry.outcome === 'live_verified')
+  ) {
+    const insertAfter = outcomeHelp.findIndex((entry) => entry.outcome === 'deployed_live');
+    const liveVerifiedHelp = {
+      outcome: 'live_verified',
+      description: 'After deployed_live moves the task to deployed, record live verification evidence and complete the task',
+    };
+    if (insertAfter >= 0) {
+      outcomeHelp.splice(insertAfter + 1, 0, liveVerifiedHelp);
+    } else {
+      outcomeHelp.push(liveVerifiedHelp);
+    }
+  }
+  return outcomeHelp;
+}
+
 // ── Local transport adapter ──────────────────────────────────────────────────
 
 /**
@@ -82,6 +103,8 @@ function buildLocalTransport(
   workflow: ResolvedWorkflowLane,
 ): string {
   const baseUrl = ctx.baseUrl ?? getAgentHqBaseUrl();
+  const promptOutcomeHelp = getPromptOutcomeHelp(workflow);
+  const promptOutcomes = promptOutcomeHelp.map((entry) => entry.outcome);
 
   const sections: string[] = [
     buildPreamble(ctx),
@@ -113,15 +136,17 @@ function buildLocalTransport(
     `Also fire a system event:`,
     `openclaw system event --text "BLOCKED: task #${ctx.taskId} — <reason>. Needs Atlas." --mode now`,
     '',
-    `4. FINAL TASK OUTCOME — this is the ONE AND ONLY exit step. Posting a terminal outcome automatically closes the instance and terminates your session.`,
-    `Use ONE of these outcomes: ${workflow.validOutcomes.join(', ')}`,
+    workflow.lane === 'release'
+      ? `4. RELEASE OUTCOMES — deployment-stage work may require deployed_live followed by live_verified before the run is semantically complete.`
+      : `4. FINAL TASK OUTCOME — this is the ONE AND ONLY exit step. Posting a terminal outcome automatically closes the instance and terminates your session.`,
+    `Use ONE of these outcomes: ${promptOutcomes.join(', ')}`,
     '',
     `curl -s -X POST ${baseUrl}/api/v1/tasks/${ctx.taskId}/outcome \\`,
     `  -H "Content-Type: application/json" \\`,
     `  -d '{"outcome":"${workflow.suggestedOutcome}","summary":"<one sentence summary>","changed_by":"${ctx.agentSlug}","instance_id":${ctx.instanceId}}'`,
     '',
     `Valid outcomes:`,
-    ...workflow.outcomeHelp.map(h => `  ${h.outcome} — ${h.description}`),
+    ...promptOutcomeHelp.map(h => `  ${h.outcome} — ${h.description}`),
     '',
     `ℹ️ NOTE: PUT /instances/:id/complete still exists for backward compatibility but is no longer required. Posting a terminal outcome handles everything.`,
   ];
@@ -169,7 +194,7 @@ function buildLocalTransport(
         `For QA pass (QA lane):`,
         `curl -s -X PUT ${baseUrl}/api/v1/tasks/${ctx.taskId}/qa-evidence \\`,
         `  -H "Content-Type: application/json" \\`,
-        `  -d '{"qa_url":"<tested-url>","verified_commit":"<sha>","notes":"<optional notes>"}'`,
+        `  -d '{"qa_verified_commit":"<sha>","qa_tested_url":"<tested-url>","notes":"<optional notes>"}'`,
       );
     } else if (workflow.lane === 'release') {
       sections.push(
@@ -177,11 +202,17 @@ function buildLocalTransport(
         `curl -s -X PUT ${baseUrl}/api/v1/tasks/${ctx.taskId}/deploy-evidence \\`,
         `  -H "Content-Type: application/json" \\`,
         `  -d '{"merged_commit":"<sha>","deployed_commit":"<sha>","deploy_target":"production","deployed_at":"<ISO timestamp>"}'`,
+        `curl -s -X PUT ${baseUrl}/api/v1/tasks/${ctx.taskId}/live-verification \\`,
+        `  -H "Content-Type: application/json" \\`,
+        `  -d '{"live_verified_by":"${ctx.agentSlug}","live_verified_at":"<ISO timestamp>","summary":"<what was verified live>"}'`,
         `RELEASE-LANE RULES:`,
-        `- If the task is in ready_to_merge, your deployment-stage outcome is usually deployed_live after truthful merge/deploy completion.`,
+        `- If the task is in ready_to_merge and you can complete merge, deploy, and live verification in one run: record deploy evidence, post deployed_live, record live verification, then post live_verified.`,
+        `- Do not post live_verified before deployed_live succeeds and the task is in deployed.`,
+        `- live_verified requires live_verified_by and live_verified_at; deployed_commit must already be recorded.`,
         `- If the task is already in deployed, your next required step is live verification, and the correct terminal outcome is live_verified.`,
         `- deployed_live is not final completion.`,
         `- Do not stop after deployment alone if the workflow still requires live verification.`,
+        `- If deployment completed but live verification could not be completed in this run, post deployed_live as the truthful fallback.`,
         `- If live verification cannot be completed truthfully, post blocked or failed with the exact reason.`,
       );
     }
@@ -214,6 +245,8 @@ function buildRemoteDirectTransport(
   workflow: ResolvedWorkflowLane,
 ): string {
   const baseUrl = ctx.baseUrl ?? getAgentHqBaseUrl();
+  const promptOutcomeHelp = getPromptOutcomeHelp(workflow);
+  const promptOutcomes = promptOutcomeHelp.map((entry) => entry.outcome);
 
   const sections: string[] = [
     buildPreamble(ctx),
@@ -235,13 +268,17 @@ function buildRemoteDirectTransport(
     `POST ${baseUrl}/api/v1/instances/${ctx.instanceId}/check-in`,
     `Body: {"stage":"blocker","summary":"<description>","blocker_reason":"<exact blocker>","session_key":"${ctx.sessionKey}","meaningful_output":true}`,
     '',
-    `4. FINAL OUTCOME — posting a terminal outcome closes the instance.`,
-    `Implementation-lane rule: record review evidence successfully BEFORE posting completed_for_review.`,
+    workflow.lane === 'release'
+      ? `4. RELEASE OUTCOMES — deployed_live records deploy completion, and live_verified records terminal live verification.`
+      : `4. FINAL OUTCOME — posting a terminal outcome closes the instance.`,
+    ...(workflow.lane === 'implementation'
+      ? [`Implementation-lane rule: record review evidence successfully BEFORE posting completed_for_review.`]
+      : []),
     `POST ${baseUrl}/api/v1/tasks/${ctx.taskId}/outcome`,
     `Body: {"outcome":"${workflow.suggestedOutcome}","summary":"<one sentence>","changed_by":"${ctx.agentSlug}","instance_id":${ctx.instanceId}}`,
     '',
-    `Valid outcomes: ${workflow.validOutcomes.join(', ')}`,
-    ...workflow.outcomeHelp.map(h => `  ${h.outcome} — ${h.description}`),
+    `Valid outcomes: ${promptOutcomes.join(', ')}`,
+    ...promptOutcomeHelp.map(h => `  ${h.outcome} — ${h.description}`),
   ];
 
   if (workflow.lane === 'release') {
@@ -265,14 +302,20 @@ function buildRemoteDirectTransport(
     } else if (workflow.lane === 'review') {
       sections.push(
         `PUT ${baseUrl}/api/v1/tasks/${ctx.taskId}/qa-evidence`,
-        `Body: {"qa_url":"<url>","verified_commit":"<sha>","notes":"<optional>"}`,
+        `Body: {"qa_verified_commit":"<sha>","qa_tested_url":"<url>","notes":"<optional>"}`,
       );
     } else if (workflow.lane === 'release') {
       sections.push(
         `PUT ${baseUrl}/api/v1/tasks/${ctx.taskId}/deploy-evidence`,
         `Body: {"merged_commit":"<sha>","deployed_commit":"<sha>","deploy_target":"production","deployed_at":"<ISO timestamp>"}`,
+        `PUT ${baseUrl}/api/v1/tasks/${ctx.taskId}/live-verification`,
+        `Body: {"live_verified_by":"${ctx.agentSlug}","live_verified_at":"<ISO timestamp>","summary":"<what was verified live>"}`,
         `Release-lane rule: deployed_live records merge/deploy completion and moves the task to deployed, but it does not complete the task.`,
+        `One-pass happy path: record deploy evidence, post deployed_live, record live verification, then post live_verified before ending the run.`,
+        `Do not post live_verified before deployed_live succeeds and the task is in deployed.`,
+        `live_verified requires live_verified_by and live_verified_at; deployed_commit must already be recorded.`,
         `If the task is in deployed, you must perform truthful live verification and then post live_verified to move the task to done.`,
+        `If deployment completed but live verification could not be completed in this run, post deployed_live as the truthful fallback.`,
         `If live verification cannot be completed truthfully, post blocked or failed with the exact reason.`,
       );
     }
@@ -305,6 +348,42 @@ function buildProxyManagedTransport(
   ctx: TransportContext,
   workflow: ResolvedWorkflowLane,
 ): string {
+  const promptOutcomeHelp = getPromptOutcomeHelp(workflow);
+  const promptOutcomes = promptOutcomeHelp.map((entry) => entry.outcome);
+  const lifecycleExample = workflow.lane === 'release'
+    ? [
+        `{`,
+        `  "outcome": "${workflow.suggestedOutcome}",`,
+        `  "summary": "One sentence describing the deployment or verification result",`,
+        `  "merged_commit": "<sha>",`,
+        `  "deployed_commit": "<sha>",`,
+        `  "deploy_target": "production",`,
+        `  "deployed_at": "<ISO timestamp>",`,
+        `  "live_verified_by": "${ctx.agentSlug}",`,
+        `  "live_verified_at": "<ISO timestamp>",`,
+        `  "notes": "Optional release notes"`,
+        `}`,
+      ]
+    : workflow.lane === 'review'
+      ? [
+          `{`,
+          `  "outcome": "${workflow.suggestedOutcome}",`,
+          `  "summary": "One sentence describing what was verified",`,
+          `  "qa_verified_commit": "<sha>",`,
+          `  "qa_tested_url": "<tested-url>",`,
+          `  "notes": "Optional QA notes"`,
+          `}`,
+        ]
+      : [
+          `{`,
+          `  "outcome": "${workflow.suggestedOutcome}",`,
+          `  "summary": "One sentence describing what was done",`,
+          `  "branch": "feature/branch-name",`,
+          `  "commit": "abc1234...",`,
+          `  "review_url": "https://github.com/<owner>/<repo>/tree/feature/branch-name",`,
+          `  "notes": "Optional reviewer notes"`,
+          `}`,
+        ];
   const sections: string[] = [
     buildPreamble(ctx),
     '',
@@ -321,18 +400,11 @@ function buildProxyManagedTransport(
     `At the end of your response, include a fenced code block tagged \`atlas_lifecycle\`:`,
     '',
     '```atlas_lifecycle',
-    `{`,
-    `  "outcome": "${workflow.suggestedOutcome}",`,
-    `  "summary": "One sentence describing what was done",`,
-    `  "branch": "feature/branch-name",`,
-    `  "commit": "abc1234...",`,
-    `  "review_url": "https://github.com/<owner>/<repo>/tree/feature/branch-name",`,
-    `  "notes": "Optional reviewer notes"`,
-    `}`,
+    ...lifecycleExample,
     '```',
     '',
-    `## Valid outcomes: ${workflow.validOutcomes.join(', ')}`,
-    ...workflow.outcomeHelp.map(h => `- \`${h.outcome}\` — ${h.description}`),
+    `## Valid outcomes: ${promptOutcomes.join(', ')}`,
+    ...promptOutcomeHelp.map(h => `- \`${h.outcome}\` — ${h.description}`),
   ];
 
   // Evidence fields reference
@@ -353,11 +425,16 @@ function buildProxyManagedTransport(
     `- \`branch\` (required for \`completed_for_review\`): git branch name for review`,
     `- \`commit\` (required for \`completed_for_review\`): git commit SHA`,
     `- \`review_url\` (required for \`completed_for_review\`): non-production review artifact URL, such as a PR URL or branch URL on GitHub`,
+    `- \`qa_verified_commit\` (required for \`qa_pass\`): exact commit SHA verified by QA`,
+    `- \`qa_tested_url\` (required for \`qa_pass\`): non-production URL or artifact tested by QA`,
+    `- \`merged_commit\`, \`deployed_commit\`, \`deploy_target\`, \`deployed_at\` (required for \`deployed_live\`): deployment evidence`,
+    `- \`live_verified_by\`, \`live_verified_at\` (required for \`live_verified\`): who verified production and when`,
     `- \`blocker_reason\` (optional): specific reason for blocker outcome`,
     `- \`notes\` (optional): additional context for the reviewer`,
     '',
     `Implementation lane: do not claim completed_for_review without branch, commit, and review_url recorded first.`,
-    `Release lane: deployed_live is not terminal; tasks in deployed still require truthful live verification and then live_verified to reach done.`,
+    `Release lane: deployed_live is not terminal. In a one-pass release, complete deploy first, then live verification, then live_verified.`,
+    `Release lane: do not post live_verified before deployed_live succeeds and the task is in deployed.`,
     `If you cannot emit the lifecycle block, the runtime will default to \`blocked\`.`,
     '',
     PIPELINE_REFERENCE,
@@ -428,6 +505,7 @@ function tryBuildFromFileTemplate(
     if (!loadedTemplate) return null;
 
     const evidence = getEvidenceRequirements(workflow.lane);
+    const promptOutcomeHelp = getPromptOutcomeHelp(workflow);
 
     return renderTemplate(loadedTemplate, {
       baseUrl,
@@ -437,8 +515,8 @@ function tryBuildFromFileTemplate(
       agentSlug: ctx.agentSlug,
       sprintType: normalizeSprintTypeForTemplate(ctx.sprintType),
       suggestedOutcome: workflow.suggestedOutcome,
-      validOutcomes: workflow.validOutcomes.join(', '),
-      outcomeHelp: workflow.outcomeHelp.map(h => `  ${h.outcome} — ${h.description}`).join('\n'),
+      validOutcomes: promptOutcomeHelp.map(h => h.outcome).join(', '),
+      outcomeHelp: promptOutcomeHelp.map(h => `  ${h.outcome} — ${h.description}`).join('\n'),
       taskStatus: ctx.taskStatus,
       lane: workflow.lane,
       workflowTemplateKey: workflow.workflowTemplateKey ?? '',
@@ -472,7 +550,7 @@ export const CONTRACT_PLACEHOLDER_DEFINITIONS: ContractPlaceholderDefinition[] =
   { key: 'lane', description: 'Resolved workflow lane for the current run, like implementation, QA, release, or PM/approval.' },
   { key: 'workflowTemplateKey', description: 'Optional workflow template key that identifies the selected routing workflow variant when one is set.' },
   { key: 'suggestedOutcome', description: 'Recommended semantic outcome for the current lane when the happy path succeeds.' },
-  { key: 'validOutcomes', description: 'Comma-separated list of outcomes the current lane is allowed to post.' },
+  { key: 'validOutcomes', description: 'Comma-separated list of outcomes the current lane should consider. Release prompts may include the sequential live_verified handoff after deployed_live.' },
   { key: 'outcomeHelp', description: 'Multi-line outcome dictionary explaining what each valid outcome means in this lane.' },
   { key: 'taskStatus', description: 'Current task status at dispatch time, useful when the contract needs to reference the exact pipeline state.' },
   { key: 'pipelineReference', description: 'Readable summary of the pipeline and status progression used for lifecycle guidance.' },

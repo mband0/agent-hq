@@ -70,7 +70,8 @@ Send check-ins during meaningful progress so the run does not look dead:
 - before/after major verification steps
 
 ### Final outcome
-Post exactly one truthful lifecycle outcome for the lane you are currently in.
+Post truthful lifecycle outcomes for the lane you are currently in.
+Most lanes have one final outcome; release lanes can require `deployed_live` followed by `live_verified` in the same run.
 
 Do not guess the right outcome from habit. Use the current task status, lane, valid outcomes, and outcome help above.
 
@@ -129,6 +130,17 @@ Do not pass work that you could not actually verify.
 
 If the artifact, branch, commit, environment, or evidence is not testable, post the truthful blocked/fail path instead of guessing.
 
+### Example QA evidence command
+```bash
+curl -s -X PUT {{baseUrl}}/api/v1/tasks/{{taskId}}/qa-evidence \
+  -H "Content-Type: application/json" \
+  -d '{
+    "qa_verified_commit":"<sha>",
+    "qa_tested_url":"<tested-url>",
+    "notes":"<optional QA notes>"
+  }'
+```
+
 ### Example QA outcome command
 ```bash
 curl -s -X POST {{baseUrl}}/api/v1/tasks/{{taskId}}/outcome \
@@ -157,6 +169,13 @@ If the task is in `deployed`, it still requires truthful live verification befor
 - merge/deploy step → usually `deployed_live`
 - live verification step → `live_verified`
 
+One-pass release happy path:
+1. record deploy evidence
+2. post `deployed_live`
+3. record live verification evidence
+4. post `live_verified`
+
+Do not post `live_verified` before `deployed_live` succeeds and the task is in `deployed`.
 Do not stop after deployment alone if live verification is still required.
 
 If live verification cannot be completed truthfully, post `blocked` or `failed` with the exact reason.
@@ -170,6 +189,17 @@ curl -s -X PUT {{baseUrl}}/api/v1/tasks/{{taskId}}/deploy-evidence \
     "deployed_commit":"<sha>",
     "deploy_target":"production",
     "deployed_at":"<ISO timestamp>"
+  }'
+```
+
+### Example live verification evidence command
+```bash
+curl -s -X PUT {{baseUrl}}/api/v1/tasks/{{taskId}}/live-verification \
+  -H "Content-Type: application/json" \
+  -d '{
+    "live_verified_by":"{{agentSlug}}",
+    "live_verified_at":"<ISO timestamp>",
+    "summary":"<what was verified live>"
   }'
 ```
 
@@ -193,7 +223,9 @@ curl -s -X POST {{baseUrl}}/api/v1/tasks/{{taskId}}/outcome \
     "outcome":"live_verified",
     "summary":"<truthful live verification summary>",
     "changed_by":"{{agentSlug}}",
-    "instance_id":{{instanceId}}
+    "instance_id":{{instanceId}},
+    "live_verified_by":"{{agentSlug}}",
+    "live_verified_at":"<ISO timestamp>"
   }'
 ```
 

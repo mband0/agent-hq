@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import { getDb } from '../db/client';
 import { initSchema } from '../db/schema';
-import { runPostStreamLifecycle } from './lifecycleProxy';
+import { proxyOutcome, runPostStreamLifecycle } from './lifecycleProxy';
 
 jest.mock('../lib/agentHqBaseUrl', () => ({
   getAgentHqBaseUrl: () => 'http://localhost:9',
@@ -88,5 +88,35 @@ describe('lifecycleProxy configured outcome vocabulary', () => {
     const outcomeCall = fetchMock.mock.calls.find((call) => String(call[0]).includes('/api/v1/tasks/389/outcome'));
     expect(outcomeCall).toBeTruthy();
     expect(JSON.parse(String((outcomeCall?.[1] as RequestInit).body))).toMatchObject({ outcome: 'blocked_custom' });
+  });
+
+  it('forwards release evidence fields from structured lifecycle output', async () => {
+    const posted = await proxyOutcome(
+      {
+        instanceId: 1906,
+        taskId: 389,
+        sessionKey: 'hook:atlas:jobrun:1906',
+        changedBy: 'release-agent',
+      },
+      'live_verified',
+      'Production verified.',
+      null,
+      undefined,
+      {
+        deployed_commit: '6d614b3b104ae36d1dd75210b9f9fb0342673329',
+        live_verified_by: 'release-agent',
+        live_verified_at: '2026-05-01T23:46:35Z',
+      },
+    );
+
+    expect(posted).toBe(true);
+    const outcomeCall = fetchMock.mock.calls.find((call) => String(call[0]).includes('/api/v1/tasks/389/outcome'));
+    expect(outcomeCall).toBeTruthy();
+    expect(JSON.parse(String((outcomeCall?.[1] as RequestInit).body))).toMatchObject({
+      outcome: 'live_verified',
+      deployed_commit: '6d614b3b104ae36d1dd75210b9f9fb0342673329',
+      live_verified_by: 'release-agent',
+      live_verified_at: '2026-05-01T23:46:35Z',
+    });
   });
 });
