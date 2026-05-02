@@ -1,6 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import Database from 'better-sqlite3';
 
 
 let buildContractInstructions: typeof import('./transportAdapters').buildContractInstructions;
@@ -11,6 +12,7 @@ const originalPath = process.env.AGENT_CONTRACT_PATH;
 const originalCwd = process.cwd();
 let tempDir: string;
 let extraTempDirs: string[] = [];
+let extraDbs: Database.Database[] = [];
 
 function loadTransportAdapters() {
   let loaded: typeof import('./transportAdapters');
@@ -55,7 +57,29 @@ afterEach(() => {
   if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
   for (const dir of extraTempDirs) fs.rmSync(dir, { recursive: true, force: true });
   extraTempDirs = [];
+  for (const db of extraDbs) db.close();
+  extraDbs = [];
 });
+
+function createGateDb(): Database.Database {
+  const db = new Database(':memory:');
+  db.exec(`
+    CREATE TABLE transition_requirements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_type TEXT,
+      outcome TEXT NOT NULL,
+      field_name TEXT NOT NULL,
+      requirement_type TEXT NOT NULL,
+      match_field TEXT,
+      severity TEXT NOT NULL DEFAULT 'block',
+      message TEXT,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      priority INTEGER NOT NULL DEFAULT 0
+    );
+  `);
+  extraDbs.push(db);
+  return db;
+}
 
 function buildContext(overrides: Partial<TransportContext> = {}): TransportContext {
   return {
@@ -128,17 +152,18 @@ describe('transportAdapters sprint-type contract templates', () => {
     expect(contract).not.toContain('## Atlas HQ enhancement contract for this dispatched instance');
   });
 
-  it('renders live_verified in the initial ready_to_merge release prompt', () => {
+  it('does not inject later release outcomes that are not valid from the current route', () => {
     const contract = buildContractInstructions(buildContext({
       sprintType: 'generic',
       taskStatus: 'ready_to_merge',
       transportMode: 'remote-direct',
     }));
 
-    expect(contract).toContain('Use ONE of these outcomes: deployed_live, live_verified');
+    expect(contract).toContain('Use ONE of these outcomes: deployed_live, blocked, failed');
+    expect(contract).not.toContain('Use ONE of these outcomes: deployed_live, live_verified');
   });
 
-  it('uses canonical QA evidence field names in generated transport guidance', () => {
+  it('does not infer QA evidence fields in generated transport guidance without gate rows', () => {
     reloadWithoutFileTemplates();
     const contract = buildContractInstructions(buildContext({
       taskStatus: 'review',
@@ -146,13 +171,33 @@ describe('transportAdapters sprint-type contract templates', () => {
       sprintType: 'generic',
     }));
 
-    expect(contract).toContain('"qa_verified_commit":"<sha>"');
-    expect(contract).toContain('"qa_tested_url":"<tested-url>"');
+    expect(contract).not.toContain('"qa_verified_commit":"<sha>"');
+    expect(contract).not.toContain('"qa_tested_url":"<tested-url>"');
     expect(contract).not.toMatch(/"verified_commit"\s*:/);
     expect(contract).not.toMatch(/"qa_url"\s*:/);
   });
 
-  it('spells out one-pass release verification fields in generated transport guidance', () => {
+  it('renders configured gate fields in generated transport guidance', () => {
+    reloadWithoutFileTemplates();
+    const db = createGateDb();
+    db.prepare(`
+      INSERT INTO transition_requirements (outcome, field_name, requirement_type, severity, message)
+      VALUES ('qa_pass', 'qa_verified_commit', 'required', 'block', 'qa_pass requires qa_verified_commit')
+    `).run();
+
+    const contract = buildContractInstructions(buildContext({
+      taskStatus: 'review',
+      transportMode: 'local',
+      sprintType: 'generic',
+      db,
+    }));
+
+    expect(contract).toContain('Configured gate fields for qa_pass');
+    expect(contract).toContain('qa_verified_commit');
+    expect(contract).toContain('"qa_verified_commit":"<sha>"');
+  });
+
+  it('spells out config-driven release guidance in generated transport output', () => {
     reloadWithoutFileTemplates();
     const contract = buildContractInstructions(buildContext({
       taskStatus: 'ready_to_merge',
@@ -160,11 +205,10 @@ describe('transportAdapters sprint-type contract templates', () => {
       sprintType: 'generic',
     }));
 
-    expect(contract).toContain('Use ONE of these outcomes: deployed_live, live_verified');
-    expect(contract).toContain('record deploy evidence, post deployed_live, record live verification, then post live_verified');
-    expect(contract).toContain('Do not post live_verified before deployed_live');
-    expect(contract).toContain('"live_verified_by":"cinder-backend"');
-    expect(contract).toContain('"live_verified_at":"<ISO timestamp>"');
+    expect(contract).toContain('Use ONE of these outcomes: deployed_live, blocked, failed');
+    expect(contract).toContain('Required evidence for each release outcome comes from configured gate requirements');
+    expect(contract).not.toContain('record deploy evidence, post deployed_live, record live verification, then post live_verified');
+    expect(contract).not.toContain('live_verified requires live_verified_by');
   });
 
   it('ships the real enhancement template with lane expectations and evidence guidance', () => {
@@ -195,11 +239,14 @@ describe('transportAdapters sprint-type contract templates', () => {
 
     expect(repoTemplate).toContain('"qa_verified_commit":"<sha>"');
     expect(repoTemplate).toContain('"qa_tested_url":"<tested-url>"');
+    expect(repoTemplate).toContain('"review_branch":"<feature-branch>"');
+    expect(repoTemplate).toContain('"review_commit":"<sha>"');
     expect(repoTemplate).toContain('"live_verified_by":"{{agentSlug}}"');
     expect(repoTemplate).toContain('"live_verified_at":"<ISO timestamp>"');
     expect(repoTemplate).toContain('Always use `{{baseUrl}}` for lifecycle writes');
     expect(repoTemplate).toContain('Do not substitute the application API you are testing');
     expect(repoTemplate).not.toMatch(/"verified_commit"\s*:/);
     expect(repoTemplate).not.toMatch(/"qa_url"\s*:/);
+    expect(repoTemplate).not.toMatch(/"branch"\s*:\s*"<feature-branch>"/);
   });
 });

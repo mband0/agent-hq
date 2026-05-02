@@ -1186,9 +1186,15 @@ router.post('/:id/outcome', async (req: Request, res: Response) => {
     const db = getDb();
     const id = Number(req.params.id);
     const existing = db.prepare(
-      'SELECT id, task_type, review_branch, review_commit, review_url, qa_verified_commit, qa_tested_url FROM tasks WHERE id = ?',
+      `SELECT id, status, task_type, sprint_id,
+              review_branch, review_commit, review_url,
+              qa_verified_commit, qa_tested_url,
+              merged_commit, deployed_commit, deploy_target, deployed_at,
+              live_verified_by, live_verified_at
+       FROM tasks WHERE id = ?`,
     ).get(id) as {
       id: number;
+      status: string;
       task_type: string | null;
       sprint_id: number | null;
       review_branch: string | null;
@@ -1196,6 +1202,12 @@ router.post('/:id/outcome', async (req: Request, res: Response) => {
       review_url: string | null;
       qa_verified_commit: string | null;
       qa_tested_url: string | null;
+      merged_commit: string | null;
+      deployed_commit: string | null;
+      deploy_target: string | null;
+      deployed_at: string | null;
+      live_verified_by: string | null;
+      live_verified_at: string | null;
     } | undefined;
     if (!existing) return res.status(404).json({ error: 'Task not found' });
 
@@ -1226,11 +1238,18 @@ router.post('/:id/outcome', async (req: Request, res: Response) => {
       }));
 
     const evidenceValidation = validateInlineEvidenceForOutcome(outcome, inlineEvidence, {
+      status: existing.status,
       review_branch: existing.review_branch,
       review_commit: existing.review_commit,
       review_url: existing.review_url,
       qa_verified_commit: existing.qa_verified_commit,
       qa_tested_url: existing.qa_tested_url,
+      merged_commit: existing.merged_commit,
+      deployed_commit: existing.deployed_commit,
+      deploy_target: existing.deploy_target,
+      deployed_at: existing.deployed_at,
+      live_verified_by: existing.live_verified_by,
+      live_verified_at: existing.live_verified_at,
     }, transitionRequirements);
 
     const rawInstanceId = instance_id ?? instanceId;

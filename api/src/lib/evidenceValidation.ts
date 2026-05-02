@@ -193,7 +193,7 @@ export function validateDeployEvidence(ev: DeployEvidence): ValidationResult {
   return { valid: errors.length === 0, errors };
 }
 
-// ── Outcome-specific inline evidence validation ──────────────────────────────
+// ── Config-driven inline evidence validation ─────────────────────────────────
 
 /**
  * Validate inline evidence for a given outcome. Returns errors if the evidence
@@ -206,115 +206,92 @@ export function validateDeployEvidence(ev: DeployEvidence): ValidationResult {
 export function validateInlineEvidenceForOutcome(
   outcome: string,
   evidence: InlineEvidence,
-  taskRecord: {
-    review_branch?: string | null;
-    review_commit?: string | null;
-    review_url?: string | null;
-    qa_verified_commit?: string | null;
-    qa_tested_url?: string | null;
-  },
+  taskRecord: Record<string, unknown>,
   requirements?: GateRequirement[],
 ): ValidationResult {
   const errors: string[] = [];
+  const effectiveRecord: Record<string, unknown> = { ...taskRecord };
+  for (const [field, value] of Object.entries(evidence)) {
+    if (value !== undefined) effectiveRecord[field] = value;
+  }
+
   const blockingRequirements = (requirements ?? []).filter((requirement) => requirement.severity !== 'warn');
-  const requiresField = (fieldName: string) => blockingRequirements.some((requirement) => requirement.field_name === fieldName && requirement.requirement_type === 'required');
-  const requiresFromStatus = blockingRequirements.some((requirement) => requirement.requirement_type === 'from_status');
-  const requiresMatch = (fieldName: string, matchField: string) => blockingRequirements.some((requirement) => requirement.field_name === fieldName && requirement.requirement_type === 'match' && requirement.match_field === matchField);
+  const fieldsToValidate = new Set<string>();
 
-  if (outcome === 'completed_for_review' && requiresField('review_branch')) {
-    // Merge incoming evidence with existing task record
-    const effectiveBranch = evidence.review_branch ?? taskRecord.review_branch;
-    const effectiveCommit = evidence.review_commit ?? taskRecord.review_commit;
-    const effectiveUrl = evidence.review_url ?? taskRecord.review_url;
+  for (const requirement of blockingRequirements) {
+    const fields = parseFieldExpression(requirement.field_name);
+    for (const field of fields) fieldsToValidate.add(field);
+    if (requirement.match_field) fieldsToValidate.add(requirement.match_field);
 
-    if (!isNonEmpty(effectiveBranch)) {
-      errors.push('completed_for_review requires review_branch (provide inline or record beforehand)');
-    }
-    if (requiresField('review_commit') && !isNonEmpty(effectiveCommit)) {
-      errors.push('completed_for_review requires review_commit (provide inline or record beforehand)');
-    }
-    if (requiresField('review_branch') && isPlaceholderValue(effectiveBranch)) {
-      errors.push('completed_for_review requires review_branch, blank placeholder values are not allowed');
-    } else if (isMainlineBranch(effectiveBranch)) {
-      errors.push('completed_for_review requires review_branch to be a feature branch, not main/master');
-    }
-    if (requiresField('review_commit') && isPlaceholderValue(effectiveCommit)) {
-      errors.push('completed_for_review requires review_commit, blank placeholder values are not allowed');
-    }
-    if (requiresField('review_url') && isPlaceholderValue(effectiveUrl)) {
-      errors.push('completed_for_review requires review_url, blank placeholder values are not allowed');
-    } else if (!isValidUrl(effectiveUrl)) {
-      errors.push('completed_for_review requires valid review_url');
-    } else if (isProductionLikeUrl(effectiveUrl)) {
-      errors.push('completed_for_review requires review_url to reference a non-production review artifact');
+    let failed = false;
+    if (requirement.requirement_type === 'required') {
+      failed = fields.every(field => !isNonEmpty(effectiveRecord[field]));
+    } else if (requirement.requirement_type === 'match') {
+      const fieldValue = effectiveRecord[requirement.field_name];
+      const matchValue = requirement.match_field ? effectiveRecord[requirement.match_field] : null;
+      failed = !isNonEmpty(fieldValue) || !isNonEmpty(matchValue) || fieldValue.trim() !== matchValue.trim();
+    } else if (requirement.requirement_type === 'from_status') {
+      failed = !requirement.match_field || effectiveRecord[requirement.field_name] !== requirement.match_field;
     }
 
-    // Validate formats on inline-provided fields
-    if (isNonEmpty(evidence.review_commit) && !isValidSha(evidence.review_commit)) {
-      errors.push(`review_commit must be a valid git SHA (7-40 hex chars), got: "${evidence.review_commit}"`);
+    if (failed) {
+      errors.push(requirement.message || `${outcome} requires ${formatFieldExpression(requirement.field_name)}`);
     }
   }
 
-  if (outcome === 'qa_pass' || requiresFromStatus || requiresField('qa_verified_commit') || requiresField('qa_tested_url')) {
-    const effectiveQaCommit = evidence.qa_verified_commit ?? taskRecord.qa_verified_commit;
-    const effectiveReviewCommit = evidence.review_commit ?? taskRecord.review_commit;
-    const effectiveQaUrl = evidence.qa_tested_url ?? taskRecord.qa_tested_url;
-
-    if (requiresField('qa_verified_commit') && !isNonEmpty(effectiveQaCommit)) {
-      errors.push('qa_pass requires qa_verified_commit (provide inline or record beforehand)');
-    }
-    if (requiresField('qa_verified_commit') && isPlaceholderValue(effectiveQaCommit)) {
-      errors.push('qa_pass requires qa_verified_commit, blank placeholder values are not allowed');
-    }
-    if (requiresField('qa_tested_url') && isPlaceholderValue(effectiveQaUrl)) {
-      errors.push('qa_pass requires qa_tested_url, blank placeholder values are not allowed');
-    } else if (!isValidUrl(effectiveQaUrl)) {
-      errors.push('qa_pass requires valid qa_tested_url');
-    } else if (isProductionLikeUrl(effectiveQaUrl)) {
-      errors.push('qa_pass requires qa_tested_url to reference a non-production QA artifact');
-    }
-
-    if (isNonEmpty(evidence.qa_verified_commit) && !isValidSha(evidence.qa_verified_commit)) {
-      errors.push(`qa_verified_commit must be a valid git SHA (7-40 hex chars), got: "${evidence.qa_verified_commit}"`);
-    }
-
-    // Coherence check: qa commit must match review commit
-    if (requiresMatch('qa_verified_commit', 'review_commit') && isNonEmpty(effectiveQaCommit) && isNonEmpty(effectiveReviewCommit)) {
-      if (effectiveQaCommit!.trim() !== effectiveReviewCommit!.trim()) {
-        errors.push(
-          `qa_verified_commit ("${effectiveQaCommit}") does not match review_commit ("${effectiveReviewCommit}"). ` +
-          `QA must verify the same commit that was reviewed.`
-        );
-      }
-    }
+  for (const [field, value] of Object.entries(evidence)) {
+    if (isNonEmpty(value)) fieldsToValidate.add(field);
   }
 
-  if (outcome === 'deployed_live') {
-    const effectiveMerged = evidence.merged_commit;
-    const effectiveDeployed = evidence.deployed_commit;
-    const effectiveTarget = evidence.deploy_target;
-    const effectiveTimestamp = evidence.deployed_at;
-
-    // These are typically not pre-recorded, so they should be inline
-    if (!isNonEmpty(effectiveMerged) && !isNonEmpty(effectiveDeployed)) {
-      errors.push('deployed_live requires at least merged_commit or deployed_commit');
-    }
-
-    if (isNonEmpty(effectiveMerged) && !isValidSha(effectiveMerged)) {
-      errors.push(`merged_commit must be a valid git SHA, got: "${effectiveMerged}"`);
-    }
-    if (isNonEmpty(effectiveDeployed) && !isValidSha(effectiveDeployed)) {
-      errors.push(`deployed_commit must be a valid git SHA, got: "${effectiveDeployed}"`);
-    }
-  }
-
-  if (outcome === 'live_verified') {
-    if (!isNonEmpty(evidence.live_verified_by)) {
-      errors.push('live_verified requires live_verified_by');
-    }
+  for (const field of fieldsToValidate) {
+    validateEvidenceField(field, effectiveRecord[field], errors);
   }
 
   return { valid: errors.length === 0, errors };
+}
+
+function parseFieldExpression(fieldName: string): string[] {
+  return fieldName
+    .split('|')
+    .map(field => field.trim())
+    .filter(Boolean);
+}
+
+function formatFieldExpression(fieldName: string): string {
+  return parseFieldExpression(fieldName).join(' or ') || fieldName;
+}
+
+function validateEvidenceField(fieldName: string, value: unknown, errors: string[]): void {
+  if (!isNonEmpty(value)) return;
+
+  if (isPlaceholderValue(value)) {
+    errors.push(`${fieldName} cannot be a blank placeholder value`);
+    return;
+  }
+
+  if (fieldName === 'review_branch' && isMainlineBranch(value)) {
+    errors.push('review_branch must be a feature branch, not main/master');
+    return;
+  }
+
+  if (fieldName.endsWith('_commit') && !isValidSha(value)) {
+    errors.push(`${fieldName} must be a valid git SHA (7-40 hex chars), got: "${value}"`);
+    return;
+  }
+
+  if (fieldName.endsWith('_url') && !isValidUrl(value)) {
+    errors.push(`${fieldName} must be a valid URL`);
+    return;
+  }
+
+  if ((fieldName === 'review_url' || fieldName === 'qa_tested_url') && isProductionLikeUrl(value)) {
+    errors.push(`${fieldName} must reference a non-production artifact`);
+    return;
+  }
+
+  if (fieldName.endsWith('_at') && !isValidIsoTimestamp(value)) {
+    errors.push(`${fieldName} must be a valid ISO timestamp, got: "${value}"`);
+  }
 }
 
 /**

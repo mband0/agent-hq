@@ -35,7 +35,7 @@ Do not substitute the application API you are testing for the lifecycle callback
 
 Do not post an outcome that overstates what is true.
 
-If work is implemented but not truly ready for review, do not claim `completed_for_review`.
+If work is implemented but not truly ready for the configured handoff outcome, do not claim that outcome.
 
 If deployment happened but has not been truthfully verified live, do not act as if the task is done.
 
@@ -56,12 +56,14 @@ If evidence is incomplete, or verification is incomplete, stop and post the trut
 
 ---
 
-## Evidence requirements for this lane
+## Configured evidence guidance for this workflow
 
 {{evidenceDescription}}
 
-### Evidence fields
+### Configured evidence gate fields
 {{evidenceFieldsBulleted}}
+
+These fields come from workflow gate requirement rows. Do not infer additional required fields from the lane name or from the examples below.
 
 ---
 
@@ -79,7 +81,7 @@ Send check-ins during meaningful progress so the run does not look dead:
 
 ### Final outcome
 Post truthful lifecycle outcomes for the lane you are currently in.
-Most lanes have one final outcome; release lanes can require `deployed_live` followed by `live_verified` in the same run.
+Most lanes have one final outcome; release lanes can require multiple configured outcomes in the same run.
 
 Do not guess the right outcome from habit. Use the current task status, lane, valid outcomes, and outcome help above.
 
@@ -91,11 +93,11 @@ Do not guess the right outcome from habit. Use the current task status, lane, va
 Use this when `{{lane}}` is an implementation/build lane.
 
 ### Critical implementation rule
-If the intended outcome is `completed_for_review`, you must first record truthful review evidence.
+If the configured gate fields for the intended outcome require review evidence, record truthful review evidence before posting that outcome.
 
-Do not claim `completed_for_review` unless review evidence is actually recorded and truthful.
+Do not claim a review handoff unless the configured evidence is actually recorded and truthful.
 
-If you cannot truthfully provide the required review evidence, do **not** post `completed_for_review`.
+If you cannot truthfully provide evidence required by the configured gate rows, do **not** post the advancement outcome.
 
 Post `blocked` or `failed` instead with a short explanation of what is missing.
 
@@ -104,10 +106,10 @@ Post `blocked` or `failed` instead with a short explanation of what is missing.
 curl -s -X PUT {{baseUrl}}/api/v1/tasks/{{taskId}}/review-evidence \
   -H "Content-Type: application/json" \
   -d '{
-    "branch":"<feature-branch>",
-    "commit":"<sha>",
+    "review_branch":"<feature-branch>",
+    "review_commit":"<sha>",
     "review_url":"<non-production-review-url>",
-    "notes":"<optional review handoff notes>"
+    "summary":"<optional review handoff notes>"
   }'
 ```
 
@@ -125,8 +127,8 @@ curl -s -X POST {{baseUrl}}/api/v1/tasks/{{taskId}}/outcome \
 
 ### Canonical implementation sequence
 1. finish the implementation
-2. record review evidence
-3. then post `completed_for_review`
+2. record any evidence required by the configured gate fields
+3. then post a valid configured outcome
 
 ---
 
@@ -167,24 +169,23 @@ curl -s -X POST {{baseUrl}}/api/v1/tasks/{{taskId}}/outcome \
 Use this when `{{lane}}` is a release/deployment lane.
 
 ### Critical release rule
-`deployed_live` is not terminal.
+Release outcomes and terminal behavior are defined by the configured workflow routes.
 
-If deployment succeeds, that usually means the task moves to `deployed`, not `done`.
+If a configured deployment outcome moves the task into a follow-up verification state, do not treat deployment alone as done.
 
-If the task is in `deployed`, it still requires truthful live verification before it should move to `done`.
+If the task is already in a verification state, use the valid configured outcome for that current status.
 
 ### Expected release sequence
-- merge/deploy step → usually `deployed_live`
-- live verification step → `live_verified`
+Follow the configured outcome order for the task's current status.
 
-One-pass release happy path:
-1. record deploy evidence
-2. post `deployed_live`
-3. record live verification evidence
-4. post `live_verified`
+When multiple release outcomes are valid over the course of a run:
+1. record evidence required by the configured gate fields for the current outcome
+2. post the valid configured outcome
+3. re-check the task status
+4. repeat only if the next configured route is valid and truthfully complete
 
-Do not post `live_verified` before `deployed_live` succeeds and the task is in `deployed`.
-Do not stop after deployment alone if live verification is still required.
+Do not post a later release outcome before the prior configured route succeeds.
+Do not stop after deployment alone if a configured live-verification route still requires follow-up.
 
 If live verification cannot be completed truthfully, post `blocked` or `failed` with the exact reason.
 
@@ -243,7 +244,7 @@ curl -s -X POST {{baseUrl}}/api/v1/tasks/{{taskId}}/outcome \
 Use this when `{{lane}}` is a PM or approval-oriented lane rather than implementation or QA.
 
 ### Critical PM rule
-Move the task forward truthfully based on product/approval judgment, not fake implementation or fake QA.
+Move the task forward truthfully based on product/approval judgment and configured gate rows, not fake implementation or fake QA.
 
 ---
 
@@ -301,17 +302,17 @@ Only post the outcome that is fully supported by:
 ## Summary by lane
 
 ### Implementation
-- review evidence first
-- then `completed_for_review`
+- record configured evidence first
+- then post a valid configured outcome
 
 ### Review / QA
 - pass only what you actually verified
 - otherwise fail/block truthfully
 
 ### Release
-- deployment step → usually `deployed_live`
-- live verification step → `live_verified`
-- do not treat `deployed_live` as done
+- follow configured release routes
+- record configured evidence before each outcome
+- do not treat an intermediate release outcome as done unless the configured route makes it terminal
 
 ---
 
@@ -320,10 +321,8 @@ Only post the outcome that is fully supported by:
 Narrating the handoff is not the same as performing the handoff.
 
 If you have enough information to provide:
-- branch
-- commit
-- review URL
-- truthful outcome
+- any evidence required by configured gate rows
+- a truthful valid outcome
 
 then you must perform the required Agent HQ evidence/outcome writes before ending the run.
 

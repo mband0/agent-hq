@@ -105,6 +105,12 @@ function isHttpUrl(value: unknown): boolean {
   return Boolean(normalized && (normalized.startsWith('http://') || normalized.startsWith('https://')));
 }
 
+function isValidIsoTimestamp(value: unknown): boolean {
+  const normalized = normalizedString(value);
+  if (!normalized) return false;
+  return !Number.isNaN(new Date(normalized).getTime());
+}
+
 type TransitionRequirementRow = {
   field_name: string;
   requirement_type: string;
@@ -160,7 +166,7 @@ function statusRequiresQaEvidence(
   try {
     const outcome = status === 'qa_pass' ? 'qa_pass' : 'approved_for_merge';
     const reqs = loadTransitionRequirements(db, outcome, task.sprint_id ?? null, task.task_type);
-    return reqs.some(req => req.severity !== 'warn' && req.field_name === 'qa_verified_commit');
+    return reqs.some(req => req.severity !== 'warn' && parseFieldExpression(req.field_name).includes('qa_verified_commit'));
   } catch {
     return false;
   }
@@ -282,27 +288,28 @@ export function requireReleaseGate(
 
   const taskRecord = task as unknown as Record<string, unknown>;
   const result: ReleaseGateResult = { errors: [], warnings: [] };
+  const fieldsToValidate = new Set<string>();
 
   for (const req of reqs) {
-    const fieldValue = taskRecord[req.field_name];
+    const fields = parseFieldExpression(req.field_name);
+    if (req.severity !== 'warn') {
+      for (const field of fields) fieldsToValidate.add(field);
+      if (req.match_field) fieldsToValidate.add(req.match_field);
+    }
 
     let failed = false;
     if (req.requirement_type === 'required') {
-      // For deployed_live: merged_commit OR deployed_commit satisfies
-      if (outcome === 'deployed_live' && req.field_name === 'merged_commit') {
-        failed = !taskRecord['merged_commit'] && !taskRecord['deployed_commit'];
-      } else {
-        failed = !fieldValue;
-      }
+      failed = fields.every(field => !normalizedString(taskRecord[field]));
     } else if (req.requirement_type === 'match') {
-      const matchValue = req.match_field ? taskRecord[req.match_field] : null;
+      const fieldValue = normalizedString(taskRecord[req.field_name]);
+      const matchValue = req.match_field ? normalizedString(taskRecord[req.match_field]) : null;
       failed = !fieldValue || !matchValue || fieldValue !== matchValue;
     } else if (req.requirement_type === 'from_status') {
       failed = task.status !== req.match_field;
     }
 
     if (failed) {
-      const msg = req.message || `${outcome} requires ${req.field_name}`;
+      const msg = req.message || `${outcome} requires ${formatFieldExpression(req.field_name)}`;
       if (req.severity === 'warn') {
         result.warnings.push(msg);
       } else {
@@ -311,52 +318,56 @@ export function requireReleaseGate(
     }
   }
 
-  if (outcome === 'completed_for_review') {
-    if (isPlaceholderValue(task.review_branch)) {
-      result.errors.push('completed_for_review requires review_branch, blank placeholder values are not allowed');
-    } else if (isMainlineBranch(task.review_branch)) {
-      result.errors.push('completed_for_review requires review_branch to be a feature branch, not main/master');
-    }
-
-    if (isPlaceholderValue(task.review_commit)) {
-      result.errors.push('completed_for_review requires review_commit, blank placeholder values are not allowed');
-    } else if (normalizedString(task.review_commit) && !isValidSha(task.review_commit)) {
-      result.errors.push('completed_for_review requires review_commit to be a valid git SHA');
-    }
-
-    if (isPlaceholderValue(task.review_url)) {
-      result.errors.push('completed_for_review requires review_url, blank placeholder values are not allowed');
-    } else if (!isHttpUrl(task.review_url)) {
-      result.errors.push('completed_for_review requires valid review_url');
-    } else if (isProductionLikeUrl(task.review_url)) {
-      result.errors.push('completed_for_review requires review_url to reference a non-production review artifact');
-    }
-  }
-
-  if (outcome === 'qa_pass') {
-    if (isPlaceholderValue(task.qa_verified_commit)) {
-      result.errors.push('qa_pass requires qa_verified_commit, blank placeholder values are not allowed');
-    } else if (normalizedString(task.qa_verified_commit) && !isValidSha(task.qa_verified_commit)) {
-      result.errors.push('qa_pass requires qa_verified_commit to be a valid git SHA');
-    }
-
-    if (isPlaceholderValue(task.qa_tested_url)) {
-      result.errors.push('qa_pass requires qa_tested_url, blank placeholder values are not allowed');
-    } else if (!isHttpUrl(task.qa_tested_url)) {
-      result.errors.push('qa_pass requires valid qa_tested_url');
-    } else if (isProductionLikeUrl(task.qa_tested_url)) {
-      result.errors.push('qa_pass requires qa_tested_url to reference a non-production QA artifact');
-    }
+  for (const field of fieldsToValidate) {
+    validateEvidenceField(field, taskRecord[field], result.errors);
   }
 
   return result;
 }
 
-/**
- * Legacy hardcoded release gate — fallback when transition_requirements
- * table has no matching rows for an outcome. Will be removed once all
- * requirements are confirmed migrated.
- */
+function parseFieldExpression(fieldName: string): string[] {
+  return fieldName
+    .split('|')
+    .map(field => field.trim())
+    .filter(Boolean);
+}
+
+function formatFieldExpression(fieldName: string): string {
+  return parseFieldExpression(fieldName).join(' or ') || fieldName;
+}
+
+function validateEvidenceField(fieldName: string, value: unknown, errors: string[]): void {
+  if (!normalizedString(value)) return;
+
+  if (isPlaceholderValue(value)) {
+    errors.push(`${fieldName} cannot be a blank placeholder value`);
+    return;
+  }
+
+  if (fieldName === 'review_branch' && isMainlineBranch(value as string)) {
+    errors.push('review_branch must be a feature branch, not main/master');
+    return;
+  }
+
+  if (fieldName.endsWith('_commit') && !isValidSha(value)) {
+    errors.push(`${fieldName} must be a valid git SHA`);
+    return;
+  }
+
+  if (fieldName.endsWith('_url') && !isHttpUrl(value)) {
+    errors.push(`${fieldName} must be a valid URL`);
+    return;
+  }
+
+  if ((fieldName === 'review_url' || fieldName === 'qa_tested_url') && isProductionLikeUrl(value as string)) {
+    errors.push(`${fieldName} must reference a non-production artifact`);
+    return;
+  }
+
+  if (fieldName.endsWith('_at') && !isValidIsoTimestamp(value)) {
+    errors.push(`${fieldName} must be a valid ISO timestamp`);
+  }
+}
 
 /**
  * Actors considered human/user-originated. These are allowed to change task
@@ -486,12 +497,6 @@ export function assertAtlasDirectStatusGate(
     throw new Error(gate.errors[0]);
   }
 }
-
-/**
- * Legacy hardcoded route map — used as final fallback when lifecycle_rules
- * table has no matching row. Will be removed once all transitions are
- * confirmed migrated.
- */
 
 /**
  * Resolve the next status for a given (from_status, outcome) pair.

@@ -38,13 +38,10 @@ curl -s -X POST {{baseUrl}}/api/v1/tasks/{{taskId}}/outcome \
 Valid outcomes:
 {{outcomeHelp}}
 
-⚠️ RELEASE LANE ONLY (Harbor / DevOps): The release leg requires TWO outcome calls — do not stop after the first.
-  Step A — after merge + deploy:
-    POST outcome with outcome=deployed_live  →  task moves to "deployed"
-    (deployed_live is NOT terminal — do NOT expect your session to end here)
-  Step B — after live verification against production (ports 3500/3501):
-    POST outcome with outcome=live_verified  →  task moves to "done" and your session ends
-  Never call PUT /instances/:id/complete manually. Always post Step B (live_verified) last.
+⚠️ RELEASE LANE ONLY (Harbor / DevOps): Release workflow steps are configured by routing and gate rows.
+  Post only outcomes listed in this contract as valid for the current task state.
+  After a successful release outcome, re-check task status before posting another outcome.
+  Never call PUT /instances/:id/complete manually. Post the configured terminal outcome only when it is truthfully complete.
 
 ℹ️ NOTE: PUT /instances/:id/complete still exists for backward compatibility but is no longer required. Posting a terminal outcome handles everything.
 
@@ -60,16 +57,21 @@ For Atlas HQ internal tasks (UI changes):
 
 QA will test against http://localhost:3510 / http://localhost:3511. If your code is not running there, QA will fail.
 
-6. EVIDENCE RECORDING — after deploying to dev, record the appropriate evidence for your lane:
+6. EVIDENCE RECORDING — record the configured evidence for this workflow:
+{{evidenceDescription}}
+Configured evidence gate fields:
+{{evidenceFieldsBulleted}}
+Do not infer additional required fields from the lane name or from the examples below.
+
 For dev handoff (implementation lane):
 curl -s -X PUT {{baseUrl}}/api/v1/tasks/{{taskId}}/review-evidence \
   -H "Content-Type: application/json" \
-  -d '{"branch":"<branch-name>","commit":"<sha>","dev_url":"<dev-env-url>","notes":"<optional notes>"}'
+  -d '{"review_branch":"<branch-name>","review_commit":"<sha>","review_url":"<non-production-review-url>","summary":"<optional notes>"}'
 
 For QA pass (QA lane):
 curl -s -X PUT {{baseUrl}}/api/v1/tasks/{{taskId}}/qa-evidence \
   -H "Content-Type: application/json" \
-  -d '{"qa_url":"<tested-url>","verified_commit":"<sha>","notes":"<optional notes>"}'
+  -d '{"qa_verified_commit":"<sha>","qa_tested_url":"<tested-url>","notes":"<optional notes>"}'
 
 For release (Harbor lane):
 curl -s -X PUT {{baseUrl}}/api/v1/tasks/{{taskId}}/deploy-evidence \

@@ -19,6 +19,7 @@ import {
   type ResolvedSprintWorkflowTransition,
 } from '../../lib/sprintWorkflow';
 import { resolveSprintOutcomeMap, getLegacyOutcomeMeta } from '../../lib/sprintOutcomes';
+import { loadSprintTaskTransitionRequirements } from '../../lib/sprintTaskPolicy';
 
 
 // ── Workflow lane resolution ─────────────────────────────────────────────────
@@ -310,63 +311,175 @@ export const PIPELINE_REFERENCE = `Pipeline reference: ${PIPELINE_STAGES.join(' 
 // ── Deployment-stage notes ───────────────────────────────────────────────────
 
 /**
- * Some software-delivery workflows require TWO sequential outcomes
- * (deployed_live then live_verified). This is a workflow-level concern that
- * applies regardless of transport, but it is not universal across all Agent HQ
- * setups.
+ * Some software-delivery workflows require multiple sequential release outcomes.
+ * The concrete outcomes and evidence requirements come from workflow config.
  */
 export const RELEASE_LANE_NOTES = [
-  `DEPLOYMENT-STAGE WORKFLOW ONLY: This task can require TWO distinct handoff steps in the same authoritative run. Do not stop after deployment alone.`,
-  `  Step A — merge and deploy:`,
-  `    Post outcome deployed_live → task moves to "deployed"`,
-  `    deployed_live is NOT terminal and does NOT mean the task is done.`,
-  `  Step B — live verification against the real deployed target:`,
-  `    Post outcome live_verified → task moves to "done"`,
-  `    live_verified is the terminal completion step for deployment-stage work.`,
-  `One-pass happy path: record deploy evidence, post deployed_live, then record live verification and post live_verified before ending the run.`,
-  `Do not post live_verified before deployed_live has moved the task to deployed and deploy evidence has been recorded.`,
-  `live_verified requires live_verified_by and live_verified_at; deployed_commit must already be recorded from deploy evidence.`,
-  `If deployment succeeds but live verification is not yet complete, do NOT treat the task as finished.`,
-  `Truthful fallback: if deployment completed but live verification could not be completed in this run, post deployed_live and leave the task in deployed for follow-up verification.`,
+  `DEPLOYMENT-STAGE WORKFLOW ONLY: release work can have multiple configured handoff steps. Use the currently valid outcomes and configured gate rows; do not infer the next step from habit.`,
+  `Post only an outcome that is valid from the task's current status. After any successful release outcome, re-check the task status before posting another outcome.`,
+  `Required evidence for each release outcome comes from configured gate requirements. Do not treat a field as required just because it appears in an example.`,
+  `If deployment succeeds but the configured live-verification step is not yet complete, do NOT treat the task as finished.`,
+  `Truthful fallback: leave the task in the configured post-deploy state for follow-up verification when live verification cannot be completed in this run.`,
   `If live verification cannot be completed truthfully, post blocked or failed with the exact reason.`,
 ].join('\n');
 
 // ── Evidence requirements (shared semantics) ─────────────────────────────────
 
 export interface EvidenceRequirements {
-  /** Lane-specific evidence fields that should be recorded. */
+  /** Configured evidence field expressions that should be recorded. */
   fields: string[];
-  /** Human-readable description of what evidence is needed. */
+  /** Individual field names from configured expressions. Useful for structured examples. */
+  fieldNames: string[];
+  /** Human-readable description of the configured evidence gates. */
   description: string;
 }
 
 /**
- * getEvidenceRequirements — returns the evidence fields needed for a given lane.
- * Transport adapters use this to format the correct evidence instructions.
+ * getEvidenceRequirements is kept for older imports. New dispatch contracts
+ * should call resolveEvidenceRequirements so gate rows, not lane names, decide
+ * which fields are presented as required.
  */
-export function getEvidenceRequirements(lane: WorkflowLane): EvidenceRequirements {
-  switch (lane) {
-    case 'implementation':
-      return {
-        fields: ['branch', 'commit', 'review_url', 'notes'],
-        description: 'Record review evidence: feature branch name, commit SHA, and non-production review URL',
-      };
-    case 'review':
-      return {
-        fields: ['qa_verified_commit', 'qa_tested_url', 'notes'],
-        description: 'Record QA evidence: verified commit SHA and tested URL',
-      };
-    case 'release':
-      return {
-        fields: ['merged_commit', 'deployed_commit', 'deploy_target', 'deployed_at', 'live_verified_by', 'live_verified_at'],
-        description: 'Record deploy evidence and, when verified in the same run, live verification evidence',
-      };
-    case 'pm':
-      return {
-        fields: [],
-        description: 'No PM-specific evidence defaults are inferred here; rely on configured gate requirements for the active workflow transition',
-      };
+export function getEvidenceRequirements(_lane: WorkflowLane): EvidenceRequirements {
+  return {
+    fields: [],
+    fieldNames: [],
+    description: 'No lane-specific evidence defaults are inferred. Evidence requirements come from configured gate rows for the active workflow outcomes.',
+  };
+}
+
+type ContractGateRequirement = {
+  outcome: string;
+  field_name: string;
+  requirement_type: string;
+  match_field: string | null;
+  severity: string;
+  message: string;
+};
+
+const NON_EVIDENCE_FIELDS = new Set(['status']);
+const NON_ADVANCEMENT_OUTCOMES = new Set(['blocked', 'failed', 'qa_fail', 'retry']);
+
+function isAdvancementOutcome(outcome: string): boolean {
+  return !NON_ADVANCEMENT_OUTCOMES.has(outcome) && !outcome.startsWith('failed:');
+}
+
+function parseFieldExpression(fieldName: string): string[] {
+  return fieldName
+    .split('|')
+    .map((field) => field.trim())
+    .filter(Boolean);
+}
+
+function formatFieldExpression(fieldName: string): string {
+  return parseFieldExpression(fieldName).join(' or ') || fieldName;
+}
+
+function loadConfiguredGateRequirements(
+  db: Database.Database,
+  outcome: string,
+  sprintId?: number | null,
+  taskType?: string | null,
+): ContractGateRequirement[] {
+  const sprintRows = loadSprintTaskTransitionRequirements(db, sprintId ?? null, outcome, taskType);
+  if (sprintRows.length > 0) {
+    return sprintRows.map((row) => ({
+      outcome,
+      field_name: row.field_name,
+      requirement_type: row.requirement_type,
+      match_field: row.match_field,
+      severity: row.severity,
+      message: row.message,
+    }));
   }
+
+  try {
+    if (taskType) {
+      const typeRows = db.prepare(`
+        SELECT field_name, requirement_type, match_field, severity, message
+        FROM transition_requirements
+        WHERE task_type = ? AND outcome = ? AND enabled = 1
+        ORDER BY priority DESC, id ASC
+      `).all(taskType, outcome) as Array<Omit<ContractGateRequirement, 'outcome'>>;
+      if (typeRows.length > 0) return typeRows.map((row) => ({ ...row, outcome }));
+    }
+
+    const rows = db.prepare(`
+      SELECT field_name, requirement_type, match_field, severity, message
+      FROM transition_requirements
+      WHERE task_type IS NULL AND outcome = ? AND enabled = 1
+      ORDER BY priority DESC, id ASC
+    `).all(outcome) as Array<Omit<ContractGateRequirement, 'outcome'>>;
+    return rows.map((row) => ({ ...row, outcome }));
+  } catch {
+    return [];
+  }
+}
+
+export function resolveEvidenceRequirements(options: {
+  db?: Database.Database | null;
+  lane: WorkflowLane;
+  taskType?: string | null;
+  sprintId?: number | null;
+  outcomes?: string[];
+  suggestedOutcome?: string | null;
+}): EvidenceRequirements {
+  const outcomes = Array.from(new Set([
+    ...(options.outcomes ?? []),
+    options.suggestedOutcome ?? '',
+  ].filter((outcome): outcome is string => Boolean(outcome) && isAdvancementOutcome(outcome))));
+
+  if (!options.db || outcomes.length === 0) {
+    return {
+      fields: [],
+      fieldNames: [],
+      description: 'No configured gate rows were available in this dispatch context. Do not infer required evidence from the lane name; follow the workflow API response if an outcome is refused.',
+    };
+  }
+
+  const requirements = outcomes.flatMap((outcome) => loadConfiguredGateRequirements(
+    options.db as Database.Database,
+    outcome,
+    options.sprintId ?? null,
+    options.taskType ?? null,
+  ));
+
+  const blockingRequirements = requirements.filter((requirement) => requirement.severity !== 'warn');
+  const fieldExpressions = new Set<string>();
+  const fieldNames = new Set<string>();
+
+  for (const requirement of blockingRequirements) {
+    if (requirement.requirement_type === 'from_status') continue;
+    if (requirement.requirement_type !== 'required' && requirement.requirement_type !== 'match') continue;
+
+    const fields = parseFieldExpression(requirement.field_name).filter((field) => !NON_EVIDENCE_FIELDS.has(field));
+    if (fields.length === 0) continue;
+
+    fieldExpressions.add(formatFieldExpression(requirement.field_name));
+    for (const field of fields) fieldNames.add(field);
+  }
+
+  const outcomeLabel = outcomes.join(', ');
+  if (blockingRequirements.length === 0) {
+    return {
+      fields: [],
+      fieldNames: [],
+      description: `No blocking evidence gate rows are configured for ${outcomeLabel}. Do not infer additional required fields from the lane name.`,
+    };
+  }
+
+  if (fieldExpressions.size === 0) {
+    return {
+      fields: [],
+      fieldNames: [],
+      description: `Configured gate rows for ${outcomeLabel} do not require additional evidence fields beyond workflow/status checks.`,
+    };
+  }
+
+  return {
+    fields: Array.from(fieldExpressions),
+    fieldNames: Array.from(fieldNames),
+    description: `Configured gate fields for ${outcomeLabel}: ${Array.from(fieldExpressions).join(', ')}. These come from workflow gate requirement rows; no lane-specific defaults are inferred.`,
+  };
 }
 
 export function getAllowedTaskTypesForSprintType(

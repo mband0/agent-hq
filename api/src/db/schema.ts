@@ -3226,8 +3226,7 @@ export function ensureLifecycleRulesTable(): void {
 
       // deployed_live requirements
       insertReq.run(null, 'deployed_live', 'status', 'from_status', 'ready_to_merge', 'block', 'deployed_live requires task status ready_to_merge', 0);
-      // merged_commit uses special OR logic: merged_commit OR deployed_commit satisfies
-      insertReq.run(null, 'deployed_live', 'merged_commit', 'required', null, 'block', 'deployed_live requires merged_commit or deployed_commit', 0);
+      insertReq.run(null, 'deployed_live', 'merged_commit|deployed_commit', 'required', null, 'block', 'deployed_live requires merged_commit or deployed_commit', 0);
       insertReq.run(null, 'deployed_live', 'deploy_target', 'required', null, 'block', 'deployed_live requires deploy_target', 0);
       insertReq.run(null, 'deployed_live', 'deployed_at', 'required', null, 'block', 'deployed_live requires deployed_at', 0);
 
@@ -3249,19 +3248,34 @@ export function ensureLifecycleRulesTable(): void {
     console.log('[schema] Seeded transition_requirements from requireReleaseGate defaults');
   }
 
-  // Backfill: ensure deployed_live has a merged_commit requirement (missed in initial seed)
+  // Backfill: ensure deployed_live can be satisfied by either merged_commit or deployed_commit.
   try {
+    db.prepare(`
+      UPDATE transition_requirements
+      SET field_name = 'merged_commit|deployed_commit'
+      WHERE outcome = 'deployed_live'
+        AND field_name = 'merged_commit'
+        AND message LIKE '%or deployed_commit%'
+    `).run();
+    db.prepare(`
+      UPDATE sprint_task_transition_requirements
+      SET field_name = 'merged_commit|deployed_commit'
+      WHERE outcome = 'deployed_live'
+        AND field_name = 'merged_commit'
+        AND message LIKE '%or deployed_commit%'
+    `).run();
+
     const hasMergedCommitReq = db.prepare(`
       SELECT id FROM transition_requirements
-      WHERE task_type IS NULL AND outcome = 'deployed_live' AND field_name = 'merged_commit'
+      WHERE task_type IS NULL AND outcome = 'deployed_live' AND field_name = 'merged_commit|deployed_commit'
       LIMIT 1
     `).get();
     if (!hasMergedCommitReq) {
       db.prepare(`
         INSERT INTO transition_requirements (task_type, outcome, field_name, requirement_type, match_field, severity, message, priority)
-        VALUES (NULL, 'deployed_live', 'merged_commit', 'required', NULL, 'block', 'deployed_live requires merged_commit or deployed_commit', 0)
+        VALUES (NULL, 'deployed_live', 'merged_commit|deployed_commit', 'required', NULL, 'block', 'deployed_live requires merged_commit or deployed_commit', 0)
       `).run();
-      console.log('[schema] Backfilled: deployed_live merged_commit requirement');
+      console.log('[schema] Backfilled: deployed_live merged/deployed commit requirement');
     }
   } catch { /* table may not exist yet */ }
 

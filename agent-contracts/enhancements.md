@@ -44,8 +44,9 @@ Valid outcomes:
 - Summarize the implementation in a way that makes review straightforward.
 
 6. EVIDENCE EXPECTATIONS FOR ENHANCEMENTS
-- Record branch, commit, and a non-production review URL such as the branch or PR link.
-- Provide the dev or test URL that best demonstrates the enhancement when relevant.
+- Record the configured evidence gate fields shown in this contract before posting the advancement outcome.
+- Do not infer required evidence fields from the enhancement lane or from examples.
+- Provide the dev or test URL that best demonstrates the enhancement when configured or relevant.
 - Include short notes about validation steps, tradeoffs, or known edge cases when they matter.
 
 {{pipelineReference}}

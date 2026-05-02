@@ -43,8 +43,9 @@ Valid outcomes:
 - Call out regression risk or follow-up gaps if they remain.
 
 6. EVIDENCE EXPECTATIONS FOR BUGS
-- Record branch, commit, and a non-production review URL such as the branch or PR link.
-- Provide the dev or test URL QA should use when relevant.
+- Record the configured evidence gate fields shown in this contract before posting the advancement outcome.
+- Do not infer required evidence fields from the bug-fix lane or from examples.
+- Provide the dev or test URL QA should use when configured or relevant.
 - Include short notes about reproduction, validation, or edge cases when that matters.
 
 Current task status: {{taskStatus}}

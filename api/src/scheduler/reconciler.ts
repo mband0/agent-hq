@@ -364,6 +364,7 @@ export async function reconcileReviewQaRouting(
           taskId: task.id,
           taskStatus: task.status,
           taskType: task.task_type ?? null,
+          sprintId: task.sprint_id ?? null,
           sprintType: sprint?.sprint_type ?? null,
           agentSlug,
           sessionKey: runSessionKey,

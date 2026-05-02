@@ -6,6 +6,7 @@ import path from 'path';
 import { closeDb, getDb } from '../db/client';
 import tasksRouter from './tasks';
 import { requireReleaseGate } from '../lib/taskRelease';
+import { validateInlineEvidenceForOutcome } from '../lib/evidenceValidation';
 
 let tempDir: string;
 let dbPath: string;
@@ -487,6 +488,53 @@ describe('tasks qa-evidence aliases', () => {
     };
 
     const result = requireReleaseGate(db, task, 'qa_pass', task.task_type);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('does not infer inline evidence requirements from outcome names', () => {
+    const reviewResult = validateInlineEvidenceForOutcome('completed_for_review', {}, {}, []);
+    const qaResult = validateInlineEvidenceForOutcome('qa_pass', {}, {}, []);
+    const deployResult = validateInlineEvidenceForOutcome('deployed_live', {}, {}, []);
+
+    expect(reviewResult.errors).toEqual([]);
+    expect(qaResult.errors).toEqual([]);
+    expect(deployResult.errors).toEqual([]);
+  });
+
+  it('enforces inline evidence requirements from configured gate rows', () => {
+    const result = validateInlineEvidenceForOutcome(
+      'custom_review_ready',
+      { review_branch: 'feature/task-383' },
+      {},
+      [
+        {
+          field_name: 'review_commit',
+          requirement_type: 'required',
+          match_field: null,
+          severity: 'block',
+          message: 'custom gate requires review_commit',
+        },
+      ],
+    );
+
+    expect(result.errors).toEqual(['custom gate requires review_commit']);
+  });
+
+  it('supports configured OR field expressions for release gates', () => {
+    const db = getDb();
+    db.prepare(`
+      INSERT INTO sprint_task_transition_requirements (sprint_id, task_type, outcome, field_name, requirement_type, match_field, severity, message)
+      VALUES (10, NULL, 'deployed_live', 'merged_commit|deployed_commit', 'required', NULL, 'block', 'deployed_live requires merged_commit or deployed_commit')
+    `).run();
+
+    const result = requireReleaseGate(db, {
+      id: 383,
+      status: 'ready_to_merge',
+      task_type: 'backend',
+      sprint_id: 10,
+      deployed_commit: '6d614b3b104ae36d1dd75210b9f9fb0342673329',
+    }, 'deployed_live', 'backend');
+
     expect(result.errors).toEqual([]);
   });
 

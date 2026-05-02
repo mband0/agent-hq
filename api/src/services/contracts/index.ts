@@ -9,6 +9,7 @@ export {
   getAllowedTaskTypesForSprintType,
   isTaskTypeAllowedForSprintType,
   getEvidenceRequirements,
+  resolveEvidenceRequirements,
   PIPELINE_STAGES,
   PIPELINE_REFERENCE,
   RELEASE_LANE_NOTES,

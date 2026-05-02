@@ -776,6 +776,7 @@ interface InstanceCallbackContractInput {
   taskStatus: string;
   /** Task type (e.g. 'pm', 'pm_analysis', 'pm_operational', 'backend', 'qa'). Used to select the correct terminal outcome. */
   taskType?: string | null;
+  sprintId?: number | null;
   sprintType?: string | null;
   agentSlug: string;
   sessionKey: string;
@@ -800,6 +801,7 @@ export function buildInstanceCallbackContract({
   taskId,
   taskStatus,
   taskType,
+  sprintId,
   sprintType,
   agentSlug,
   sessionKey,
@@ -811,6 +813,7 @@ export function buildInstanceCallbackContract({
     taskId,
     taskStatus,
     taskType,
+    sprintId,
     sprintType,
     agentSlug,
     sessionKey,
@@ -831,10 +834,11 @@ function appendInstanceInstructions(
   sessionKey: string,
   baseUrl?: string,
   taskType?: string | null,
+  sprintId?: number | null,
   sprintType?: string | null,
   transportMode?: 'local' | 'remote-direct' | 'proxy-managed',
 ): string {
-  return `${message}\n\n${buildInstanceCallbackContract({ instanceId, taskId, taskStatus, taskType, sprintType, agentSlug, sessionKey, baseUrl, transportMode })}`;
+  return `${message}\n\n${buildInstanceCallbackContract({ instanceId, taskId, taskStatus, taskType, sprintId, sprintType, agentSlug, sessionKey, baseUrl, transportMode })}`;
 }
 
 // ── Run context file ─────────────────────────────────────────────────────────
@@ -1619,7 +1623,7 @@ export function dispatchTaskToJob(
 
   const fullMessage = appendInstanceInstructions(
     [baseMessage, pathContextSection].filter(Boolean).join('\n\n'), instanceId, task.id, task.status, agentSlug, sessionKey,
-    callbackBaseUrl, task.task_type, task.sprint_type, transportMode,
+    callbackBaseUrl, task.task_type, task.sprint_id, task.sprint_type, transportMode,
   ) + ghIdentityContext;
 
   fireAgentRun(

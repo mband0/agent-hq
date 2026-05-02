@@ -37,6 +37,7 @@ interface Agent {
 interface TaskDispatchContextRow {
   status: string;
   task_type: string | null;
+  sprint_id: number | null;
   sprint_type: string | null;
 }
 
@@ -144,6 +145,7 @@ function loadAndSchedule(): void {
           SELECT
             tasks.status,
             tasks.task_type,
+            tasks.sprint_id,
             sprints.sprint_type
           FROM tasks
           LEFT JOIN sprints ON sprints.id = tasks.sprint_id
@@ -185,6 +187,7 @@ function loadAndSchedule(): void {
           taskId,
           taskStatus: taskContext?.status ?? 'ready',
           taskType: taskContext?.task_type ?? null,
+          sprintId: taskContext?.sprint_id ?? null,
           sprintType: taskContext?.sprint_type ?? null,
           agentSlug,
           sessionKey: runSessionKey,
