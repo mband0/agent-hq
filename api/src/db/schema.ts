@@ -3290,7 +3290,7 @@ export function ensureLifecycleRulesTable(): void {
         [null, 'in_progress', 'completed_for_review', 'review', 'default', 0],
         [null, 'review', 'qa_pass', 'qa_pass', 'default', 0],
         [null, 'review', 'qa_fail', 'ready', 'default', 0],
-        [null, 'review', 'blocked', 'stalled', 'default', 0],
+        [null, 'review', 'blocked', 'blocked', 'default', 0],
         [null, 'review', 'failed', 'failed', 'default', 0],
         [null, 'qa_pass', 'approved_for_merge', 'ready_to_merge', 'default', 0],
         [null, 'qa_pass', 'qa_fail', 'ready', 'default', 0],
