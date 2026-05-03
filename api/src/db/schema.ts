@@ -1784,7 +1784,7 @@ function ensureSystemPolicies(): void {
       classification:    'configurable',
       enabled:           1,
       threshold_seconds: null,
-      description:       'On reconciler ticks, sprint-routed tasks without a live instance have ownership converged to the current routing rule for routed statuses. Review tasks are re-dispatched to the configured QA agent when capacity is available, and review_owner_agent_id is preserved as the implementation owner when review ownership changes.',
+      description:       'On reconciler ticks, sprint-routed tasks without a live instance have ownership converged to the current routing rule for all routed statuses, including blocked, ready, in_progress, and ready_to_merge. Review tasks are re-dispatched to the configured QA agent when capacity is available, and review_owner_agent_id is preserved as the implementation owner when review ownership changes.',
       source_file:       'api/src/scheduler/reconciler.ts (reconcileReviewQaRouting)',
     },
     {

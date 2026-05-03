@@ -542,7 +542,7 @@ function getAllDispatchableTasks(db: Database.Database, projectId?: number | nul
  * sprint_id/status/task_type, ordered by priority DESC so the highest-priority
  * rule is tried first. Each row includes full agent fields for dispatch.
  */
-export const DISPATCHABLE_ROUTED_STATUSES = ['ready', 'ready_to_merge', 'in_progress'] as const;
+export const DISPATCHABLE_ROUTED_STATUSES = ['ready', 'blocked', 'ready_to_merge', 'in_progress'] as const;
 
 function getMatchingRoutingRules(db: Database.Database, task: CandidateTask): RoutingRuleRow[] {
   const runRuleQuery = (tableName: string, scopeCondition: string, params: unknown[]): RoutingRuleRow[] => db.prepare(`
