@@ -2715,9 +2715,126 @@ PY`;
       assignToolToAgentByName.run('git_worktree_enter', agentName);
       assignToolToAgentByName.run('git_worktree_exit', agentName);
     }
+    upsertTool.run(
+      'Local STT Transcription',
+      'local_stt_transcribe',
+      'Transcribe a local audio file to plain text using host-local speech-to-text tooling. Optimized for Telegram voice notes, but reusable for generic audio files. Returns transcript text on success and clear errors for missing dependencies, unsupported inputs, or transcription failure.',
+      'bash',
+      `set -euo pipefail
+
+json_escape() {
+  python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'
+}
+
+fail() {
+  local code="$1"
+  local message="$2"
+  printf '{"ok":false,"error_code":"%s","message":%s}\n' "$code" "$(printf '%s' "$message" | json_escape)"
+  exit 0
+}
+
+if ! command -v python3 >/dev/null 2>&1; then
+  fail missing_runtime 'python3 is required for local transcription but is not installed on this host'
+fi
+
+AUDIO_PATH="${TOOL_AUDIO_PATH:-${TOOL_PATH:-}}"
+LANGUAGE="${TOOL_LANGUAGE:-}"
+MODEL="${TOOL_MODEL:-base}"
+PROMPT="${TOOL_PROMPT:-}"
+
+if [ -z "$AUDIO_PATH" ]; then
+  fail missing_input 'audio_path is required'
+fi
+
+case "$AUDIO_PATH" in
+  /*) ;;
+  *) AUDIO_PATH="$(pwd)/$AUDIO_PATH" ;;
+esac
+
+if [ ! -f "$AUDIO_PATH" ]; then
+  fail missing_file "audio file not found: $AUDIO_PATH"
+fi
+
+case "${AUDIO_PATH##*.}" in
+  ogg|oga|opus|mp3|wav|m4a|mp4|mpeg|mpga|webm) ;;
+  *) fail unsupported_format "unsupported audio format for local_stt_transcribe: $AUDIO_PATH" ;;
+esac
+
+if ! python3 - <<'PY' >/dev/null 2>&1
+import importlib.util, sys
+sys.exit(0 if importlib.util.find_spec('whisper') else 1)
+PY
+then
+  fail missing_dependency 'python package whisper is not installed. Install with: python3 -m pip install -U openai-whisper'
+fi
+
+if ! command -v ffmpeg >/dev/null 2>&1; then
+  fail missing_dependency 'ffmpeg is required for local transcription but is not installed. Install with: brew install ffmpeg'
+fi
+
+export AUDIO_PATH LANGUAGE MODEL PROMPT
+python3 - <<'PY'
+import json, os
+try:
+    import whisper
+except Exception as exc:
+    print(json.dumps({
+        'ok': False,
+        'error_code': 'missing_dependency',
+        'message': f'Failed to import whisper: {exc}',
+    }))
+    raise SystemExit(0)
+
+audio_path = os.environ['AUDIO_PATH']
+language = os.environ.get('LANGUAGE') or None
+model_name = os.environ.get('MODEL') or 'base'
+prompt = os.environ.get('PROMPT') or None
+
+try:
+    model = whisper.load_model(model_name)
+    result = model.transcribe(audio_path, language=language, initial_prompt=prompt, fp16=False)
+    text = (result.get('text') or '').strip()
+    if not text:
+        print(json.dumps({
+            'ok': False,
+            'error_code': 'empty_transcript',
+            'message': 'Transcription completed but returned empty text',
+        }))
+        raise SystemExit(0)
+    payload = {
+        'ok': True,
+        'text': text,
+        'language': result.get('language'),
+        'model': model_name,
+        'source_path': audio_path,
+    }
+    print(json.dumps(payload, ensure_ascii=False))
+except Exception as exc:
+    print(json.dumps({
+        'ok': False,
+        'error_code': 'transcription_failed',
+        'message': f'Local transcription failed: {exc}',
+    }, ensure_ascii=False))
+PY`,
+      JSON.stringify({
+        type: 'object',
+        properties: {
+          audio_path: { type: 'string', description: 'Absolute or workspace-relative path to the local audio file to transcribe' },
+          language: { type: 'string', description: 'Optional language hint such as en' },
+          model: { type: 'string', description: 'Optional local whisper model name (default: base)' },
+          prompt: { type: 'string', description: 'Optional initial transcription prompt' },
+        },
+        required: ['audio_path'],
+      }),
+      'exec',
+      JSON.stringify(['audio', 'speech_to_text', 'telegram', 'local']),
+    );
+
+    assignToolToAgentByName.run('local_stt_transcribe', 'Atlas');
   });
+
   seedTx();
-  console.log('[schema] Ensured tool registry defaults (explore_codebase, bash, file_edit, git_worktree_enter, git_worktree_exit)');
+  console.log('[schema] Ensured tool registry defaults (explore_codebase, bash, file_edit, git_worktree_enter, git_worktree_exit, local_stt_transcribe)');
 }
 
 function ensureMcpRegistryTables(): void {

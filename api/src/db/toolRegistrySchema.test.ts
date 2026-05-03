@@ -110,6 +110,37 @@ describe('ensureToolRegistryTables', () => {
     });
   });
 
+  it('seeds the local STT transcription tool and assigns it to Atlas', () => {
+    createMinimalAgentsTable();
+    getDb().exec(`
+      ALTER TABLE agents ADD COLUMN openclaw_agent_id TEXT;
+      INSERT INTO agents (id, name, openclaw_agent_id) VALUES (1, 'Atlas', 'atlas');
+    `);
+
+    ensureToolRegistryTables();
+
+    const tool = getDb().prepare(`SELECT slug, implementation_type, permissions, input_schema, tags FROM tools WHERE slug = 'local_stt_transcribe'`).get() as any;
+    expect(tool).toMatchObject({
+      slug: 'local_stt_transcribe',
+      implementation_type: 'bash',
+      permissions: 'exec',
+    });
+    expect(JSON.parse(tool.input_schema)).toMatchObject({
+      type: 'object',
+      required: ['audio_path'],
+    });
+    expect(JSON.parse(tool.tags)).toEqual(expect.arrayContaining(['audio', 'speech_to_text', 'telegram', 'local']));
+
+    const assignment = getDb().prepare(`
+      SELECT ata.agent_id, t.slug
+      FROM agent_tool_assignments ata
+      JOIN tools t ON t.id = ata.tool_id
+      WHERE ata.agent_id = 1 AND t.slug = 'local_stt_transcribe'
+    `).get();
+    expect(assignment).toEqual({ agent_id: 1, slug: 'local_stt_transcribe' });
+  });
+
+
   it('is a no-op on the current tools schema', () => {
     createMinimalAgentsTable();
 
