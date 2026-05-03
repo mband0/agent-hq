@@ -29,6 +29,7 @@ v1 assumptions:
 - single-user local install
 - no remote transport
 - no direct database access from the MCP server
+- every MCP server process has an Agent HQ API key bound to one Agent HQ agent identity
 
 ---
 
@@ -246,16 +247,20 @@ Example invalid transition error:
 
 ### Safe by default
 
-- read tools are idempotent and unrestricted
+- read tools are idempotent, but still require the agent-bound MCP API key
 - destructive delete operations are not exposed
 - admin/system configuration operations are not exposed
 - dispatch, instance, evidence, and outcome internals are not exposed to MCP clients
 
 ### Write guardrails
 
+- MCP API keys are stored server-side as hashes and map to exactly one Agent HQ agent
+- the MCP server sends the key as bearer auth on every Agent HQ API request
+- Agent HQ resolves the API key to the trusted agent identity before applying writes
+- MCP-authenticated task writes ignore client-supplied `changed_by`, `authorized_by`, or legacy `authority_by` spoofing and use the resolved agent identity instead
 - required fields must be validated
 - task status transitions must be validated server-side
-- writes should be recorded in history/audit surfaces with MCP source attribution
+- writes are recorded in history/audit surfaces with the resolved agent slug
 - rate limiting should apply server-side
 
 What v1 does not need:
@@ -303,7 +308,10 @@ macOS path:
   "mcpServers": {
     "agent-hq": {
       "command": "node",
-      "args": ["/absolute/path/to/agent-hq/api/dist/mcp/server.js"]
+      "args": ["/absolute/path/to/agent-hq/api/dist/mcp/server.js"],
+      "env": {
+        "AGENT_HQ_MCP_API_KEY": "ahq_mcp_..."
+      }
     }
   }
 }
@@ -317,6 +325,7 @@ In ChatGPT Desktop settings, add an MCP integration with:
 
 - Command: `node`
 - Args: `/absolute/path/to/agent-hq/api/dist/mcp/server.js`
+- Env: `AGENT_HQ_MCP_API_KEY=ahq_mcp_...`
 
 ### Alternate `npx` setup
 
@@ -325,7 +334,10 @@ In ChatGPT Desktop settings, add an MCP integration with:
   "mcpServers": {
     "agent-hq": {
       "command": "npx",
-      "args": ["--yes", "agent-hq-mcp"]
+      "args": ["--yes", "agent-hq-mcp"],
+      "env": {
+        "AGENT_HQ_MCP_API_KEY": "ahq_mcp_..."
+      }
     }
   }
 }
@@ -342,6 +354,7 @@ The MCP server supports config via environment variables and optional local conf
 | Variable | Default | Description |
 |---|---|---|
 | `AGENT_HQ_API_URL` | `http://localhost:3501` | Agent HQ API base URL |
+| `AGENT_HQ_MCP_API_KEY` | none | Required agent-bound MCP API key |
 | `MCP_RATE_LIMIT_RPM` | `60` | Max requests per minute |
 
 Example:
@@ -353,7 +366,8 @@ Example:
       "command": "node",
       "args": ["/path/to/agent-hq/api/dist/mcp/server.js"],
       "env": {
-        "AGENT_HQ_API_URL": "http://localhost:9999"
+        "AGENT_HQ_API_URL": "http://localhost:9999",
+        "AGENT_HQ_MCP_API_KEY": "ahq_mcp_..."
       }
     }
   }
@@ -373,11 +387,28 @@ Example:
 ```json
 {
   "api_url": "http://localhost:3501",
+  "api_key": "ahq_mcp_...",
   "rate_limit_rpm": 120
 }
 ```
 
 Environment variables take precedence over config file values.
+
+### Agent-bound key materialization
+
+For OpenClaw agents, Agent HQ materializes the assigned `agent-hq` MCP server into the agent workspace `.mcp.json`. During materialization it issues or reuses a key for that specific agent and writes it to the server env as `AGENT_HQ_MCP_API_KEY`.
+
+The runtime trust boundary is:
+
+```text
+AGENT_HQ_MCP_API_KEY
+  -> mcp_api_keys.key_hash
+  -> agents.id
+  -> resolved agent slug / Atlas authority
+  -> task history, audit actor, and protected write checks
+```
+
+Missing, invalid, disabled, revoked, unmapped, or disabled-agent keys are rejected with a clear authorization error. For Atlas, the resolved key grants Atlas authority for protected task status writes while the audit actor remains the resolved agent slug (`atlas`).
 
 ### Legacy compatibility
 
@@ -416,13 +447,14 @@ node dist/mcp/server.js 2>&1 1>/dev/null
 Expected log shape:
 
 ```text
-[agent-hq-mcp] Starting, API: http://localhost:3501 | Rate limit: 60 req/min
+[agent-hq-mcp] Starting, API: http://localhost:3501 | Rate limit: 60 req/min | Auth: configured
 [agent-hq-mcp] MCP server connected, ready for tool calls via stdio.
 ```
 
 Useful checks:
 - confirm `api/dist/mcp/server.js` exists
 - confirm the API is reachable at `AGENT_HQ_API_URL`
+- confirm `AGENT_HQ_MCP_API_KEY` is present in the MCP server env
 - confirm the client config points at the built server path
 - confirm the client was restarted after config changes
 

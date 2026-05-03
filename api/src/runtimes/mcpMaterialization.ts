@@ -2,6 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import type Database from 'better-sqlite3';
+import { ensureMaterializedMcpApiKeyForAgent } from '../lib/mcpApiAuth';
 
 const MANAGED_KEYS_FIELD = 'agentHqManagedMcpServers';
 const OPENCLAW_MCP_BUNDLE_ID = 'agent-hq-mcp';
@@ -161,7 +162,20 @@ export function ensureOpenClawMcpWorkspaceBundleEnabled(configPath = resolveOpen
   }
 }
 
-function buildDesiredServerConfig(row: AgentMcpRow): Record<string, unknown> | null {
+function readStringEnvValue(env: unknown, key: string): string | null {
+  if (!isRecord(env)) return null;
+  const value = env[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function buildDesiredServerConfig(
+  row: AgentMcpRow,
+  params: {
+    db: Database.Database;
+    agentId: number;
+    existingServer?: Record<string, unknown>;
+  },
+): Record<string, unknown> | null {
   if (!row.command || !row.command.trim()) return null;
 
   const baseConfig: Record<string, unknown> = {
@@ -189,12 +203,31 @@ function buildDesiredServerConfig(row: AgentMcpRow): Record<string, unknown> | n
     );
   }
 
+  if (row.slug === 'agent-hq') {
+    const existingEnv = isRecord(params.existingServer?.env) ? params.existingServer?.env : {};
+    const existingApiKey = readStringEnvValue(existingEnv, 'AGENT_HQ_MCP_API_KEY');
+    const key = ensureMaterializedMcpApiKeyForAgent({
+      db: params.db,
+      agentId: params.agentId,
+      existingApiKey,
+      name: 'Agent HQ MCP materialized key',
+    });
+    const env = isRecord(merged.env) ? { ...(merged.env as Record<string, unknown>) } : {};
+    env.AGENT_HQ_MCP_API_KEY = key.apiKey;
+    merged.env = Object.fromEntries(
+      Object.entries(env)
+        .filter(([, value]) => typeof value === 'string')
+        .map(([envKey, value]) => [envKey, String(value)]),
+    );
+  }
+
   return merged;
 }
 
 export function fetchAssignedMcpServers(
   db: Database.Database,
   agentId: number,
+  existingServers: Record<string, Record<string, unknown>> = {},
 ): Record<string, Record<string, unknown>> {
   const rows = db.prepare(`
     SELECT s.slug, s.command, s.args, s.env, s.cwd, ama.overrides
@@ -208,7 +241,7 @@ export function fetchAssignedMcpServers(
 
   return Object.fromEntries(
     rows
-      .map((row) => [row.slug, buildDesiredServerConfig(row)] as const)
+      .map((row) => [row.slug, buildDesiredServerConfig(row, { db, agentId, existingServer: existingServers[row.slug] })] as const)
       .filter((entry): entry is [string, Record<string, unknown>] => entry[1] !== null),
   );
 }
@@ -226,9 +259,6 @@ export function materializeAgentMcpConfig(params: {
     warnings: [],
   };
 
-  const desiredServers = fetchAssignedMcpServers(params.db, params.agentId);
-  const desiredKeys = Object.keys(desiredServers);
-
   let existingRaw: unknown = {};
   if (fs.existsSync(result.path)) {
     try {
@@ -242,6 +272,9 @@ export function materializeAgentMcpConfig(params: {
   }
 
   const existingRecord = isRecord(existingRaw) ? existingRaw : {};
+  const existingServers = extractServerMap(existingRaw);
+  const desiredServers = fetchAssignedMcpServers(params.db, params.agentId, existingServers);
+  const desiredKeys = Object.keys(desiredServers);
   const preservedTopLevel: Record<string, unknown> = {};
   if (isRecord(existingRecord.mcpServers) || isRecord(existingRecord.servers)) {
     for (const [key, value] of Object.entries(existingRecord)) {
@@ -250,7 +283,6 @@ export function materializeAgentMcpConfig(params: {
     }
   }
 
-  const existingServers = extractServerMap(existingRaw);
   const previouslyManagedKeys = Array.isArray(existingRecord[MANAGED_KEYS_FIELD])
     ? (existingRecord[MANAGED_KEYS_FIELD] as unknown[])
         .filter((entry): entry is string => typeof entry === 'string')

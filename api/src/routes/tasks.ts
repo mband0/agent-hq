@@ -26,6 +26,7 @@ import { RELEASE_TASK_STATUSES, isTaskStatus } from '../lib/taskStatuses';
 import { resolveDefaultProjectSprintId } from '../lib/starterSetup';
 import { stopTaskAndPause } from '../lib/taskStop';
 import { loadSprintTaskTransitionRequirements } from '../lib/sprintTaskPolicy';
+import { getMcpIdentityFromRequest } from '../lib/mcpApiAuth';
 
 const UPLOADS_BASE = path.resolve(__dirname, '../../uploads/tasks');
 
@@ -46,6 +47,26 @@ const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } }); // 5
 
 const router = Router();
 const VALID_STORY_POINTS = [1, 2, 3, 5, 8, 13, 21] as const;
+
+function resolveRequestActor(
+  req: Request,
+  fallbackChangedBy: string,
+  fallbackAuthorityBy?: string,
+): { changedBy: string; authorityBy: string; source: 'mcp' | 'request' } {
+  const mcpIdentity = getMcpIdentityFromRequest(req);
+  if (mcpIdentity) {
+    return {
+      changedBy: mcpIdentity.auditActor,
+      authorityBy: mcpIdentity.authorityActor,
+      source: 'mcp',
+    };
+  }
+  return {
+    changedBy: fallbackChangedBy,
+    authorityBy: fallbackAuthorityBy ?? fallbackChangedBy,
+    source: 'request',
+  };
+}
 
 function normalizeStoryPoints(value: unknown): number | null | undefined {
   if (value === undefined) return undefined;
@@ -724,7 +745,7 @@ router.post('/', (req: Request, res: Response) => {
         `).run(origin_task_id);
       }
     }
-    const createdBy = req.body.changed_by ?? 'system';
+    const createdBy = resolveRequestActor(req, req.body.changed_by ?? 'system').changedBy;
 
     db.prepare(`
       INSERT INTO task_history (task_id, field, old_value, new_value, changed_by)
@@ -784,10 +805,17 @@ router.put('/:id', (req: Request, res: Response) => {
       blockers?: Array<{ task_id?: number; blocker_id?: number; reason?: string | null }>;
       custom_fields?: Record<string, unknown> | string | null;
       changed_by?: string;
+      authorized_by?: string;
       authority_by?: string;
     };
 
-    const authorityBy = (req.body.authority_by as string | undefined) ?? changed_by;
+    const actor = resolveRequestActor(
+      req,
+      changed_by,
+      (req.body.authorized_by as string | undefined) ?? (req.body.authority_by as string | undefined) ?? changed_by,
+    );
+    const effectiveChangedBy = actor.changedBy;
+    const authorityBy = actor.authorityBy;
     const normalizedStoryPoints = normalizeStoryPoints(story_points);
     const normalizedCustomFields = custom_fields !== undefined
       ? parseCustomFields(custom_fields)
@@ -872,7 +900,7 @@ router.put('/:id', (req: Request, res: Response) => {
       if (String(oldVal ?? '') !== String(newVal ?? '')) {
         const resolvedOld: string | null = oldVal == null ? null : String(oldVal);
         const resolvedNew: string | null = newVal == null ? null : String(newVal);
-        logHistory(id, changed_by as string, field, resolvedOld, resolvedNew);
+        logHistory(id, effectiveChangedBy, field, resolvedOld, resolvedNew);
       }
     }
 
@@ -893,7 +921,7 @@ router.put('/:id', (req: Request, res: Response) => {
     );
 
     if (Object.keys(reviewEvidencePatch).length > 0) {
-      updateTaskEvidence(id, changed_by, reviewEvidencePatch);
+      updateTaskEvidence(id, effectiveChangedBy, reviewEvidencePatch);
     }
 
     if (Array.isArray(blockers)) {
@@ -922,7 +950,7 @@ router.put('/:id', (req: Request, res: Response) => {
     // Detect manual status change for telemetry (#586)
     const isManualStatusChange = status !== undefined
       && String(status) !== String(existing.status)
-      && !['eligibility','reconciler','watchdog','task_lifecycle','scheduler','system','dispatcher','task_outcome'].includes(String(changed_by));
+      && !['eligibility','reconciler','watchdog','task_lifecycle','scheduler','system','dispatcher','task_outcome'].includes(String(effectiveChangedBy));
 
     // Increment manual_intervention_count if applicable
     if (isManualStatusChange) {
@@ -939,7 +967,7 @@ router.put('/:id', (req: Request, res: Response) => {
         taskId: id,
         fromStatus: String(existing.status),
         toStatus: String(status),
-        source: String(changed_by),
+        source: String(effectiveChangedBy),
       });
 
       // Emit task_event for direct status changes (#586)
@@ -947,7 +975,7 @@ router.put('/:id', (req: Request, res: Response) => {
         taskId: id,
         fromStatus: String(existing.status),
         toStatus: String(status),
-        movedBy: String(changed_by),
+        movedBy: String(effectiveChangedBy),
         moveType: isManualStatusChange ? 'manual' : 'automatic',
         projectId: (existing.project_id as number | null) ?? null,
         agentId: (existing.agent_id as number | null) ?? null,
@@ -988,6 +1016,7 @@ router.post('/:id/cancel', (req: Request, res: Response) => {
     if (!existing) return res.status(404).json({ error: 'Task not found' });
 
     const oldStatus = existing.status as string;
+    const changedBy = resolveRequestActor(req, (req.body?.changed_by as string | undefined) ?? 'Atlas').changedBy;
 
     db.prepare(`
       UPDATE tasks SET status = 'cancelled', updated_at = datetime('now') WHERE id = ?
@@ -995,17 +1024,17 @@ router.post('/:id/cancel', (req: Request, res: Response) => {
 
     cleanupTaskExecutionLinkageForStatus(db, id, 'cancelled');
 
-    logHistory(id, 'Atlas', 'status', oldStatus, 'cancelled');
+    logHistory(id, changedBy, 'status', oldStatus, 'cancelled');
 
     db.prepare(`
       INSERT INTO task_notes (task_id, author, content) VALUES (?, ?, ?)
-    `).run(id, 'Atlas', 'Task cancelled by user.');
+    `).run(id, changedBy, 'Task cancelled by user.');
 
     notifyTaskStatusChange(db, {
       taskId: id,
       fromStatus: oldStatus,
       toStatus: 'cancelled',
-      source: 'Atlas',
+      source: changedBy,
     });
 
     const task = db.prepare(`${TASK_SELECT} WHERE t.id = ?`).get(id) as Record<string, unknown>;
@@ -1024,7 +1053,7 @@ router.post('/:id/stop', async (req: Request, res: Response) => {
   try {
     const db = getDb();
     const id = Number(req.params.id);
-    const changedBy = (req.body?.changed_by as string | undefined) ?? 'User';
+    const changedBy = resolveRequestActor(req, (req.body?.changed_by as string | undefined) ?? 'User').changedBy;
     const reasonRaw = req.body?.reason as string | undefined;
     const pauseReason = typeof reasonRaw === 'string' && reasonRaw.trim().length > 0 ? reasonRaw.trim() : null;
     const result = await stopTaskAndPause(db, id, changedBy, pauseReason);
@@ -1061,7 +1090,7 @@ router.post('/:id/reopen', (req: Request, res: Response) => {
       return res.status(400).json({ error: `Cannot reopen a task in '${existing.status}' status. Only 'failed' tasks can be reopened.` });
     }
 
-    const changedBy = (req.body?.changed_by as string | undefined) ?? 'Atlas';
+    const changedBy = resolveRequestActor(req, (req.body?.changed_by as string | undefined) ?? 'Atlas').changedBy;
     // Restore the task to its pre-failure position; fall back to 'ready' (task #30)
     const restoreStatus = (existing.previous_status as string | null) ?? 'ready';
 
@@ -1122,7 +1151,7 @@ router.post('/:id/pause', (req: Request, res: Response) => {
     }
 
     const pauseReason = (req.body?.reason as string | undefined) ?? null;
-    const changedBy = (req.body?.changed_by as string | undefined) ?? 'user';
+    const changedBy = resolveRequestActor(req, (req.body?.changed_by as string | undefined) ?? 'user').changedBy;
 
     db.prepare(`
       UPDATE tasks SET paused_at = datetime('now'), pause_reason = ?, updated_at = datetime('now') WHERE id = ?
@@ -1156,7 +1185,7 @@ router.post('/:id/unpause', (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Task is not paused' });
     }
 
-    const changedBy = (req.body?.changed_by as string | undefined) ?? 'user';
+    const changedBy = resolveRequestActor(req, (req.body?.changed_by as string | undefined) ?? 'user').changedBy;
 
     db.prepare(`
       UPDATE tasks SET paused_at = NULL, pause_reason = NULL, updated_at = datetime('now') WHERE id = ?
@@ -1220,6 +1249,7 @@ router.post('/:id/outcome', async (req: Request, res: Response) => {
       failure_class?: string;
       failure_detail?: string;
     };
+    const effectiveChangedBy = resolveRequestActor(req, changed_by).changedBy;
 
     if (!outcome) return res.status(400).json({ error: 'outcome is required' });
 
@@ -1260,7 +1290,7 @@ router.post('/:id/outcome', async (req: Request, res: Response) => {
       resolveRefusedTaskOutcome(db, {
         taskId: id,
         outcome,
-        changedBy: changed_by,
+        changedBy: effectiveChangedBy,
         reason: refusal,
         summary: summary ?? null,
         instanceId: Number.isFinite(authoritativeInstanceId ?? NaN) ? authoritativeInstanceId : null,
@@ -1275,7 +1305,7 @@ router.post('/:id/outcome', async (req: Request, res: Response) => {
       resolveRefusedTaskOutcome(db, {
         taskId: id,
         outcome,
-        changedBy: changed_by,
+        changedBy: effectiveChangedBy,
         reason,
         summary: summary ?? null,
         instanceId: Number.isFinite(authoritativeInstanceId ?? NaN) ? authoritativeInstanceId : null,
@@ -1298,7 +1328,7 @@ router.post('/:id/outcome', async (req: Request, res: Response) => {
       // If applyTaskOutcome rejects on the stricter release gate, we rollback
       // so refused inline evidence cannot persist on the task record.
       if (hasInline) {
-        updateTaskEvidence(id, changed_by, inlineEvidence as Record<string, unknown>);
+        updateTaskEvidence(id, effectiveChangedBy, inlineEvidence as Record<string, unknown>);
 
         const evFields: string[] = [];
         if (inlineEvidence.review_branch) evFields.push(`Branch: ${inlineEvidence.review_branch}`);
@@ -1312,14 +1342,14 @@ router.post('/:id/outcome', async (req: Request, res: Response) => {
         if (inlineEvidence.deployed_at) evFields.push(`At: ${inlineEvidence.deployed_at}`);
         if (inlineEvidence.live_verified_by) evFields.push(`Verified by: ${inlineEvidence.live_verified_by}`);
         if (evFields.length > 0) {
-          addTaskNote(id, changed_by, `Atomic evidence (with ${outcome})\n${evFields.join('\n')}`);
+          addTaskNote(id, effectiveChangedBy, `Atomic evidence (with ${outcome})\n${evFields.join('\n')}`);
         }
       }
 
       result = await applyTaskOutcome(db, {
         taskId: id,
         outcome,
-        changedBy: changed_by,
+        changedBy: effectiveChangedBy,
         summary: summary ?? null,
         instanceId: Number.isFinite(authoritativeInstanceId ?? NaN) ? authoritativeInstanceId : null,
         failureClass: failure_class ?? null,
@@ -1401,6 +1431,7 @@ router.put('/:id/review-evidence', (req: Request, res: Response) => {
       changed_by?: string;
       instance_id?: number | string | null;
     };
+    const effectiveChangedBy = resolveRequestActor(req, changed_by).changedBy;
 
     const db = getDb();
 
@@ -1429,7 +1460,7 @@ router.put('/:id/review-evidence', (req: Request, res: Response) => {
       });
     }
 
-    updateTaskEvidence(id, changed_by, {
+    updateTaskEvidence(id, effectiveChangedBy, {
       review_branch: review_branch ?? null,
       review_commit: review_commit ?? null,
       review_url: review_url ?? null,
@@ -1437,7 +1468,7 @@ router.put('/:id/review-evidence', (req: Request, res: Response) => {
 
     addTaskNote(
       id,
-      changed_by,
+      effectiveChangedBy,
       `Review evidence recorded\nBranch: ${review_branch ?? '—'}\nCommit: ${review_commit ?? '—'}\nURL: ${review_url ?? '—'}${summary ? `\nSummary: ${summary}` : ''}`,
     );
 
@@ -1477,6 +1508,7 @@ router.put('/:id/qa-evidence', (req: Request, res: Response) => {
       instance_id?: number | string | null;
       force_clear?: boolean;
     };
+    const effectiveChangedBy = resolveRequestActor(req, changed_by).changedBy;
 
     const resolvedQaVerifiedCommit = qa_verified_commit ?? verified_commit;
     const resolvedQaTestedUrl = qa_tested_url ?? tested_url ?? qa_url;
@@ -1540,7 +1572,7 @@ router.put('/:id/qa-evidence', (req: Request, res: Response) => {
       }
     }
 
-    updateTaskEvidence(id, changed_by, {
+    updateTaskEvidence(id, effectiveChangedBy, {
       qa_verified_commit: resolvedQaVerifiedCommit ?? null,
       qa_tested_url: resolvedQaTestedUrl ?? null,
     }, { explicitClears });
@@ -1556,7 +1588,7 @@ router.put('/:id/qa-evidence', (req: Request, res: Response) => {
 
     addTaskNote(
       id,
-      changed_by,
+      effectiveChangedBy,
       `${actionLabel}\nVerified commit: ${commitDisplay}\nTested URL: ${urlDisplay}${summary ? `\nSummary: ${summary}` : ''}`,
     );
 
@@ -1590,6 +1622,7 @@ router.put('/:id/deploy-evidence', (req: Request, res: Response) => {
       summary?: string | null;
       changed_by?: string;
     };
+    const effectiveChangedBy = resolveRequestActor(req, changed_by).changedBy;
 
     // Validate deploy evidence payload
     const deployValidation = validateDeployEvidence({ merged_commit, deployed_commit, deploy_target, deployed_at });
@@ -1600,7 +1633,7 @@ router.put('/:id/deploy-evidence', (req: Request, res: Response) => {
       });
     }
 
-    updateTaskEvidence(id, changed_by, {
+    updateTaskEvidence(id, effectiveChangedBy, {
       merged_commit: merged_commit ?? null,
       deployed_commit: deployed_commit ?? null,
       deploy_target: deploy_target ?? null,
@@ -1609,7 +1642,7 @@ router.put('/:id/deploy-evidence', (req: Request, res: Response) => {
 
     addTaskNote(
       id,
-      changed_by,
+      effectiveChangedBy,
       `Deploy evidence recorded\nMerged commit: ${merged_commit ?? '—'}\nDeployed commit: ${deployed_commit ?? '—'}\nDeploy target: ${deploy_target ?? '—'}\nDeployed at: ${deployed_at ?? '—'}${summary ? `\nSummary: ${summary}` : ''}`,
     );
 
@@ -1640,15 +1673,16 @@ router.put('/:id/live-verification', (req: Request, res: Response) => {
       summary?: string | null;
       changed_by?: string;
     };
+    const effectiveChangedBy = resolveRequestActor(req, changed_by).changedBy;
 
-    updateTaskEvidence(id, changed_by, {
+    updateTaskEvidence(id, effectiveChangedBy, {
       live_verified_by: live_verified_by ?? null,
       live_verified_at: live_verified_at ?? new Date().toISOString(),
     });
 
     addTaskNote(
       id,
-      changed_by,
+      effectiveChangedBy,
       `Live verification recorded\nVerified by: ${live_verified_by ?? '—'}\nVerified at: ${live_verified_at ?? new Date().toISOString()}${summary ? `\nSummary: ${summary}` : ''}`,
     );
 
@@ -1760,10 +1794,11 @@ router.post('/:id/notes', (req: Request, res: Response) => {
 
     const { author = 'system', content } = req.body as { author?: string; content: string };
     if (!content) return res.status(400).json({ error: 'content is required' });
+    const effectiveAuthor = resolveRequestActor(req, author).changedBy;
 
     const result = db.prepare(`
       INSERT INTO task_notes (task_id, author, content) VALUES (?, ?, ?)
-    `).run(id, author, content);
+    `).run(id, effectiveAuthor, content);
 
     const note = db.prepare('SELECT * FROM task_notes WHERE id = ?').get(result.lastInsertRowid);
     res.status(201).json(note);

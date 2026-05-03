@@ -223,7 +223,10 @@ export const VALID_TASK_TYPES = [
 export const VALID_TASK_STATUSES = TASK_STATUSES;
 
 export class AgentHqApiClient {
-  constructor(private readonly baseUrl: string) {}
+  constructor(
+    private readonly baseUrl: string,
+    private readonly apiKey?: string | null,
+  ) {}
 
   private async request<T>(
     method: string,
@@ -231,9 +234,14 @@ export class AgentHqApiClient {
     body?: unknown,
   ): Promise<T> {
     const url = `${this.baseUrl}${path}`;
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'x-agent-hq-mcp-client': 'agent-hq-mcp',
+    };
+    if (this.apiKey) headers.Authorization = `Bearer ${this.apiKey}`;
     const opts: RequestInit = {
       method,
-      headers: { 'Content-Type': 'application/json' },
+      headers,
     };
     if (body !== undefined) {
       opts.body = JSON.stringify(body);
@@ -567,7 +575,6 @@ export class AgentHqApiClient {
     const body = {
       status: data.status,
       changed_by: data.changed_by ?? 'Agent HQ',
-      authority_by: 'Agent HQ',
     };
     if (data.dry_run) {
       return Promise.resolve({

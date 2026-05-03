@@ -92,8 +92,30 @@ describe('materializeAgentMcpConfig', () => {
     expect(result.ok).toBe(true);
     expect(config.mcpServers['agent-hq']).toMatchObject({ command: 'node', args: ['server.js'] });
     expect(bundleConfig.mcpServers['agent-hq']).toMatchObject({ command: 'node', args: ['server.js'] });
+    expect(config.mcpServers['agent-hq'].env.AGENT_HQ_MCP_API_KEY).toMatch(/^ahq_mcp_/);
+    expect(bundleConfig.mcpServers['agent-hq'].env.AGENT_HQ_MCP_API_KEY).toBe(config.mcpServers['agent-hq'].env.AGENT_HQ_MCP_API_KEY);
     expect(config.mcpServers['agent-local-tool-mcp']).toBeUndefined();
     expect(bundleConfig.mcpServers['agent-local-tool-mcp']).toBeUndefined();
+  });
+
+  it('reuses an existing valid materialized Agent HQ MCP key for the same agent', () => {
+    createRegistryTables();
+    getDb().prepare(`INSERT INTO agents (id, name) VALUES (1, 'Agent')`).run();
+    getDb().prepare(`INSERT INTO mcp_servers (id, slug, command, args) VALUES (30, 'agent-hq', 'node', '["server.js"]')`).run();
+    getDb().prepare(`INSERT INTO agent_mcp_assignments (agent_id, mcp_server_id) VALUES (1, 30)`).run();
+    const workingDirectory = makeTempDir('agent-hq-mcp-reuse-');
+
+    const first = materializeAgentMcpConfig({ db: getDb(), agentId: 1, workingDirectory });
+    const firstConfig = JSON.parse(fs.readFileSync(path.join(workingDirectory, '.mcp.json'), 'utf8'));
+    const firstKey = firstConfig.mcpServers['agent-hq'].env.AGENT_HQ_MCP_API_KEY;
+    const second = materializeAgentMcpConfig({ db: getDb(), agentId: 1, workingDirectory });
+    const secondConfig = JSON.parse(fs.readFileSync(path.join(workingDirectory, '.mcp.json'), 'utf8'));
+
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    expect(secondConfig.mcpServers['agent-hq'].env.AGENT_HQ_MCP_API_KEY).toBe(firstKey);
+    const keyCount = getDb().prepare(`SELECT COUNT(*) as count FROM mcp_api_keys WHERE agent_id = 1`).get() as { count: number };
+    expect(keyCount.count).toBe(1);
   });
 
   it('enables the OpenClaw workspace MCP bundle plugin idempotently', () => {

@@ -67,6 +67,10 @@ export function diffFields(
  * Checks X-Actor header, then falls back to 'api'.
  */
 export function extractActor(req: { headers?: Record<string, unknown>; body?: Record<string, unknown> }): string {
+  const mcpIdentity = (req as { mcpIdentity?: { auditActor?: string } }).mcpIdentity;
+  if (typeof mcpIdentity?.auditActor === 'string' && mcpIdentity.auditActor.trim()) {
+    return mcpIdentity.auditActor.trim();
+  }
   const header = req.headers?.['x-actor'];
   if (typeof header === 'string' && header.trim()) return header.trim();
   const body = req.body?.['_actor'];

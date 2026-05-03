@@ -40,6 +40,7 @@ import sessionsRouter from './routes/sessions';
 import { shutdownPool as shutdownBrowserPool } from './services/browserPool';
 import { getMcpCatalog } from './mcp/catalog';
 import { registerAgentHqMcpCatalog } from './mcp/registerCatalog';
+import { authenticateMcpApiKeyIfPresent } from './lib/mcpApiAuth';
 
 registerAgentHqMcpCatalog();
 
@@ -49,6 +50,7 @@ const HOST = process.env.HOST ?? '0.0.0.0';
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
+app.use('/api/v1', authenticateMcpApiKeyIfPresent);
 
 function dispatchToSprintsAlias(req: express.Request, res: express.Response, targetUrl: string): void {
   const originalUrl = req.url;

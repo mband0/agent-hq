@@ -32,6 +32,7 @@ import {
   STARTER_SPRINT_WORKFLOW_TEMPLATE_SEEDS,
 } from '../lib/starterCatalog';
 import { backfillAllSprintTaskPolicies } from '../lib/sprintTaskPolicy';
+import { ensureMcpApiKeyTable } from '../lib/mcpApiAuth';
 
 const HOME = process.env.HOME ?? os.homedir();
 const OPENCLAW_DIR = process.env.WORKSPACE_PARENT ?? `${HOME}/.openclaw`;
@@ -1410,6 +1411,7 @@ export function initSchema(): void {
   ensureGitHubIdentitiesTable();
   ensureFailureClassColumns();
   seedInitialData();
+  ensureMcpApiKeyTable(db);
   ensureMcpRegistryTables();
   ensureLifecycleRulesTable();
   ensureDataMigration593();
@@ -2737,10 +2739,10 @@ if ! command -v python3 >/dev/null 2>&1; then
   fail missing_runtime 'python3 is required for local transcription but is not installed on this host'
 fi
 
-AUDIO_PATH="${TOOL_AUDIO_PATH:-${TOOL_PATH:-}}"
-LANGUAGE="${TOOL_LANGUAGE:-}"
-MODEL="${TOOL_MODEL:-base}"
-PROMPT="${TOOL_PROMPT:-}"
+AUDIO_PATH="\${TOOL_AUDIO_PATH:-\${TOOL_PATH:-}}"
+LANGUAGE="\${TOOL_LANGUAGE:-}"
+MODEL="\${TOOL_MODEL:-base}"
+PROMPT="\${TOOL_PROMPT:-}"
 
 if [ -z "$AUDIO_PATH" ]; then
   fail missing_input 'audio_path is required'
@@ -2755,7 +2757,7 @@ if [ ! -f "$AUDIO_PATH" ]; then
   fail missing_file "audio file not found: $AUDIO_PATH"
 fi
 
-case "${AUDIO_PATH##*.}" in
+case "\${AUDIO_PATH##*.}" in
   ogg|oga|opus|mp3|wav|m4a|mp4|mpeg|mpga|webm) ;;
   *) fail unsupported_format "unsupported audio format for local_stt_transcribe: $AUDIO_PATH" ;;
 esac

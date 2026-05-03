@@ -15,6 +15,8 @@ export interface McpConfig {
   apiUrl: string;
   /** Rate limit: max requests per minute. Default: 60 */
   rateLimitRpm: number;
+  /** Agent-bound MCP API key used to authenticate with Agent HQ. */
+  apiKey: string | null;
 }
 
 function loadFileConfig(): Partial<McpConfig> {
@@ -41,6 +43,14 @@ function loadFileConfig(): Partial<McpConfig> {
             : typeof parsed.rate_limit_rpm === 'number'
               ? parsed.rate_limit_rpm
               : undefined,
+        apiKey:
+          typeof parsed.apiKey === 'string'
+            ? parsed.apiKey
+            : typeof parsed.api_key === 'string'
+              ? parsed.api_key
+              : typeof parsed.mcp_api_key === 'string'
+                ? parsed.mcp_api_key
+                : undefined,
       };
     } catch {
       console.error(`[agent-hq-mcp] Warning: could not parse ${configPath}, using defaults.`);
@@ -73,5 +83,12 @@ export function loadConfig(): McpConfig {
     return 60;
   })();
 
-  return { apiUrl, rateLimitRpm };
+  const apiKey = (
+    process.env.AGENT_HQ_MCP_API_KEY ??
+    process.env.ATLAS_HQ_MCP_API_KEY ??
+    file.apiKey ??
+    ''
+  ).trim() || null;
+
+  return { apiUrl, rateLimitRpm, apiKey };
 }

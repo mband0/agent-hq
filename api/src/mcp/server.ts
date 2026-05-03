@@ -8,7 +8,7 @@
  *   AI client (stdio) -> this process -> Agent HQ REST API (localhost:3501)
  *
  * Transport: stdio (v1). No network port is opened by this server.
- * Auth: None required for v1 (local OS process isolation is sufficient).
+ * Auth: Agent-bound API key required via AGENT_HQ_MCP_API_KEY or config file.
  * Rate limit: 60 req/min by default (configurable via MCP_RATE_LIMIT_RPM).
  */
 
@@ -27,11 +27,11 @@ import { RateLimiter } from './rateLimiter';
 import { getMcpCatalog, registerCatalogTool } from './catalog';
 
 const cfg = loadConfig();
-const api = new AgentHqApiClient(cfg.apiUrl);
+const api = new AgentHqApiClient(cfg.apiUrl, cfg.apiKey);
 const limiter = new RateLimiter(cfg.rateLimitRpm);
 
 console.error(
-  `[agent-hq-mcp] Starting, API: ${cfg.apiUrl} | Rate limit: ${cfg.rateLimitRpm} req/min`,
+  `[agent-hq-mcp] Starting, API: ${cfg.apiUrl} | Rate limit: ${cfg.rateLimitRpm} req/min | Auth: ${cfg.apiKey ? 'configured' : 'missing'}`,
 );
 
 const server = new McpServer({
@@ -43,6 +43,19 @@ function wrap<T>(
   fn: () => Promise<T>,
 ): () => Promise<{ content: Array<{ type: 'text'; text: string }> }> {
   return async () => {
+    if (!cfg.apiKey) {
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify({
+              ok: false,
+              error: 'MCP API key is required. Set AGENT_HQ_MCP_API_KEY to an Agent HQ MCP key materialized for this agent.',
+            }),
+          },
+        ],
+      };
+    }
     if (!limiter.allow()) {
       return {
         content: [
