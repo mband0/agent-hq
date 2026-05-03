@@ -14,6 +14,8 @@ import { writeTaskStatusChange } from '../lib/taskHistory';
 import { markTaskNeedsAttentionForMissingSemanticHandoff, taskRequiresSemanticOutcome } from '../lib/lifecycleHandoff';
 import { getNeedsAttentionEligibleStatuses } from '../lib/reconcilerConfig';
 import { buildHookSessionKey, resolveRuntimeAgentSlug } from '../lib/sessionKeys';
+import { resolveSprintTaskRoutingAssignment } from '../lib/sprintTaskPolicy';
+import { DISPATCHABLE_ROUTED_STATUSES } from '../services/dispatcher';
 
 const POLL_INTERVAL_MS = 12_000; // ~12 seconds
 
@@ -212,30 +214,37 @@ function buildQaTaskContext(task: TaskRow): string {
   ].join('\n');
 }
 
-function resolveReviewRoutingRules(db: Database.Database, task: TaskRow): RoutingRuleRow[] {
-  if (!task.task_type || !task.sprint_id) return [];
+function resolveRoutedTaskAgentId(db: Database.Database, task: TaskRow): number | null {
+  if (!task.task_type) return null;
   try {
-    return db.prepare(`
-      SELECT *
-      FROM sprint_task_routing_rules
-      WHERE sprint_id = ?
-        AND task_type = ?
-        AND status = 'review'
-      ORDER BY priority DESC, id ASC
-    `).all(task.sprint_id, task.task_type) as RoutingRuleRow[];
+    return resolveSprintTaskRoutingAssignment(
+      db,
+      task.sprint_id ?? null,
+      task.task_type,
+      task.status,
+    ).agent_id ?? null;
   } catch {
-    return [];
+    return null;
   }
 }
 
-function reassignReviewTaskIfNeeded(db: Database.Database, task: TaskRow, rule: RoutingRuleRow): TaskRow {
-  const ruleAgentId: number | null = (rule as any).agent_id ?? null;
-  if (task.agent_id === ruleAgentId && task.review_owner_agent_id != null) {
+function shouldReconcileTaskOwnership(task: TaskRow): boolean {
+  if (!task.task_type) return false;
+  if (task.agent_id == null) return false;
+  if (task.active_instance_id != null) return false;
+  return task.status === 'review' || (DISPATCHABLE_ROUTED_STATUSES as readonly string[]).includes(task.status);
+}
+
+function reassignTaskIfNeeded(db: Database.Database, task: TaskRow, nextAgentId: number | null): TaskRow {
+  if (task.agent_id === nextAgentId && (task.status !== 'review' || task.review_owner_agent_id != null)) {
     return task;
   }
 
-  const nextReviewOwnerAgentId = task.review_owner_agent_id ?? (task.agent_id !== ruleAgentId ? task.agent_id : null);
-  if (task.agent_id === ruleAgentId && nextReviewOwnerAgentId === task.review_owner_agent_id) {
+  const nextReviewOwnerAgentId = task.status === 'review'
+    ? (task.review_owner_agent_id ?? (task.agent_id !== nextAgentId ? task.agent_id : null))
+    : task.review_owner_agent_id;
+
+  if (task.agent_id === nextAgentId && nextReviewOwnerAgentId === task.review_owner_agent_id) {
     return task;
   }
 
@@ -245,22 +254,22 @@ function reassignReviewTaskIfNeeded(db: Database.Database, task: TaskRow, rule: 
         review_owner_agent_id = ?,
         updated_at = datetime('now')
     WHERE id = ?
-  `).run(ruleAgentId, nextReviewOwnerAgentId, task.id);
+  `).run(nextAgentId, nextReviewOwnerAgentId, task.id);
 
-  if (task.agent_id !== ruleAgentId) {
+  if (task.agent_id !== nextAgentId) {
     const oldName = task.agent_id ? (db.prepare('SELECT name FROM agents WHERE id = ?').get(task.agent_id) as { name: string } | undefined)?.name : null;
-    const newName = ruleAgentId ? (db.prepare('SELECT name FROM agents WHERE id = ?').get(ruleAgentId) as { name: string } | undefined)?.name : null;
-    logHistory(db, task.id, 'reconciler', 'agent_id', oldName ?? 'unassigned', newName ?? String(ruleAgentId));
+    const newName = nextAgentId ? (db.prepare('SELECT name FROM agents WHERE id = ?').get(nextAgentId) as { name: string } | undefined)?.name : null;
+    logHistory(db, task.id, 'reconciler', 'agent_id', oldName ?? 'unassigned', newName ?? String(nextAgentId));
     log(db,
-      `Review routing: task #${task.id} "${task.title}" reassigned ${oldName ?? 'unassigned'} → ${newName ?? String(ruleAgentId)}`,
+      `${task.status === 'review' ? 'Review' : 'Routing'} ownership: task #${task.id} "${task.title}" reassigned ${oldName ?? 'unassigned'} → ${newName ?? String(nextAgentId)}`,
       task.id,
-      ruleAgentId ?? undefined,
+      nextAgentId ?? undefined,
     );
   }
 
   return {
     ...task,
-    agent_id: ruleAgentId,
+    agent_id: nextAgentId,
     review_owner_agent_id: nextReviewOwnerAgentId,
   };
 }
@@ -299,135 +308,145 @@ export async function reconcileReviewQaRouting(
     ORDER BY t.updated_at ASC
   `).all() as TaskRow[];
 
+  const routedTasks = db.prepare(`
+    SELECT t.*
+    FROM tasks t
+    WHERE t.status IN (${DISPATCHABLE_ROUTED_STATUSES.map(() => '?').join(', ')})
+      AND t.paused_at IS NULL
+      AND t.agent_id IS NOT NULL
+      AND t.active_instance_id IS NULL
+      AND (t.sprint_id IS NULL OR EXISTS (
+        SELECT 1 FROM sprints sp WHERE sp.id = t.sprint_id AND sp.status != 'closed'
+      ))
+    ORDER BY t.updated_at ASC
+  `).all(...DISPATCHABLE_ROUTED_STATUSES) as TaskRow[];
+
+  for (const task of routedTasks) {
+    if (!shouldReconcileTaskOwnership(task)) continue;
+    const routedAgentId = resolveRoutedTaskAgentId(db, task);
+    if (routedAgentId == null || routedAgentId === task.agent_id) continue;
+    reassignTaskIfNeeded(db, task, routedAgentId);
+  }
+
   for (const originalTask of reviewTasks) {
-    const rules = resolveReviewRoutingRules(db, originalTask);
-    if (rules.length === 0) continue;
+    const routedAgentId = resolveRoutedTaskAgentId(db, originalTask);
+    if (routedAgentId == null) continue;
 
     // Skip entire task if it already has a live instance (no point trying any rule)
     if (hasTaskLiveInstance(db, originalTask.id)) continue;
 
-    for (const rule of rules) {
-      // Re-check live instance on each iteration in case a concurrent tick claimed it
-      if (hasTaskLiveInstance(db, originalTask.id)) break;
+    let agent: AgentRow | undefined;
+    if (routedAgentId) {
+      agent = db.prepare(`SELECT * FROM agents WHERE id = ? AND enabled = 1`).get(routedAgentId) as AgentRow | undefined;
+    }
+    if (!agent) continue;
 
-      // Task #596: resolve agent via rule's agent_id directly, fall back to job_templates FK
-      const ruleAgentId = (rule as any).agent_id;
-      let agent: AgentRow | undefined;
-      if (ruleAgentId) {
-        agent = db.prepare(`SELECT * FROM agents WHERE id = ? AND enabled = 1`).get(ruleAgentId) as AgentRow | undefined;
-      }
-      if (!agent) continue;
+    // Agent busy? leave review ownership converged on next tick when capacity frees up
+    if (isAgentBusy(db, agent.id)) continue;
 
-      // Agent busy? Try next rule instead of skipping the whole task
-      if (isAgentBusy(db, agent.id)) continue;
+    // Agent is available — now safe to write task reassignment to DB
+    const task = reassignTaskIfNeeded(db, originalTask, routedAgentId);
+    if (!task.agent_id) continue;
 
-      // Agent is available — now safe to write task reassignment to DB
-      const task = reassignReviewTaskIfNeeded(db, originalTask, rule);
-      if (!task.agent_id) continue;
+    const sprint = task.sprint_id
+      ? db.prepare('SELECT * FROM sprints WHERE id = ?').get(task.sprint_id) as SprintRow | undefined
+      : undefined;
 
-      const sprint = task.sprint_id
-        ? db.prepare('SELECT * FROM sprints WHERE id = ?').get(task.sprint_id) as SprintRow | undefined
-        : undefined;
+    const preInstructions = agent.pre_instructions
+      ? `${buildQaTaskContext(task)}\n\n---\n\n${agent.pre_instructions}`
+      : buildQaTaskContext(task);
 
-      const preInstructions = agent.pre_instructions
-        ? `${buildQaTaskContext(task)}\n\n---\n\n${agent.pre_instructions}`
-        : buildQaTaskContext(task);
+    const instanceResult = db.prepare(`
+      INSERT INTO job_instances (agent_id, status)
+      VALUES (?, 'queued')
+    `).run(agent.id);
+    const instanceId = instanceResult.lastInsertRowid as number;
+    attachInstanceToTask(db, instanceId, task.id);
 
-      const instanceResult = db.prepare(`
-        INSERT INTO job_instances (agent_id, status)
-        VALUES (?, 'queued')
-      `).run(agent.id);
-      const instanceId = instanceResult.lastInsertRowid as number;
-      attachInstanceToTask(db, instanceId, task.id);
+    try {
+      const taskNotesSection = buildDispatchTaskNotesSection(getDispatchTaskNotesContext(db, {
+        taskId: task.id,
+        agentId: agent.id,
+        currentInstanceId: instanceId,
+      }));
 
-      try {
-        const taskNotesSection = buildDispatchTaskNotesSection(getDispatchTaskNotesContext(db, {
-          taskId: task.id,
-          agentId: agent.id,
-          currentInstanceId: instanceId,
-        }));
+      // Build message via shared helper + append lifecycle contract
+      let message = buildDispatchMessage({
+        preInstructions,
+        skillName: agent.skill_name,
+        sprintGoal: sprint?.goal || null,
+        taskNotesSection,
+      });
 
-        // Build message via shared helper + append lifecycle contract
-        let message = buildDispatchMessage({
-          preInstructions,
-          skillName: agent.skill_name,
-          sprintGoal: sprint?.goal || null,
-          taskNotesSection,
-        });
-
-        // Append task lifecycle contract
-        const agentSlug = resolveRuntimeAgentSlug(agent)
-          ?? agent.session_key.replace(/[^a-z0-9-]/gi, '-').toLowerCase();
-        const runSessionKey = buildHookSessionKey(instanceId);
-        const contract = buildContractInstructions({
-          instanceId,
-          taskId: task.id,
-          taskStatus: task.status,
-          taskType: task.task_type ?? null,
-          sprintId: task.sprint_id ?? null,
-          sprintType: sprint?.sprint_type ?? null,
-          agentSlug,
-          sessionKey: runSessionKey,
-          transportMode: resolveTransportMode({
-            runtimeType: agent.runtime_type,
-            runtimeConfig: agent.runtime_config,
-            hooksUrl: agent.hooks_url,
-          }),
-          db,
-        });
-        message += `\n\n${contract}`;
-
-        const effectiveModel = agent.model ?? null;
-
-        await deps.dispatchInstance({
-          instanceId,
-          agentId: agent.id,
-          jobTitle: agent.job_title,
-          sessionKey: agent.session_key,
-          message,
-          model: effectiveModel,
-          timeoutSeconds: agent.timeout_seconds,
-          hooksUrl: agent.hooks_url,
-          hooksAuthHeader: agent.hooks_auth_header,
+      // Append task lifecycle contract
+      const agentSlug = resolveRuntimeAgentSlug(agent)
+        ?? agent.session_key.replace(/[^a-z0-9-]/gi, '-').toLowerCase();
+      const runSessionKey = buildHookSessionKey(instanceId);
+      const contract = buildContractInstructions({
+        instanceId,
+        taskId: task.id,
+        taskStatus: task.status,
+        taskType: task.task_type ?? null,
+        sprintId: task.sprint_id ?? null,
+        sprintType: sprint?.sprint_type ?? null,
+        agentSlug,
+        sessionKey: runSessionKey,
+        transportMode: resolveTransportMode({
           runtimeType: agent.runtime_type,
           runtimeConfig: agent.runtime_config,
-          storyPoints: task.story_points ?? null,
-        });
+          hooksUrl: agent.hooks_url,
+        }),
+        db,
+      });
+      message += `\n\n${contract}`;
 
-        log(db,
-          `QA auto-dispatch: task #${task.id} "${task.title}" kept in review and queued job "${agent.job_title}" for agent "${agent.name}" (model=${effectiveModel ?? 'gateway-default'})`,
-          task.id,
-          agent.id,
-        );
-      } catch (err) {
-        console.error(`[reconciler] QA dispatch failed for task #${task.id}:`, err);
-        // Mark the newly created instance as failed — do NOT call
-        // cleanupTaskExecutionLinkageForStatus here, because the task may
-        // still have a legitimately running instance from a prior dispatch.
-        // Clearing active_instance_id on a transient dispatch error causes
-        // running QA/DevOps instances to lose authoritative linkage.
+      const effectiveModel = agent.model ?? null;
+
+      await deps.dispatchInstance({
+        instanceId,
+        agentId: agent.id,
+        jobTitle: agent.job_title,
+        sessionKey: agent.session_key,
+        message,
+        model: effectiveModel,
+        timeoutSeconds: agent.timeout_seconds,
+        hooksUrl: agent.hooks_url,
+        hooksAuthHeader: agent.hooks_auth_header,
+        runtimeType: agent.runtime_type,
+        runtimeConfig: agent.runtime_config,
+        storyPoints: task.story_points ?? null,
+      });
+
+      log(db,
+        `QA auto-dispatch: task #${task.id} "${task.title}" kept in review and queued job "${agent.job_title}" for agent "${agent.name}" (model=${effectiveModel ?? 'gateway-default'})`,
+        task.id,
+        agent.id,
+      );
+    } catch (err) {
+      console.error(`[reconciler] QA dispatch failed for task #${task.id}:`, err);
+      // Mark the newly created instance as failed — do NOT call
+      // cleanupTaskExecutionLinkageForStatus here, because the task may
+      // still have a legitimately running instance from a prior dispatch.
+      // Clearing active_instance_id on a transient dispatch error causes
+      // running QA/DevOps instances to lose authoritative linkage.
+      db.prepare(`
+        UPDATE job_instances
+        SET status = 'failed',
+            error = ?,
+            completed_at = datetime('now')
+        WHERE id = ?
+          AND status NOT IN ('done', 'failed', 'cancelled')
+      `).run(
+        err instanceof Error ? err.message : String(err),
+        instanceId
+      );
+      // Restore previous active_instance_id if this failed instance was set as active
+      const currentTask = db.prepare('SELECT active_instance_id FROM tasks WHERE id = ?').get(task.id) as { active_instance_id: number | null } | undefined;
+      if (currentTask?.active_instance_id === instanceId) {
         db.prepare(`
-          UPDATE job_instances
-          SET status = 'failed',
-              error = ?,
-              completed_at = datetime('now')
-          WHERE id = ?
-            AND status NOT IN ('done', 'failed', 'cancelled')
-        `).run(
-          err instanceof Error ? err.message : String(err),
-          instanceId
-        );
-        // Restore previous active_instance_id if this failed instance was set as active
-        const currentTask = db.prepare('SELECT active_instance_id FROM tasks WHERE id = ?').get(task.id) as { active_instance_id: number | null } | undefined;
-        if (currentTask?.active_instance_id === instanceId) {
-          db.prepare(`
-            UPDATE tasks SET active_instance_id = NULL, updated_at = datetime('now') WHERE id = ?
-          `).run(task.id);
-        }
+          UPDATE tasks SET active_instance_id = NULL, updated_at = datetime('now') WHERE id = ?
+        `).run(task.id);
       }
-
-      // Successfully dispatched (or attempted) — stop trying further rules for this task
-      break;
     }
   }
 }

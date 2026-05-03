@@ -227,6 +227,7 @@ interface CandidateTask {
   created_at: string;
   blocking_count: number;
   story_points: number | null;
+  active_instance_id: number | null;
 }
 
 // ── Story-point model routing ─────────────────────────────────────────────────
@@ -436,7 +437,7 @@ function getCandidates(db: Database.Database, agentId: number, _templateId: numb
   let sql = `
     SELECT t.id, t.title, t.description, t.status, t.priority,
            t.agent_id, t.project_id, t.task_type, t.sprint_id, s.name as sprint_name, s.sprint_type,
-           t.created_at, t.story_points,
+           t.created_at, t.story_points, t.active_instance_id,
            (
              SELECT COUNT(*)
              FROM task_dependencies td2
@@ -498,7 +499,7 @@ function getAllDispatchableTasks(db: Database.Database, projectId?: number | nul
   let sql = `
     SELECT t.id, t.title, t.description, t.status, t.priority,
            t.agent_id, t.project_id, t.task_type, t.sprint_id, s.name as sprint_name, s.sprint_type,
-           t.created_at, t.story_points,
+           t.created_at, t.story_points, t.active_instance_id,
            (
              SELECT COUNT(*)
              FROM task_dependencies td2
@@ -541,6 +542,8 @@ function getAllDispatchableTasks(db: Database.Database, projectId?: number | nul
  * sprint_id/status/task_type, ordered by priority DESC so the highest-priority
  * rule is tried first. Each row includes full agent fields for dispatch.
  */
+export const DISPATCHABLE_ROUTED_STATUSES = ['ready', 'ready_to_merge', 'in_progress'] as const;
+
 function getMatchingRoutingRules(db: Database.Database, task: CandidateTask): RoutingRuleRow[] {
   const runRuleQuery = (tableName: string, scopeCondition: string, params: unknown[]): RoutingRuleRow[] => db.prepare(`
       SELECT rr.*,

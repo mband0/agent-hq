@@ -1346,11 +1346,11 @@ export function initSchema(): void {
 
   const defaults = [
     { from: 'in_progress', outcome: 'completed_for_review', to: 'review', lane: 'default' },
-    { from: 'in_progress', outcome: 'blocked', to: 'stalled', lane: 'default' },
+    { from: 'in_progress', outcome: 'blocked', to: 'blocked', lane: 'default' },
     { from: 'in_progress', outcome: 'failed', to: 'failed', lane: 'default' },
     { from: 'review', outcome: 'qa_pass', to: 'qa_pass', lane: 'default' },
     { from: 'review', outcome: 'qa_fail', to: 'ready', lane: 'default' },
-    { from: 'review', outcome: 'blocked', to: 'stalled', lane: 'default' },
+    { from: 'review', outcome: 'blocked', to: 'blocked', lane: 'default' },
     { from: 'review', outcome: 'failed', to: 'failed', lane: 'default' },
     { from: 'qa_pass', outcome: 'approved_for_merge', to: 'ready_to_merge', lane: 'default' },
     { from: 'qa_pass', outcome: 'qa_fail', to: 'ready', lane: 'default' },

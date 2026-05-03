@@ -30,11 +30,11 @@ interface WorkflowTemplateRow {
 
 const LEGACY_FALLBACK_TRANSITIONS: ResolvedSprintWorkflowTransition[] = [
   { fromStatus: 'in_progress', outcome: 'completed_for_review', toStatus: 'review', taskType: null, priority: 0, isProtected: true },
-  { fromStatus: 'in_progress', outcome: 'blocked', toStatus: 'stalled', taskType: null, priority: 0, isProtected: false },
+  { fromStatus: 'in_progress', outcome: 'blocked', toStatus: 'blocked', taskType: null, priority: 0, isProtected: false },
   { fromStatus: 'in_progress', outcome: 'failed', toStatus: 'failed', taskType: null, priority: 0, isProtected: false },
   { fromStatus: 'review', outcome: 'qa_pass', toStatus: 'qa_pass', taskType: null, priority: 0, isProtected: true },
   { fromStatus: 'review', outcome: 'qa_fail', toStatus: 'ready', taskType: null, priority: 0, isProtected: false },
-  { fromStatus: 'review', outcome: 'blocked', toStatus: 'stalled', taskType: null, priority: 0, isProtected: false },
+  { fromStatus: 'review', outcome: 'blocked', toStatus: 'blocked', taskType: null, priority: 0, isProtected: false },
   { fromStatus: 'review', outcome: 'failed', toStatus: 'failed', taskType: null, priority: 0, isProtected: false },
   { fromStatus: 'qa_pass', outcome: 'approved_for_merge', toStatus: 'ready_to_merge', taskType: null, priority: 0, isProtected: true },
   { fromStatus: 'qa_pass', outcome: 'qa_fail', toStatus: 'ready', taskType: null, priority: 0, isProtected: false },

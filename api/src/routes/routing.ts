@@ -122,11 +122,11 @@ function ensureRoutingMetadata(): void {
 
     const transitions = [
       { from_status: 'in_progress', outcome: 'completed_for_review', to_status: 'review' },
-      { from_status: 'in_progress', outcome: 'blocked', to_status: 'stalled' },
+      { from_status: 'in_progress', outcome: 'blocked', to_status: 'blocked' },
       { from_status: 'in_progress', outcome: 'failed', to_status: 'failed' },
       { from_status: 'review', outcome: 'qa_pass', to_status: 'qa_pass' },
       { from_status: 'review', outcome: 'qa_fail', to_status: 'ready' },
-      { from_status: 'review', outcome: 'blocked', to_status: 'stalled' },
+      { from_status: 'review', outcome: 'blocked', to_status: 'blocked' },
       { from_status: 'review', outcome: 'failed', to_status: 'failed' },
       { from_status: 'qa_pass', outcome: 'approved_for_merge', to_status: 'ready_to_merge', lane: 'auto' },
       { from_status: 'qa_pass', outcome: 'qa_fail', to_status: 'ready' },
