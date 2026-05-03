@@ -553,12 +553,17 @@ export function cleanupImpossibleTaskLifecycleStates(db: Database.Database): num
   //   - its task status is one of the deployment-stage statuses (review, ready_to_merge, deployed), AND
   //   - its active_instance_id points to a live instance (queued, dispatched, running)
   //
+  // OR:
+  //   - its task status is 'blocked', AND
+  //   - its active_instance_id points to a live instance (queued, dispatched, running)
+  //
   // The release-lane exception is critical: QA dispatch creates an instance and links
   // it via active_instance_id while the task remains in 'review'. Deployment-stage dispatch
-  // creates an instance while the task is in 'ready_to_merge' or 'deployed'. Without these
-  // exceptions, the next reconciler tick would clear active_instance_id, breaking
-  // the authority chain and causing outcome posts to be rejected as
-  // 'instance_not_authoritative'.
+  // creates an instance while the task is in 'ready_to_merge' or 'deployed'. Blocked tasks
+  // can also legitimately retain a live active instance while work is paused pending an
+  // external dependency. Without these exceptions, the next reconciler tick would clear
+  // active_instance_id, breaking the authority chain and letting blocked tasks be
+  // reassigned even when a live run is still attached.
   //
   // Anything that does not satisfy either condition gets its active_instance_id cleared.
   const result = db.prepare(`
@@ -567,7 +572,7 @@ export function cleanupImpossibleTaskLifecycleStates(db: Database.Database): num
         updated_at = datetime('now')
     WHERE active_instance_id IS NOT NULL
       AND NOT (
-        status IN ('dispatched', 'in_progress', 'stalled', 'review', 'ready_to_merge', 'deployed')
+        status IN ('dispatched', 'in_progress', 'stalled', 'review', 'ready_to_merge', 'deployed', 'blocked')
         AND active_instance_id IN (
           SELECT id FROM job_instances
           WHERE status IN ('queued', 'dispatched', 'running')
