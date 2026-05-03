@@ -76,8 +76,8 @@ function isProductionLikeUrl(url: string | null | undefined): boolean {
   const value = String(url ?? '').trim().toLowerCase();
   if (!value) return false;
   return value.includes(':3500')
-    || value.includes('atlas-hq-production')
-    || value.includes('atlas-hq-prod')
+    || value.includes('agent-hq-production')
+    || value.includes('agent-hq-prod')
     || value.includes('nordinitiatives.com');
 }
 
@@ -212,13 +212,13 @@ export function evaluateTaskIntegrity(
   }
 
   if ((status === 'review' || status === 'qa_pass' || status === 'ready_to_merge') && isMainlineBranch(task.review_branch)) {
-    warnings.push('Review evidence references main/master. Atlas HQ implementation work should use a feature branch/worktree, not main.');
+    warnings.push('Review evidence references main/master. Agent HQ implementation work should use a feature branch/worktree, not main.');
   }
   if ((status === 'review' || status === 'qa_pass' || status === 'ready_to_merge') && isProductionLikeUrl(task.review_url)) {
     warnings.push('Review evidence points at a production-like URL. Use Dev evidence for implementation handoff and keep production for deployed/live verification.');
   }
   if ((status === 'qa_pass' || status === 'ready_to_merge') && isProductionLikeUrl(task.qa_tested_url)) {
-    warnings.push('QA evidence points at a production-like URL. For Atlas HQ internal tasks, use the Dev environment for QA proof and keep production for live verification.');
+    warnings.push('QA evidence points at a production-like URL. For Agent HQ internal tasks, use the Dev environment for QA proof and keep production for live verification.');
   }
 
   let release_state_badge: IntegrityEvaluation['release_state_badge'] = null;

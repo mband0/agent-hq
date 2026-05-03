@@ -750,8 +750,8 @@ function killPid(pid) {
 // ── Public commands ──────────────────────────────────────────────────────────
 
 export function localStart(flags) {
-  const apiPort = flags.apiPort || process.env.AGENT_HQ_API_PORT || process.env.ATLAS_HQ_API_PORT || '3501';
-  const uiPort = flags.uiPort || process.env.AGENT_HQ_UI_PORT || process.env.ATLAS_HQ_UI_PORT || '3500';
+  const apiPort = flags.apiPort || process.env.AGENT_HQ_API_PORT || '3501';
+  const uiPort = flags.uiPort || process.env.AGENT_HQ_UI_PORT || '3500';
   const runtimePath = buildPathWith();
 
   // If already running, bail
@@ -798,8 +798,6 @@ export function localStart(flags) {
         PORT: apiPort,
         AGENT_HQ_DB_PATH: DB_PATH,
         AGENT_HQ_DATA_DIR: DATA_DIR,
-        ATLAS_HQ_DB_PATH: DB_PATH,
-        ATLAS_HQ_DATA_DIR: DATA_DIR,
         PATH: runtimePath,
       },
     },
@@ -820,7 +818,6 @@ export function localStart(flags) {
         NODE_ENV: 'production',
         PORT: uiPort,
         NEXT_PUBLIC_API_URL: `http://localhost:${apiPort}`,
-        ATLAS_INTERNAL_BASE_URL: `http://127.0.0.1:${apiPort}`,
         PATH: runtimePath,
       },
     });
@@ -841,7 +838,6 @@ export function localStart(flags) {
           NODE_ENV: 'production',
           PORT: uiPort,
           NEXT_PUBLIC_API_URL: `http://localhost:${apiPort}`,
-          ATLAS_INTERNAL_BASE_URL: `http://127.0.0.1:${apiPort}`,
           PATH: runtimePath,
         },
       },

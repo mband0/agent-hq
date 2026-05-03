@@ -1,7 +1,7 @@
 ###############################################################################
 # docker/docker-compose.agents.yml
 #
-# Full OpenClaw agent fleet for the Atlas HQ Agency operation.
+# Full OpenClaw agent fleet for the Agent HQ Agency operation.
 # Each service maps to one agent, builds from the shared Dockerfile.agent,
 # and uses a named workspace volume so state persists across container restarts.
 #
@@ -34,7 +34,7 @@
 name: openclaw-agents
 
 # ── Shared network ────────────────────────────────────────────────────────────
-# Agents only need to reach the host Atlas HQ API — not each other.
+# Agents only need to reach the host Agent HQ API — not each other.
 # extra_hosts adds host.docker.internal on Linux (Docker 20.10+).
 networks:
   agent-net:

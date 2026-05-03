@@ -1,7 +1,7 @@
-# Beginner Interactive Tutorial Spec — Atlas HQ v2
+# Beginner Interactive Tutorial Spec — Agent HQ v2
 
-**Task:** #582 — Beginner interactive Atlas HQ tutorial  
-**Sprint:** Atlas HQ — First-Time Experience  
+**Task:** #582 — Beginner interactive Agent HQ tutorial  
+**Sprint:** Agent HQ — First-Time Experience  
 **Author:** Codex  
 **Date:** 2026-04-10  
 **Status:** Updated for implementation  
@@ -11,7 +11,7 @@
 
 ## 1. Overview
 
-Atlas HQ now needs a first-use tutorial that does two jobs well for non-technical users:
+Agent HQ now needs a first-use tutorial that does two jobs well for non-technical users:
 
 1. Teach them that the **Atlas chat bubble** is the safest place to ask for help
 2. Walk them through the main tabs so they understand what each part of the product is for

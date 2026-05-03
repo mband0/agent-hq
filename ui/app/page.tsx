@@ -105,7 +105,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     try {
-      const name = localStorage.getItem('atlas-hq-user-name');
+      const name = localStorage.getItem('agent-hq-user-name');
       if (name && name.trim()) setUserName(name.trim());
     } catch {}
   }, []);

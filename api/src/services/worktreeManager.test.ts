@@ -38,7 +38,7 @@ describe('pruneOrphanedWorktrees', () => {
 
   it('prunes stale worktrees with both current and legacy task folder names', () => {
     const current = makeOldDirectory('task-101');
-    const legacy = makeOldDirectory('atlas-hq-task-102');
+    const legacy = makeOldDirectory('agent-hq-task-102');
     const active = makeOldDirectory('task-103');
     makeOldDirectory('not-a-task');
 

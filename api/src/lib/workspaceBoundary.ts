@@ -225,14 +225,14 @@ export interface SecurityViolationContext {
 }
 
 /**
- * logSecurityViolation — write a security event to Atlas HQ.
+ * logSecurityViolation — write a security event to Agent HQ.
  *
  * Uses the `security_events` table (created by schema migration below).
  * Falls back to console.error if the DB write fails so a logging failure
  * never silences the violation itself.
  *
  * Also writes a row to the `logs` table (level=error) so the event appears
- * in the existing Atlas HQ log viewer.
+ * in the existing Agent HQ log viewer.
  */
 export function logSecurityViolation(
   db: Database.Database,

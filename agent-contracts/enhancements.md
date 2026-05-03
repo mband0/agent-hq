@@ -1,6 +1,6 @@
 ---
 <!-- enhancements.md: Enhancement sprint contract template. Keep expectations explicit and text-first. -->
-## Atlas HQ enhancement contract for this dispatched instance
+## Agent HQ enhancement contract for this dispatched instance
 Sprint type: {{sprintType}}
 Workflow lane: {{lane}}
 Instance ID: {{instanceId}}

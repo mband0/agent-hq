@@ -137,7 +137,7 @@ export default function TelegramSettings({ onBack }: { onBack: () => void }) {
 
         {/* Info */}
         <p className="text-[11px] text-slate-400 leading-relaxed">
-          Connect your Telegram bot to receive Atlas HQ notifications on mobile. 
+          Connect your Telegram bot to receive Agent HQ notifications on mobile. 
           You&apos;ll need a <a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer" className="text-amber-400 hover:underline">@BotFather</a> bot token and your Telegram user/chat ID.
         </p>
 

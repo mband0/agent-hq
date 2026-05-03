@@ -1,5 +1,5 @@
 /**
- * Atlas HQ MCP Server — Token-Bucket Rate Limiter
+ * Agent HQ MCP Server — Token-Bucket Rate Limiter
  *
  * Simple per-process rate limiter. In the stdio model there is exactly one
  * MCP client, so process-level limiting is sufficient for v1.

@@ -59,7 +59,7 @@ module.exports = {
       env: {
         NODE_ENV: env.NODE_ENV || 'production',
         PORT: env.UI_PORT || '3500',
-        ATLAS_INTERNAL_BASE_URL: env.ATLAS_INTERNAL_BASE_URL || `http://127.0.0.1:${env.PORT || '3501'}`
+        AGENT_HQ_INTERNAL_BASE_URL: env.AGENT_HQ_INTERNAL_BASE_URL || `http://127.0.0.1:${env.PORT || '3501'}`
       },
       autorestart: true,
       watch: false,

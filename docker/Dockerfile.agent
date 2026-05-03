@@ -23,7 +23,7 @@
 #   OPENCLAW_MODEL       Model string, e.g. "anthropic/claude-sonnet-4-6"
 #   AGENT_ID             Must match the slug embedded at build time
 #   HOOKS_TOKEN          Gateway hooks auth token
-#   AGENT_HQ_API_URL     Atlas HQ API base URL, e.g. http://host.docker.internal:3501
+#   AGENT_HQ_API_URL     Agent HQ API base URL, e.g. http://host.docker.internal:3501
 #
 # ── Volume mounts (required at runtime) ───────────────────────────────────────
 #   /root/.openclaw/openclaw.json   Agent config file (contains auth secrets)

@@ -83,7 +83,7 @@ export default function MainContent({ children }: { children: React.ReactNode })
       })
       .catch(() => {
         // API not available; fall back to the persisted local hint
-        if (localStorage.getItem('atlas-hq-onboarded') !== '1') {
+        if (localStorage.getItem('agent-hq-onboarded') !== '1') {
           setShowOnboarding(true);
         }
       });

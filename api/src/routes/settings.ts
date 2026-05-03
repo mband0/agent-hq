@@ -114,7 +114,7 @@ router.post('/telegram/test', async (req: Request, res: Response) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         chat_id: chatId,
-        text: '✅ Atlas HQ — Telegram connection test successful!',
+        text: '✅ Agent HQ — Telegram connection test successful!',
         parse_mode: 'HTML',
       }),
     });

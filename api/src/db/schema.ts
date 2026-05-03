@@ -1911,16 +1911,16 @@ STARTUP SEQUENCE:
 3. Read ${OPENCLAW_DIR}/workspace-agency-frontend/TOOLS.md — your design toolkit
 
 ## Your assigned task
-The dispatcher has already attached the specific task context above these instructions and Atlas HQ already claimed the task for you. Do not change the task status with the generic PUT /tasks/:id endpoint.
+The dispatcher has already attached the specific task context above these instructions and Agent HQ already claimed the task for you. Do not change the task status with the generic PUT /tasks/:id endpoint.
 Do not scan the task queue — the dispatcher handles task selection.
 
-## Atlas HQ environment discipline
-- Atlas HQ Dev is the default development, implementation, and QA/review environment on UI/API ports 3510/3511 for Atlas HQ internal tasks.
-- Atlas HQ production is the live system on UI/API ports 3500/3501. Production is only for deployed or live-verified work, never normal feature development.
-- The separate Atlas HQ QA environment on UI/API ports 3520/3521 is deprecated for Atlas HQ internal tasks.
-- Before starting an Atlas HQ task, pull latest origin and create or switch to a feature branch/worktree. Do normal feature work on that branch/worktree, not directly on main.
-- For Atlas HQ tasks, work in ${OPENCLAW_DIR}/workspace-agency-frontend/atlas-hq.
-- Start by running: git -C ${OPENCLAW_DIR}/workspace-agency-frontend/atlas-hq fetch origin --prune && git -C ${OPENCLAW_DIR}/workspace-agency-frontend/atlas-hq pull --ff-only origin main
+## Agent HQ environment discipline
+- Agent HQ Dev is the default development, implementation, and QA/review environment on UI/API ports 3510/3511 for Agent HQ internal tasks.
+- Agent HQ production is the live system on UI/API ports 3500/3501. Production is only for deployed or live-verified work, never normal feature development.
+- The separate Agent HQ QA environment on UI/API ports 3520/3521 is deprecated for Agent HQ internal tasks.
+- Before starting an Agent HQ task, pull latest origin and create or switch to a feature branch/worktree. Do normal feature work on that branch/worktree, not directly on main.
+- For Agent HQ tasks, work in ${OPENCLAW_DIR}/workspace-agency-frontend/agent-hq.
+- Start by running: git -C ${OPENCLAW_DIR}/workspace-agency-frontend/agent-hq fetch origin --prune && git -C ${OPENCLAW_DIR}/workspace-agency-frontend/agent-hq pull --ff-only origin main
 - Validate and record review evidence against Dev with branch name, commit SHA, and a non-production Dev URL. Do not use main or a production URL as normal feature-review proof.
 
 ## Completion workflow
@@ -1934,16 +1934,16 @@ STARTUP SEQUENCE:
 2. Read ${OPENCLAW_DIR}/workspace-agency-backend/AGENTS.md
 
 ## Your assigned task
-The dispatcher has already attached the specific task context above these instructions and Atlas HQ already claimed the task for you. Do not change the task status with the generic PUT /tasks/:id endpoint.
+The dispatcher has already attached the specific task context above these instructions and Agent HQ already claimed the task for you. Do not change the task status with the generic PUT /tasks/:id endpoint.
 Do not scan the task queue — the dispatcher handles task selection.
 
-## Atlas HQ environment discipline
-- Atlas HQ Dev is the default development, implementation, and QA/review environment on UI/API ports 3510/3511 for Atlas HQ internal tasks.
-- Atlas HQ production is the live system on UI/API ports 3500/3501. Production is only for deployed or live-verified work, never normal feature development.
-- The separate Atlas HQ QA environment on UI/API ports 3520/3521 is deprecated for Atlas HQ internal tasks.
-- Before starting an Atlas HQ task, pull latest origin and create or switch to a feature branch/worktree. Do normal feature work on that branch/worktree, not directly on main.
-- For Atlas HQ tasks, work in ${OPENCLAW_DIR}/workspace-agency-backend/atlas-hq.
-- Start by running: git -C ${OPENCLAW_DIR}/workspace-agency-backend/atlas-hq fetch origin --prune && git -C ${OPENCLAW_DIR}/workspace-agency-backend/atlas-hq pull --ff-only origin main
+## Agent HQ environment discipline
+- Agent HQ Dev is the default development, implementation, and QA/review environment on UI/API ports 3510/3511 for Agent HQ internal tasks.
+- Agent HQ production is the live system on UI/API ports 3500/3501. Production is only for deployed or live-verified work, never normal feature development.
+- The separate Agent HQ QA environment on UI/API ports 3520/3521 is deprecated for Agent HQ internal tasks.
+- Before starting an Agent HQ task, pull latest origin and create or switch to a feature branch/worktree. Do normal feature work on that branch/worktree, not directly on main.
+- For Agent HQ tasks, work in ${OPENCLAW_DIR}/workspace-agency-backend/agent-hq.
+- Start by running: git -C ${OPENCLAW_DIR}/workspace-agency-backend/agent-hq fetch origin --prune && git -C ${OPENCLAW_DIR}/workspace-agency-backend/agent-hq pull --ff-only origin main
 - Implement, validate, and record review evidence against Dev with branch name, commit SHA, and a non-production Dev URL. Do not use main or a production URL as normal feature-review proof.
 
 ## Completion workflow
@@ -1960,11 +1960,11 @@ STARTUP SEQUENCE:
 The dispatcher has already attached the specific review task context above these instructions.
 Keep the task in review while you test it. Do not use the generic PUT /tasks/:id endpoint to mark the task done or in_progress.
 
-## Atlas HQ environment discipline
-- Atlas HQ Dev is the implementation and QA/review environment on UI/API ports 3510/3511 for Atlas HQ internal tasks. Use Dev for QA evidence on Atlas HQ internal work.
-- The separate Atlas HQ QA environment on UI/API ports 3520/3521 is deprecated for Atlas HQ internal tasks.
-- Atlas HQ production is the live system on UI/API ports 3500/3501. Production is only for deployed or live-verified work, not normal QA proof.
-- QA should validate the reviewed branch/commit in Dev for Atlas HQ internal tasks, not main on production.
+## Agent HQ environment discipline
+- Agent HQ Dev is the implementation and QA/review environment on UI/API ports 3510/3511 for Agent HQ internal tasks. Use Dev for QA evidence on Agent HQ internal work.
+- The separate Agent HQ QA environment on UI/API ports 3520/3521 is deprecated for Agent HQ internal tasks.
+- Agent HQ production is the live system on UI/API ports 3500/3501. Production is only for deployed or live-verified work, not normal QA proof.
+- QA should validate the reviewed branch/commit in Dev for Agent HQ internal tasks, not main on production.
 - If review evidence points to main or a production URL, flag it and fail the handoff unless the task is explicitly a production verification task.
 
 ## QA workflow
@@ -1976,20 +1976,20 @@ On FAIL:
 - add a precise task note with repro steps, expected vs actual, severity, tested URL, and verified branch/commit
 - report POST /api/v1/tasks/:id/outcome with outcome=qa_fail (this is the ONE AND ONLY exit step — posting this outcome automatically closes the instance)
 
-Never mark a QA pass as done directly. Atlas HQ now routes in_progress -> review -> qa_pass -> ready_to_merge -> deployed -> done. QA stops at qa_pass.
+Never mark a QA pass as done directly. Agent HQ now routes in_progress -> review -> qa_pass -> ready_to_merge -> deployed -> done. QA stops at qa_pass.
 
 ## How to test
-- For Atlas HQ internal tasks, prefer the Dev environment first.
+- For Agent HQ internal tasks, prefer the Dev environment first.
 - Only use production for explicit live verification after deployment ownership has moved to DevOps / Release.
 - Confirm the commit under test matches review evidence before passing the task.`,
-    'Agency — DevOps / Release': `You are Harbor, the Agency DevOps / Release engineer. Your session is starting because a ready_to_merge Atlas HQ task has been assigned.
+    'Agency — DevOps / Release': `You are Harbor, the Agency DevOps / Release engineer. Your session is starting because a ready_to_merge Agent HQ task has been assigned.
 
 STARTUP SEQUENCE:
 1. Read ${OPENCLAW_DIR}/workspace-agency-devops/SOUL.md
 2. Read ${OPENCLAW_DIR}/workspace-agency-devops/AGENTS.md
 
 ## Your assigned task
-The dispatcher has already attached the specific task context above these instructions and Atlas HQ already claimed the task for you. Do not do normal feature implementation in this lane.
+The dispatcher has already attached the specific task context above these instructions and Agent HQ already claimed the task for you. Do not do normal feature implementation in this lane.
 Do not scan the task queue — the dispatcher handles task selection.
 
 ## Release ownership
@@ -2003,9 +2003,9 @@ Instead, confirm the task satisfies its configured transition requirements for r
 - a clear merge/deploy summary
 PM-family tasks ('pm', 'pm_analysis', 'pm_operational') intentionally skip QA evidence when their configured transition requirements do not require it.
 
-## Atlas HQ environment discipline
-- Dev = UI/API ports 3510/3511. For Atlas HQ internal tasks, Dev is the implementation and QA/review target.
-- QA = UI/API ports 3520/3521. The separate QA environment is deprecated for Atlas HQ internal tasks.
+## Agent HQ environment discipline
+- Dev = UI/API ports 3510/3511. For Agent HQ internal tasks, Dev is the implementation and QA/review target.
+- QA = UI/API ports 3520/3521. The separate QA environment is deprecated for Agent HQ internal tasks.
 - Production = UI/API ports 3500/3501. Production runs main and is only for deployed/live-verified work.
 - Merge reviewed work into main, deploy to production, record deploy evidence, then perform live verification.
 
@@ -2027,7 +2027,7 @@ STARTUP SEQUENCE:
 2. Read ${OPENCLAW_DIR}/workspace-agency-pm/AGENTS.md
 
 ## Your assigned task
-The dispatcher has already attached the specific task context above these instructions and Atlas HQ has already claimed the task for you. Do not scan the task queue — the dispatcher handles task selection.
+The dispatcher has already attached the specific task context above these instructions and Agent HQ has already claimed the task for you. Do not scan the task queue — the dispatcher handles task selection.
 
 ## What good output looks like
 Your job is to turn ambiguity into decisions. For PM/spec tasks, inspect the current product behavior, relevant docs, and nearby task history before finalizing your answer. Produce implementation-ready scope, dependencies, edge cases, and acceptance criteria.
@@ -2054,7 +2054,7 @@ This triggers the skip-QA path: review → ready_to_merge directly.
 If blocked by missing product direction or unclear constraints:
 1. POST http://localhost:3501/api/v1/tasks/{task_id}/notes {"author":"wren-pm","content":"BLOCKED: [reason]"}
 2. POST http://localhost:3501/api/v1/tasks/{task_id}/outcome {"outcome":"blocked","summary":"BLOCKED: [reason]","changed_by":"wren-pm","instance_id":{instance_id}}
-3. openclaw system event --text "BLOCKED: Wren Task #{task_id} — [reason]. Needs Atlas." --mode now
+3. openclaw system event --text "BLOCKED: Wren Task #{task_id} — [reason]. Needs Agent HQ attention." --mode now
 
 ## Safety rules
 - Do not invent provider/auth capabilities that have not been verified
@@ -2089,7 +2089,7 @@ If blocked by missing product direction or unclear constraints:
  * ensureSecurityEventsTable — create the security_events table if it does not
  * exist (task #364 — workspace path boundary enforcement).
  *
- * This table is the Atlas HQ audit log for workspace boundary violations.
+ * This table is the Agent HQ audit log for workspace boundary violations.
  * Every time an agent (or any code using the workspaceBoundary utility) attempts
  * to access a path outside its assigned workspace, a row is inserted here.
  *
@@ -3523,7 +3523,7 @@ function ensureProviderConfigTable(): void {
  * ensureGitHubIdentitiesTable — Task #613: per-agent GitHub identity/credential storage.
  *
  * Each row represents a distinct GitHub account (bot user or service account)
- * that an Atlas HQ agent lane can use for git operations (PR create, approve,
+ * that an Agent HQ agent lane can use for git operations (PR create, approve,
  * merge). Agents reference this table via agents.github_identity_id.
  *
  * Credential model: fine-grained PATs stored in the `token` column.
@@ -3788,7 +3788,7 @@ export function ensureDataMigration593(): void {
   // This step was only needed as a bridge between Phase 3 and Phase 5.
 
   // ── Task #643: Atlas-owned skills table ──
-  // Skills are now first-class Atlas HQ records. The filesystem (workspace/system dirs)
+  // Skills are now first-class Agent HQ records. The filesystem (workspace/system dirs)
   // becomes a secondary/read-only surface; product-managed skills live here.
   db.exec(`
     CREATE TABLE IF NOT EXISTS skills (

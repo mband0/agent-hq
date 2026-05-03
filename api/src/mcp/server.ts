@@ -403,7 +403,7 @@ registerTool(
 
 registerTool(
   ['agent_hq_list_tools', 'atlas_list_tools'],
-  'List all Atlas HQ tools in the registry.',
+  'List all Agent HQ tools in the registry.',
   {},
   () => wrap(() => api.listTools())(),
 );
@@ -417,7 +417,7 @@ registerTool(
 
 registerTool(
   ['agent_hq_create_tool', 'atlas_create_tool'],
-  'Create a tool in the Atlas HQ registry.',
+  'Create a tool in the Agent HQ registry.',
   {
     name: z.string().min(1).describe('Tool name'),
     slug: z.string().min(1).describe('Unique tool slug'),
@@ -434,7 +434,7 @@ registerTool(
 
 registerTool(
   ['agent_hq_update_tool', 'atlas_update_tool'],
-  'Update an Atlas HQ tool definition.',
+  'Update an Agent HQ tool definition.',
   {
     tool_id: z.number().int().positive().describe('Tool ID'),
     patch: z.record(z.string(), z.unknown()).describe('Partial update payload'),
@@ -444,7 +444,7 @@ registerTool(
 
 registerTool(
   ['agent_hq_delete_tool', 'atlas_delete_tool'],
-  'Soft-delete an Atlas HQ tool.',
+  'Soft-delete an Agent HQ tool.',
   { tool_id: z.number().int().positive().describe('Tool ID') },
   ({ tool_id }) => wrap(() => api.deleteTool(tool_id))(),
 );
@@ -490,7 +490,7 @@ registerTool(
 
 registerTool(
   ['agent_hq_list_skills', 'atlas_list_skills'],
-  'List Atlas-managed skills.',
+  'List Agent HQ-managed skills.',
   {},
   () => wrap(() => api.listSkills())(),
 );
@@ -504,7 +504,7 @@ registerTool(
 
 registerTool(
   ['agent_hq_create_skill', 'atlas_create_skill'],
-  'Create a new Atlas-managed skill.',
+  'Create a new Agent HQ-managed skill.',
   {
     name: z.string().min(1).describe('Skill name'),
     description: z.string().optional().describe('Optional description'),
@@ -525,14 +525,14 @@ registerTool(
 
 registerTool(
   ['agent_hq_delete_skill', 'atlas_delete_skill'],
-  'Delete an Atlas-managed skill.',
+  'Delete an Agent HQ-managed skill.',
   { name: z.string().min(1).describe('Skill name') },
   ({ name }) => wrap(() => api.deleteSkill(name))(),
 );
 
 registerTool(
   ['agent_hq_list_mcp_servers', 'atlas_list_mcp_servers'],
-  'List MCP servers in the Atlas HQ registry.',
+  'List MCP servers in the Agent HQ registry.',
   {},
   () => wrap(() => api.listMcpServers())(),
 );

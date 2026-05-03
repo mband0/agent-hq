@@ -41,7 +41,7 @@ seedIfEmpty(
     db.prepare(`
       INSERT INTO projects (name, description, context_md) VALUES
         ('Agency', 'Dev sandbox: General IT agency work bucket', '## Agency (dev)\nDev environment — safe to mutate.'),
-        ('Atlas HQ', 'Dev sandbox: Atlas HQ internal platform project', '## Atlas HQ (dev)\nDev environment — safe to mutate.')
+        ('Agent HQ', 'Dev sandbox: Agent HQ internal platform project', '## Agent HQ (dev)\nDev environment — safe to mutate.')
     `).run();
   }
 );
@@ -96,7 +96,7 @@ seedIfEmpty(
   () => {
     // We need a project id — get first agency project
     const agencyProject = db.prepare(`SELECT id FROM projects WHERE name = 'Agency' LIMIT 1`).get() as { id: number } | undefined;
-    const atlasProject  = db.prepare(`SELECT id FROM projects WHERE name = 'Atlas HQ' LIMIT 1`).get() as { id: number } | undefined;
+    const atlasProject  = db.prepare(`SELECT id FROM projects WHERE name = 'Agent HQ' LIMIT 1`).get() as { id: number } | undefined;
 
     if (agencyProject) {
       db.prepare(`
@@ -107,7 +107,7 @@ seedIfEmpty(
     if (atlasProject) {
       db.prepare(`
         INSERT INTO sprints (project_id, name, goal, sprint_type, status, length_kind, length_value) VALUES
-          (?, 'Atlas HQ Enhancements (dev)', 'Test Atlas HQ feature work in isolation', 'dev', 'active', 'time', '2w')
+          (?, 'Agent HQ Enhancements (dev)', 'Test Agent HQ feature work in isolation', 'dev', 'active', 'time', '2w')
       `).run(atlasProject.id);
     }
   }

@@ -13,7 +13,7 @@ const identity: GitHubIdentity = {
   github_username: 'cinder-agent',
   token: 'gho_testtoken',
   git_author_name: 'Cinder',
-  git_author_email: 'cinder@atlashq',
+  git_author_email: 'cinder@agenthq',
   lane: 'dev',
   enabled: 1,
 };
@@ -37,7 +37,7 @@ describe('GitHub identity injection', () => {
     expect(fs.readFileSync(path.join(tempDir, '.atlas-gh-token'), 'utf-8')).toBe(identity.token);
     expect(fs.readFileSync(path.join(tempDir, '.atlas-gh-identity.env'), 'utf-8')).toContain('GIT_AUTHOR_NAME="Cinder"');
     expect(git(['config', '--local', 'user.name'], tempDir).trim()).toBe('Cinder');
-    expect(git(['config', '--local', 'user.email'], tempDir).trim()).toBe('cinder@atlashq');
+    expect(git(['config', '--local', 'user.email'], tempDir).trim()).toBe('cinder@agenthq');
   });
 
   it('still writes credential files when the target is not a git worktree', () => {

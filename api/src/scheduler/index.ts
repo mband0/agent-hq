@@ -202,7 +202,7 @@ function loadAndSchedule(): void {
       } else {
         // Non-task dispatch — minimal completion instruction
         const completionUrl = getAgentHqBaseUrl();
-        message += `\n\n---\n## Atlas HQ completion contract\nWhen you have fully completed this task, report back to Atlas HQ:\ncurl -s -X PUT ${completionUrl}/api/v1/instances/${instanceId}/complete \\\n  -H "Content-Type: application/json" \\\n  -d '{"status":"done","summary":"<one sentence summary of what you accomplished>"}'\n---`;
+        message += `\n\n---\n## Agent HQ completion contract\nWhen you have fully completed this task, report back to Agent HQ:\ncurl -s -X PUT ${completionUrl}/api/v1/instances/${instanceId}/complete \\\n  -H "Content-Type: application/json" \\\n  -d '{"status":"done","summary":"<one sentence summary of what you accomplished>"}'\n---`;
       }
 
       const effectiveModel = agent.model ?? null;

@@ -3,7 +3,7 @@
  *
  * Each runtime that produces sessions/transcripts implements the SessionAdapter
  * interface. The adapter translates runtime-specific storage formats into the
- * canonical Atlas HQ session/transcript model (sessions + session_messages tables).
+ * canonical Agent HQ session/transcript model (sessions + session_messages tables).
  *
  * Task #600: Runtime adapters/ingestion for OpenClaw, cron, and Codex/ACP sessions.
  */

@@ -1,14 +1,14 @@
 /**
  * runtimes/skillMaterialization.ts — Runtime-aware skill materialization layer.
  *
- * Task #644: Atlas HQ maintains skill assignments as first-class records in its
+ * Task #644: Agent HQ maintains skill assignments as first-class records in its
  * own model. This module is responsible for projecting those assignments into
  * the correct runtime-specific artifacts — without making the runtime files
  * the source of truth.
  *
  * # Architecture
  *
- * Atlas owns the canonical skill records (the `skills` table) and the
+ * Agent HQ owns the canonical skill records (the `skills` table) and the
  * assignment relationship (`agents.skill_names` / `job_templates.skill_names`).
  * Runtime artifacts — copied skill dirs, symlinks, runtime orientation files, prompt injections — are
  * **derived** and must be regenerated whenever the assignment changes.
@@ -57,7 +57,7 @@ export interface MaterializationContext {
   /** Absolute path to the agent's working directory (workspace root). */
   workingDirectory: string;
 
-  /** Ordered list of skill names to materialize (authoritative — from Atlas DB). */
+  /** Ordered list of skill names to materialize (authoritative — from Agent HQ DB). */
   skillNames: string[];
 
   /**
@@ -69,7 +69,7 @@ export interface MaterializationContext {
 
   /**
    * Optional database handle — available to adapters that need to fetch
-   * skill content from the Atlas DB (e.g. for prompt injection).
+   * skill content from the Agent HQ DB (e.g. for prompt injection).
    */
   db?: Database.Database;
 
@@ -166,7 +166,7 @@ export class NoopSkillAdapter implements SkillMaterializationAdapter {
  * Workspace skill resolution order:
  *   1. `skillsBasePath/<name>/` — system/OpenClaw skills
  *   2. DB `fs_path` for workspace/atlas skills (when `context.db` is provided)
- *   3. Agent HQ repo `skills/<name>/` — built-in Atlas skills served by the UI
+ *   3. Agent HQ repo `skills/<name>/` — built-in Agent HQ skills served by the UI
  */
 export abstract class FilesystemSkillAdapter implements SkillMaterializationAdapter {
   abstract readonly adapterName: string;
@@ -441,7 +441,7 @@ export class ClaudeCodeSkillAdapter extends FilesystemSkillAdapter {
 /**
  * PromptInjectionSkillAdapter — non-filesystem adapter for remote runtimes.
  *
- * Remote runtimes (Custom, Webhook) do not share a local filesystem with Atlas.
+ * Remote runtimes (Custom, Webhook) do not share a local filesystem with Agent HQ.
  * Skills are not symlinked — instead the adapter records which skills are
  * assigned on the context for the dispatcher to embed in the system prompt.
  *
@@ -449,7 +449,7 @@ export class ClaudeCodeSkillAdapter extends FilesystemSkillAdapter {
  * the dispatcher already has the skill names and embeds them in the lifecycle
  * system prompt section. This adapter serves as the canonical hook point for
  * future prompt-level skill injection logic (e.g. fetching and inlining skill
- * content from the Atlas DB, not just their names).
+ * content from the Agent HQ DB, not just their names).
  */
 export class PromptInjectionSkillAdapter implements SkillMaterializationAdapter {
   readonly adapterName: string;

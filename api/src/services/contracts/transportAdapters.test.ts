@@ -27,8 +27,8 @@ beforeEach(() => {
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'transport-contracts-'));
   process.env.AGENT_CONTRACT_ROOT = tempDir;
 
-  fs.writeFileSync(path.join(tempDir, 'generic.md'), '## Atlas HQ run contract for this dispatched instance\nSprint type: {{sprintType}}\nWorkflow lane: {{lane}}\nAgent: {{agentSlug}}\nTask ID: {{taskId}}\nBase URL: {{baseUrl}}\nUse ONE of these outcomes: {{validOutcomes}}\n', 'utf-8');
-  fs.writeFileSync(path.join(tempDir, 'enhancements.md'), '## Atlas HQ enhancement contract for this dispatched instance\nSprint type: {{sprintType}}\nWorkflow lane: {{lane}}\nUse ONE of these outcomes: {{validOutcomes}}\nREQUIRED OUTPUTS FOR ENHANCEMENTS\nPOST {{baseUrl}}/api/v1/tasks/{{taskId}}/outcome\nchanged_by={{agentSlug}}\n', 'utf-8');
+  fs.writeFileSync(path.join(tempDir, 'generic.md'), '## Agent HQ run contract for this dispatched instance\nSprint type: {{sprintType}}\nWorkflow lane: {{lane}}\nAgent: {{agentSlug}}\nTask ID: {{taskId}}\nBase URL: {{baseUrl}}\nUse ONE of these outcomes: {{validOutcomes}}\n', 'utf-8');
+  fs.writeFileSync(path.join(tempDir, 'enhancements.md'), '## Agent HQ enhancement contract for this dispatched instance\nSprint type: {{sprintType}}\nWorkflow lane: {{lane}}\nUse ONE of these outcomes: {{validOutcomes}}\nREQUIRED OUTPUTS FOR ENHANCEMENTS\nPOST {{baseUrl}}/api/v1/tasks/{{taskId}}/outcome\nchanged_by={{agentSlug}}\n', 'utf-8');
 
   ({ buildContractInstructions } = loadTransportAdapters());
 });
@@ -103,7 +103,7 @@ describe('transportAdapters sprint-type contract templates', () => {
   it('uses the sprint-type text template for remote-direct dispatches', () => {
     const contract = buildContractInstructions(buildContext());
 
-    expect(contract).toContain('## Atlas HQ enhancement contract for this dispatched instance');
+    expect(contract).toContain('## Agent HQ enhancement contract for this dispatched instance');
     expect(contract).toContain('Sprint type: enhancements');
     expect(contract).toContain('Workflow lane: implementation');
     expect(contract).toContain('REQUIRED OUTPUTS FOR ENHANCEMENTS');
@@ -128,14 +128,14 @@ describe('transportAdapters sprint-type contract templates', () => {
   it('falls back to the generic text template for unknown sprint types', () => {
     const contract = buildContractInstructions(buildContext({ sprintType: 'qa' }));
 
-    expect(contract).toContain('## Atlas HQ run contract for this dispatched instance');
+    expect(contract).toContain('## Agent HQ run contract for this dispatched instance');
     expect(contract).toContain('Sprint type: qa');
     expect(contract).toContain('Use ONE of these outcomes: completed_for_review, blocked, failed');
   });
 
   it('falls back to generic when a sprint type has no dedicated template yet', () => {
     const devContract = buildContractInstructions(buildContext({ sprintType: 'dev' }));
-    expect(devContract).toContain('## Atlas HQ run contract for this dispatched instance');
+    expect(devContract).toContain('## Agent HQ run contract for this dispatched instance');
     expect(devContract).toContain('Sprint type: dev');
     expect(devContract).toContain('Workflow lane: implementation');
   });
@@ -148,8 +148,8 @@ describe('transportAdapters sprint-type contract templates', () => {
     }));
 
     expect(contract).toContain('## Runtime: Proxy-Managed');
-    expect(contract).toContain('atlas_lifecycle');
-    expect(contract).not.toContain('## Atlas HQ enhancement contract for this dispatched instance');
+    expect(contract).toContain('agent_hq_lifecycle');
+    expect(contract).not.toContain('## Agent HQ enhancement contract for this dispatched instance');
   });
 
   it('does not inject later release outcomes that are not valid from the current route', () => {
@@ -215,7 +215,7 @@ describe('transportAdapters sprint-type contract templates', () => {
     reloadWithContractRoot(repoContractRoot);
     const repoTemplate = fs.readFileSync(path.join(repoContractRoot, 'enhancements.md'), 'utf-8');
 
-    expect(repoTemplate).toContain('## Atlas HQ enhancement contract for this dispatched instance');
+    expect(repoTemplate).toContain('## Agent HQ enhancement contract for this dispatched instance');
     expect(repoTemplate).toContain('Sprint type: {{sprintType}}');
     expect(repoTemplate).toContain('Workflow lane: {{lane}}');
     expect(repoTemplate).toContain('REQUIRED OUTPUTS FOR ENHANCEMENTS');
@@ -227,7 +227,7 @@ describe('transportAdapters sprint-type contract templates', () => {
     reloadWithContractRoot(repoContractRoot);
     const repoTemplate = fs.readFileSync(path.join(repoContractRoot, 'bugs.md'), 'utf-8');
 
-    expect(repoTemplate).toContain('## Atlas HQ bug-fix contract for this dispatched instance');
+    expect(repoTemplate).toContain('## Agent HQ bug-fix contract for this dispatched instance');
     expect(repoTemplate).toContain('Sprint type: {{sprintType}}');
     expect(repoTemplate).toContain('REQUIRED OUTPUTS FOR BUGS');
     expect(repoTemplate).toContain('EVIDENCE EXPECTATIONS FOR BUGS');

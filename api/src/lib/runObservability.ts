@@ -38,7 +38,7 @@ interface InstanceRow {
 }
 
 /**
- * Agent-driven check-in stages: these should be attributed to the agent, not 'Atlas HQ'.
+ * Agent-driven check-in stages: these should be attributed to the agent, not 'Agent HQ'.
  */
 const AGENT_DRIVEN_STAGES: ReadonlySet<CheckInStage> = new Set(['dispatch', 'start', 'heartbeat', 'progress', 'blocker', 'completion']);
 
@@ -127,7 +127,7 @@ function syncTaskStatusForLifecycle(
     WHERE id = ?
   `).run(nextStatus, taskId);
 
-  const attributedSource = source ?? 'Atlas HQ';
+  const attributedSource = source ?? 'Agent HQ';
   logTaskStatusTransition(db, taskId, attributedSource, prevStatus, nextStatus);
   notifyTaskStatusChange(db, {
     taskId,
@@ -376,15 +376,15 @@ export function recordRunCheckIn(db: Database.Database, input: RunCheckInInput):
       changedFilesCount: changedFilesCount ?? undefined,
     });
 
-    // For agent-driven stages, attribute the note to the agent name rather than 'Atlas HQ'.
+    // For agent-driven stages, attribute the note to the agent name rather than 'Agent HQ'.
     // If an explicit author was passed in, honour it; otherwise resolve from the agents table.
     let noteAuthor: string;
     if (input.author !== undefined) {
       noteAuthor = input.author;
     } else if (AGENT_DRIVEN_STAGES.has(input.stage)) {
-      noteAuthor = resolveAgentName(db, instance.agent_id) ?? 'Atlas HQ';
+      noteAuthor = resolveAgentName(db, instance.agent_id) ?? 'Agent HQ';
     } else {
-      noteAuthor = 'Atlas HQ';
+      noteAuthor = 'Agent HQ';
     }
 
     db.prepare(`
@@ -403,8 +403,8 @@ export function recordRunCheckIn(db: Database.Database, input: RunCheckInInput):
 
   // Attribute status transitions to the agent for agent-driven stages
   const statusSource = AGENT_DRIVEN_STAGES.has(input.stage)
-    ? (resolveAgentName(db, instance.agent_id) ?? 'Atlas HQ')
-    : 'Atlas HQ';
+    ? (resolveAgentName(db, instance.agent_id) ?? 'Agent HQ')
+    : 'Agent HQ';
   syncTaskStatusForLifecycle(db, taskId, input.instanceId, input.stage, statusSource);
 
   if (trustedStartSignal) {
@@ -489,7 +489,7 @@ export function markInstanceStale(db: Database.Database, instanceId: number, rea
   if (taskId) {
     db.prepare(`
       INSERT INTO task_notes (task_id, author, content)
-      VALUES (?, 'Atlas HQ', ?)
+      VALUES (?, 'Agent HQ', ?)
     `).run(taskId, `Agent run appears stale\nReason: ${reason}`);
   }
 

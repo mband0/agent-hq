@@ -82,7 +82,7 @@ router.put('/:id/start', (req: Request, res: Response) => {
 });
 
 // POST /api/v1/instances/:id/check-in
-// Called by agents during a run to mirror progress into Atlas HQ
+// Called by agents during a run to mirror progress into Agent HQ
 router.post('/:id/check-in', (req: Request, res: Response) => {
   try {
     const db = getDb();

@@ -265,7 +265,7 @@ export function materializeAgentMcpConfig(params: {
       existingRaw = JSON.parse(fs.readFileSync(result.path, 'utf8'));
     } catch (err) {
       result.warnings.push(
-        `[mcp-materialization] could not parse existing ${result.path}; replacing it with Atlas-managed config (${err instanceof Error ? err.message : String(err)})`,
+        `[mcp-materialization] could not parse existing ${result.path}; replacing it with Agent HQ-managed config (${err instanceof Error ? err.message : String(err)})`,
       );
       existingRaw = {};
     }

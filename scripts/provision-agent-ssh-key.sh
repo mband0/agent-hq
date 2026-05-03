@@ -2,7 +2,7 @@
 # provision-agent-ssh-key.sh <agent_id>
 #
 # Generates a per-agent ed25519 SSH key pair and registers it as a GitHub
-# Deploy Key on the atlas_hq repo (read_only=false so agents can push branches).
+# Deploy Key on the agent-hq repo (read_only=false so agents can push branches).
 #
 # Usage:
 #   GITHUB_TOKEN=<pat> ./scripts/provision-agent-ssh-key.sh <agent_id>
@@ -21,7 +21,7 @@ set -euo pipefail
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 GITHUB_OWNER="nord-initiatives"
-GITHUB_REPO="atlas_hq"
+GITHUB_REPO="agent-hq"
 GITHUB_API="https://api.github.com"
 KEYS_DIR="$(cd "$(dirname "$0")/.." && pwd)/docker/keys"
 
@@ -50,7 +50,7 @@ done
 KEY_DIR="${KEYS_DIR}/${AGENT_ID}"
 PRIVATE_KEY="${KEY_DIR}/id_ed25519"
 PUBLIC_KEY="${KEY_DIR}/id_ed25519.pub"
-KEY_TITLE="atlas-hq-agent-${AGENT_ID}"
+KEY_TITLE="agent-hq-agent-${AGENT_ID}"
 
 echo "==> Agent:      ${AGENT_ID}"
 echo "==> Key title:  ${KEY_TITLE}"

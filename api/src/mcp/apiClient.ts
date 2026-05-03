@@ -254,7 +254,7 @@ export class AgentHqApiClient {
     try {
       data = JSON.parse(text);
     } catch {
-      throw new Error(`Atlas HQ API returned non-JSON response (${res.status}): ${text.slice(0, 200)}`);
+      throw new Error(`Agent HQ API returned non-JSON response (${res.status}): ${text.slice(0, 200)}`);
     }
 
     if (!res.ok) {

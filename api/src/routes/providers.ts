@@ -624,7 +624,7 @@ router.post('/:slug/oauth/initiate', async (req: Request, res: Response) => {
             .run(JSON.stringify(storedConfig), validation.error || null, slug);
 
           res.writeHead(200, { 'Content-Type': 'text/html' });
-          res.end(`<!doctype html><html><body><h2>Authentication successful!</h2><p>Atlas HQ saved your OpenAI connection. This tab will close automatically.</p><p>If it stays open, return to Agent HQ. If the provider still is not connected there, copy the full URL and paste it into the OAuth field.</p><script>(function(){try{if(window.opener&&!window.opener.closed){window.opener.postMessage({type:'agent-hq-oauth-complete',slug:${JSON.stringify(slug)},ok:true},'*');}}catch(e){}try{window.close();}catch(e){}})();</script></body></html>`);
+          res.end(`<!doctype html><html><body><h2>Authentication successful!</h2><p>Agent HQ saved your OpenAI connection. This tab will close automatically.</p><p>If it stays open, return to Agent HQ. If the provider still is not connected there, copy the full URL and paste it into the OAuth field.</p><script>(function(){try{if(window.opener&&!window.opener.closed){window.opener.postMessage({type:'agent-hq-oauth-complete',slug:${JSON.stringify(slug)},ok:true},'*');}}catch(e){}try{window.close();}catch(e){}})();</script></body></html>`);
           resolve(tokens);
         } catch (err) {
           res.writeHead(500, { 'Content-Type': 'text/html' });

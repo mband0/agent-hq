@@ -1,6 +1,6 @@
 # Remote Agent Runtime Adapter Model
 
-> Architecture specification for Atlas HQ's generalized agent runtime system.
+> Architecture specification for Agent HQ's generalized agent runtime system.
 > Task #472 · Sprint: Remote Agent Runtime Support · 2026-03-30
 
 ## Status
@@ -12,7 +12,7 @@ TypeScript types; migration paths are incremental.
 
 ## 1. Overview
 
-Atlas HQ dispatches tasks to agents that run on different execution backends:
+Agent HQ dispatches tasks to agents that run on different execution backends:
 local OpenClaw instances, headless Claude Code sessions, HTTP webhook endpoints,
 and remote AI platforms (e.g. Custom). The **runtime adapter model** provides a
 uniform contract so the dispatcher, lifecycle system, workspace layer, and UI
@@ -22,7 +22,7 @@ treat all agents identically regardless of where they execute.
 
 1. **Adapter pattern** — each backend implements a shared interface; the
    dispatcher never branches on runtime type.
-2. **Lifecycle proxy** — remote agents that cannot call back to Atlas get
+2. **Lifecycle proxy** — remote agents that cannot call back to Agent HQ get
    lifecycle events (start, heartbeat, outcome) driven by the runtime adapter.
 3. **Workspace abstraction** — file operations route through `WorkspaceProvider`
    so local and remote filesystems share one API surface.
@@ -66,8 +66,8 @@ interface DispatchParams {
   timeoutSeconds: number;       // Max wall-clock time for the run
   name: string;                 // Human-readable run label
   model?: string | null;        // Resolved model (after story-point routing)
-  instanceId?: number;          // Atlas job_instances.id
-  taskId?: number | null;       // Atlas tasks.id
+  instanceId?: number;          // Agent HQ job_instances.id
+  taskId?: number | null;       // Agent HQ tasks.id
   db?: Database.Database;       // DB handle (local runtimes only)
   workspaceRoot?: string | null;// Agent workspace path
 
@@ -94,7 +94,7 @@ interface CallbackUrls {
 ```
 
 The `WebhookRuntime` already provides these. For self-callback-capable runtimes
-(OpenClaw, webhook targets with Atlas SDK), callback URLs are passed in the
+(OpenClaw, webhook targets with Agent HQ SDK), callback URLs are passed in the
 dispatch payload. For proxy-managed runtimes (Custom, future inference-only
 backends), the adapter handles callbacks internally and does not forward URLs.
 
@@ -128,15 +128,15 @@ Adding a new runtime requires:
 Every adapter falls into one of two lifecycle categories:
 
 #### Self-Callback Agents
-The agent process makes HTTP calls to Atlas HQ lifecycle endpoints. The runtime
+The agent process makes HTTP calls to Agent HQ lifecycle endpoints. The runtime
 adapter only needs to dispatch and (optionally) abort.
 
 - **OpenClaw agents** — the dispatched prompt includes `curl` callback contracts;
   the agent executes them during the run via shell tools.
 - **Webhook agents** — `callbackUrls` are included in the dispatch payload; the
   remote process calls them.
-- **Claude Code agents** — Atlas callback URLs are injected as environment
-  variables (`ATLAS_CALLBACK_START`, `ATLAS_CALLBACK_CHECKIN`, etc.); the agent
+- **Claude Code agents** — Agent HQ callback URLs are injected as environment
+  variables (`AGENT_HQ_CALLBACK_START`, `AGENT_HQ_CALLBACK_CHECKIN`, etc.); the agent
   invokes them via Bash tool calls.
 
 #### Runtime-Proxied Agents
@@ -145,8 +145,8 @@ consumes the agent's output (typically an SSE stream) and drives all lifecycle
 callbacks on the agent's behalf.
 
 - **Custom agents** — the adapter streams the response, sends periodic heartbeats,
-  parses a structured `atlas_lifecycle` JSON block from the output, and posts
-  outcome/evidence/completion to Atlas HQ.
+  parses a structured `agent_hq_lifecycle` JSON block from the output, and posts
+  outcome/evidence/completion to Agent HQ.
 - **Future inference-only agents** — same pattern: consume output, proxy
   lifecycle.
 
@@ -293,7 +293,7 @@ interface RemoteAgentRuntimeConfig {
       │  1. Create job_instances row            │
       │  2. Resolve model (story-point routing) │
       │  3. Build message + lifecycle contract  │
-      │  4. Write .atlas-run-context.json       │  (local only)
+      │  4. Write .agent-hq-run-context.json    │  (local only)
       │  5. Generate CLAUDE.md                  │  (claude-code only)
       │  6. Call runtime.dispatch()             │
       │                                         │
@@ -318,7 +318,7 @@ This key is:
 - Used by transcript lookup for chat history display
 
 For remote agents that manage their own sessions, the session key is still
-stored for Atlas-side audit/correlation but may not be meaningful to the remote
+stored for Agent HQ-side audit/correlation but may not be meaningful to the remote
 platform.
 
 ### 5.3 Model Resolution Pipeline
@@ -367,7 +367,7 @@ Remote agents that cannot self-callback emit a structured JSON block that the
 runtime adapter parses:
 
 ```markdown
-```atlas_lifecycle
+```agent_hq_lifecycle
 {
   "outcome": "completed_for_review",
   "summary": "Implemented the feature",
@@ -380,7 +380,7 @@ runtime adapter parses:
 ```
 
 The adapter parses this with fallback strategies (fenced block → JSON with
-`atlas_lifecycle` key → any JSON with `outcome` field in the last 2000 chars).
+`agent_hq_lifecycle` key → any JSON with `outcome` field in the last 2000 chars).
 
 If no lifecycle block is found, the adapter defaults to `outcome: "blocked"`
 with a diagnostic summary.
@@ -395,7 +395,7 @@ workflow context.
 
 Self-callback agents receive the full contract with curl examples.
 Proxied agents receive a simplified version instructing them to emit the
-structured `atlas_lifecycle` block instead.
+structured `agent_hq_lifecycle` block instead.
 
 ---
 
@@ -450,11 +450,11 @@ The base URL is derived from `runtime_config.baseUrl`.
 
 Local agents have workspace boundaries enforced via `workspaceBoundary.ts`:
 - `safePath()` prevents path traversal
-- `ATLAS_WORKSPACE_ROOT` env var tells the agent process its broader allowed workspace boundary
-- `ATLAS_ACTIVE_REPO_ROOT` env var tells the agent process the authoritative repo root for the current dispatched run
+- `AGENT_HQ_WORKSPACE_ROOT` env var tells the agent process its broader allowed workspace boundary
+- `AGENT_HQ_ACTIVE_REPO_ROOT` env var tells the agent process the authoritative repo root for the current dispatched run
 - Violations are logged to `boundary_violations` table
 
-Remote agents rely on the remote platform's own access controls — Atlas does
+Remote agents rely on the remote platform's own access controls — Agent HQ does
 not (and cannot) enforce filesystem boundaries on remote systems.
 
 ---
@@ -519,7 +519,7 @@ PUT /api/v1/tasks/:id/review-evidence
 ```
 
 - **Self-callback agents** call this directly via curl/SDK.
-- **Proxied agents** include these fields in the `atlas_lifecycle` block;
+- **Proxied agents** include these fields in the `agent_hq_lifecycle` block;
   the adapter extracts and posts them. Proxied output may use `branch` and
   `commit` aliases, which the adapter maps to `review_branch` and
   `review_commit`.
@@ -612,7 +612,7 @@ Terminal outcomes auto-close the instance and terminate the session.
 
 ```
                     ┌────────────────────────────────────┐
-                    │           Atlas HQ API              │
+                    │           Agent HQ API              │
                     │                                    │
                     │  ┌──────────┐  ┌──────────────┐   │
                     │  │ Scheduler │  │ Task Router   │   │
@@ -650,8 +650,8 @@ Terminal outcomes auto-close the instance and terminate the session.
     │  Process          │                    │  Platform         │
     │                   │                    │                   │
     │  Self-callback    │                    │  SSE stream or    │
-    │  to Atlas HQ      │◄──lifecycle──────►│  webhook callback │
-    │  lifecycle API    │    proxy           │  to Atlas HQ      │
+    │  to Agent HQ      │◄──lifecycle──────►│  webhook callback │
+    │  lifecycle API    │    proxy           │  to Agent HQ      │
     │                   │                    │                   │
     │  Local FS         │                    │  Remote workspace │
     │  workspace        │                    │  API              │
@@ -701,7 +701,7 @@ Recommended implementation order:
   base URL unless the agent is remote (Tailscale/public URL).
 
 - **Dispatch payloads** are marked with `allowUnsafeExternalContent: true`
-  because Atlas HQ is an internal trusted caller. Remote webhook payloads should
+  because Agent HQ is an internal trusted caller. Remote webhook payloads should
   be signed (future: HMAC signature header).
 
 ---
@@ -733,8 +733,8 @@ ALTER TABLE agents ADD COLUMN max_concurrent INTEGER DEFAULT 1;
 | Term                | Definition                                                    |
 |---------------------|---------------------------------------------------------------|
 | Runtime Adapter     | Implementation of `AgentRuntime` for a specific backend       |
-| Self-Callback       | Agent drives its own lifecycle via HTTP calls to Atlas         |
+| Self-Callback       | Agent drives its own lifecycle via HTTP calls to Agent HQ      |
 | Proxied Lifecycle   | Runtime adapter drives lifecycle on behalf of the agent       |
 | Workspace Provider  | Implementation of `WorkspaceProvider` for local or remote FS  |
 | Dispatch Contract   | Workflow-configured lifecycle guidance rendered through a transport template |
-| Structured Output   | `atlas_lifecycle` JSON block emitted by proxied agents        |
+| Structured Output   | `agent_hq_lifecycle` JSON block emitted by proxied agents     |

@@ -14,9 +14,9 @@
  * If abortUrl is not configured, abort() is a no-op.
  *
  * Lifecycle proxy mode (task #470):
- *   When lifecycleProxy is enabled, the runtime handles the full Atlas lifecycle
+ *   When lifecycleProxy is enabled, the runtime handles the full Agent HQ lifecycle
  *   on behalf of the remote agent, same as CustomAgentRuntime. The remote agent
- *   emits a structured atlas_lifecycle JSON block in its response body, and the
+ *   emits a structured agent_hq_lifecycle JSON block in its response body, and the
  *   runtime parses it to record evidence, post outcomes, and close instances.
  *
  *   Enable: set `lifecycleProxy: true` in runtime_config.
@@ -51,8 +51,8 @@ export interface WebhookRuntimeConfig {
   /**
    * Enable lifecycle proxy mode (task #470).
    *
-   * When true, the runtime handles Atlas lifecycle callbacks on behalf of the
-   * remote agent. The remote agent must emit a structured `atlas_lifecycle`
+   * When true, the runtime handles Agent HQ lifecycle callbacks on behalf of the
+   * remote agent. The remote agent must emit a structured `agent_hq_lifecycle`
    * JSON block in its response body. The runtime parses it and drives:
    *   - start callback
    *   - review evidence recording
@@ -89,7 +89,7 @@ interface DispatchPayload {
   instanceId: number | null;
   taskId: number | null;
   callbackUrls: CallbackUrls | null;
-  /** When true, the runtime handles lifecycle — remote should emit atlas_lifecycle block. */
+  /** When true, the runtime handles lifecycle — remote should emit agent_hq_lifecycle block. */
   lifecycleProxy: boolean;
 }
 
@@ -125,8 +125,8 @@ export class WebhookRuntime implements AgentRuntime {
    * When lifecycleProxy is enabled (task #470):
    *   1. Calls proxyStart before dispatching
    *   2. Appends lifecycle instructions to the message
-   *   3. Parses the response body for atlas_lifecycle data
-   *   4. Drives the full Atlas lifecycle (evidence, outcome, completion)
+   *   3. Parses the response body for agent_hq_lifecycle data
+   *   4. Drives the full Agent HQ lifecycle (evidence, outcome, completion)
    */
   async dispatch(params: DispatchParams): Promise<{ runId: string }> {
     const {

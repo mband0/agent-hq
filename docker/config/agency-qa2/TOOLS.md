@@ -1,6 +1,6 @@
 # TOOLS.md — Local Notes
 
-## Atlas HQ
+## Agent HQ
 - API: http://host.docker.internal:3501/api/v1
 - UI: http://host.docker.internal:3500
 - Agency project_id: 6

@@ -32,8 +32,8 @@ import {
   AlertCircle,
 } from 'lucide-react';
 
-const ONBOARDED_KEY = 'atlas-hq-onboarded';
-export const USER_NAME_KEY = 'atlas-hq-user-name';
+const ONBOARDED_KEY = 'agent-hq-onboarded';
+export const USER_NAME_KEY = 'agent-hq-user-name';
 
 export function markOnboarded() {
   if (typeof window !== 'undefined') {

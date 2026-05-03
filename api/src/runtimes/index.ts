@@ -44,14 +44,14 @@ export {
   proxyReviewEvidence,
   buildLifecycleSystemPromptSection,
   buildLifecycleUserPromptSection,
-  atlasCall,
+  agentHqCall,
   ALL_VALID_OUTCOMES,
   VALID_IMPLEMENTATION_OUTCOMES,
   VALID_QA_OUTCOMES,
   VALID_RELEASE_OUTCOMES,
 } from './lifecycleProxy';
 export type {
-  AtlasLifecycleData,
+  AgentHqLifecycleData,
   LifecycleContext,
   LifecycleProxyConfig,
   LifecycleResult,

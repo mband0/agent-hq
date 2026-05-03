@@ -158,12 +158,12 @@ function setPortEnv(flags) {
   if (flags.uiPort) process.env.AGENT_HQ_UI_PORT = flags.uiPort;
 }
 
-function getEnv(name, legacyName, fallback) {
-  return process.env[name] || process.env[legacyName] || fallback;
+function getEnv(name, fallback) {
+  return process.env[name] || fallback;
 }
 
 function getUiPort() {
-  return getEnv('AGENT_HQ_UI_PORT', 'ATLAS_HQ_UI_PORT', '3500');
+  return getEnv('AGENT_HQ_UI_PORT', '3500');
 }
 
 function openBrowser(url) {
@@ -211,7 +211,7 @@ function cmdStart(flags) {
   checkDocker();
   setPortEnv(flags);
   const uiPort = getUiPort();
-  const apiPort = getEnv('AGENT_HQ_API_PORT', 'ATLAS_HQ_API_PORT', '3501');
+  const apiPort = getEnv('AGENT_HQ_API_PORT', '3501');
 
   info('Pulling latest Agent HQ images…');
   compose(['pull']);
@@ -259,7 +259,7 @@ function cmdRestart(flags) {
   checkDocker();
   setPortEnv(flags);
   const uiPort = getUiPort();
-  const apiPort = getEnv('AGENT_HQ_API_PORT', 'ATLAS_HQ_API_PORT', '3501');
+  const apiPort = getEnv('AGENT_HQ_API_PORT', '3501');
 
   info('Restarting Agent HQ…');
   compose(['down'], { ignoreError: true });

@@ -62,7 +62,7 @@ describe('skill materialization runtime adapters', () => {
     expect(fs.lstatSync(path.join(workspaceDir, 'skills', 'debug-tool')).isDirectory()).toBe(true);
   });
 
-  it('resolves repo-local Atlas skills when they are not in the OpenClaw skills base or DB', () => {
+  it('resolves repo-local Agent HQ skills when they are not in the OpenClaw skills base or DB', () => {
     const workspaceDir = makeTempDir('openclaw-repo-skill-workspace-');
     const missingSkillsBasePath = makeTempDir('openclaw-empty-skills-base-');
 

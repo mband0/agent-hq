@@ -2,8 +2,8 @@
  * runtimes/lifecycleProxy.ts — Shared lifecycle proxy for remote agent runtimes.
  *
  * Remote agent runtimes (Custom, Webhook with proxy mode, future runtimes) cannot
- * always make HTTP callbacks to Atlas HQ during execution. This module provides
- * a standard lifecycle proxy that Atlas calls on behalf of those agents.
+ * always make HTTP callbacks to Agent HQ during execution. This module provides
+ * a standard lifecycle proxy that Agent HQ calls on behalf of those agents.
  *
  * The proxy implements the same engineer lifecycle contract as local agents:
  *   1. PUT  /instances/:id/start           — mark instance running
@@ -12,9 +12,9 @@
  *   4. POST /tasks/:id/outcome             — parsed from agent structured output
  *   5. PUT  /instances/:id/complete         — after outcome is posted
  *
- * Agents emit a structured JSON block (```atlas_lifecycle {...}```) at the end
+ * Agents emit a structured JSON block (```agent_hq_lifecycle {...}```) at the end
  * of their response. The proxy parses this block for outcome, branch, commit,
- * summary, etc. and drives the Atlas lifecycle on their behalf.
+ * summary, etc. and drives the Agent HQ lifecycle on their behalf.
  *
  * Task #470: Extracted from CustomAgentRuntime (task #464) to enable parity
  * across all remote runtimes.
@@ -27,7 +27,7 @@ import { resolveWorkflowLane } from '../services/contracts/workflowContract';
 // ── Lifecycle data types ─────────────────────────────────────────────────────
 
 /** Structured lifecycle data extracted from a remote agent's response. */
-export interface AtlasLifecycleData {
+export interface AgentHqLifecycleData {
   outcome?: string;
   summary?: string;
   branch?: string;
@@ -58,6 +58,8 @@ export const ALL_VALID_OUTCOMES = new Set([
 ]);
 
 const COMPATIBILITY_FALLBACK_OUTCOMES = ['completed_for_review', 'qa_pass', 'qa_fail', 'approved_for_merge', 'deployed_live', 'live_verified', 'blocked', 'failed'];
+const AGENT_HQ_LIFECYCLE_TAG = 'agent_hq_lifecycle';
+const LEGACY_LIFECYCLE_TAG = ['atlas', 'lifecycle'].join('_');
 
 interface ResolvedLifecycleOutcomeSet {
   validOutcomes: Set<string>;
@@ -125,7 +127,7 @@ export interface LifecycleContext {
 // ── Lifecycle proxy config ───────────────────────────────────────────────────
 
 export interface LifecycleProxyConfig {
-  /** Agent HQ API base URL. Prefer agentHqBaseUrl; atlasBaseUrl remains as a legacy alias. */
+  /** Agent HQ API base URL. Prefer agentHqBaseUrl; atlasBaseUrl remains as a legacy config alias. */
   agentHqBaseUrl?: string;
   atlasBaseUrl?: string;
 }
@@ -134,7 +136,7 @@ export interface LifecycleProxyConfig {
 
 export interface LifecycleResult {
   /** The lifecycle data parsed from the agent output (null if not found). */
-  lifecycleData: AtlasLifecycleData | null;
+  lifecycleData: AgentHqLifecycleData | null;
   /** The effective outcome that was applied. */
   effectiveOutcome: string;
   /** The effective summary that was applied. */
@@ -147,9 +149,9 @@ export interface LifecycleResult {
   instanceCompleted: boolean;
 }
 
-// ── Atlas API helper ─────────────────────────────────────────────────────────
+// ── Agent HQ API helper ──────────────────────────────────────────────────────
 
-function getAtlasBaseUrl(config?: LifecycleProxyConfig): string {
+function getAgentHqLifecycleBaseUrl(config?: LifecycleProxyConfig): string {
   return (
     config?.agentHqBaseUrl ??
     config?.atlasBaseUrl ??
@@ -158,16 +160,16 @@ function getAtlasBaseUrl(config?: LifecycleProxyConfig): string {
 }
 
 /**
- * Safe Atlas HQ API call with error logging (never throws).
+ * Safe Agent HQ API call with error logging (never throws).
  */
-export async function atlasCall(
+export async function agentHqCall(
   method: string,
   path: string,
   body: Record<string, unknown>,
   label: string,
   config?: LifecycleProxyConfig,
 ): Promise<{ ok: boolean; status?: number; body?: unknown }> {
-  const baseUrl = getAtlasBaseUrl(config);
+  const baseUrl = getAgentHqLifecycleBaseUrl(config);
   try {
     const resp = await fetch(`${baseUrl}${path}`, {
       method,
@@ -195,36 +197,37 @@ export async function atlasCall(
 
 /**
  * parseLifecycleData — Parse a remote agent's response for a structured
- * atlas_lifecycle JSON block.
+ * agent_hq_lifecycle JSON block.
  *
  * Looks for (in order):
- *   1. Fenced code block: ```atlas_lifecycle\n{ ... }\n```
- *   2. JSON block with atlas_lifecycle key
+ *   1. Fenced code block: ```agent_hq_lifecycle\n{ ... }\n```
+ *   2. JSON block with agent_hq_lifecycle key
  *   3. Any JSON object with an "outcome" field near the end of the text
  *
  * Returns null if no lifecycle data is found.
  */
-export function parseLifecycleData(text: string): AtlasLifecycleData | null {
-  // Strategy 1: Fenced code block with atlas_lifecycle tag
-  const fencedMatch = text.match(
-    /```atlas_lifecycle\s*\n([\s\S]*?)\n\s*```/,
-  );
+export function parseLifecycleData(text: string): AgentHqLifecycleData | null {
+  // Strategy 1: Fenced code block with the current Agent HQ tag or the legacy tag.
+  const lifecycleTagPattern = `${AGENT_HQ_LIFECYCLE_TAG}|${LEGACY_LIFECYCLE_TAG}`;
+  const fencedMatch = text.match(new RegExp(
+    `\`\`\`(?:${lifecycleTagPattern})\\s*\\n([\\s\\S]*?)\\n\\s*\`\`\``,
+  ));
   if (fencedMatch) {
     try {
-      const data = JSON.parse(fencedMatch[1].trim()) as AtlasLifecycleData;
+      const data = JSON.parse(fencedMatch[1].trim()) as AgentHqLifecycleData;
       if (data && typeof data === 'object') return data;
     } catch {
       // Malformed JSON in fenced block — try other strategies
     }
   }
 
-  // Strategy 2: Look for JSON block with atlas_lifecycle key
-  const jsonBlockMatch = text.match(
-    /\{[^{}]*"atlas_lifecycle"\s*:\s*(\{[\s\S]*?\})[^{}]*\}/,
-  );
+  // Strategy 2: Look for JSON block with the current Agent HQ key or the legacy key.
+  const jsonBlockMatch = text.match(new RegExp(
+    `\\{[^{}]*"(?:${lifecycleTagPattern})"\\s*:\\s*(\\{[\\s\\S]*?\\})[^{}]*\\}`,
+  ));
   if (jsonBlockMatch) {
     try {
-      const data = JSON.parse(jsonBlockMatch[1].trim()) as AtlasLifecycleData;
+      const data = JSON.parse(jsonBlockMatch[1].trim()) as AgentHqLifecycleData;
       if (data && typeof data === 'object') return data;
     } catch {
       // Continue to fallback
@@ -241,7 +244,7 @@ export function parseLifecycleData(text: string): AtlasLifecycleData | null {
     // Use the last match (most likely the final output)
     const lastMatch = outcomeMatch[outcomeMatch.length - 1];
     try {
-      const data = JSON.parse(lastMatch) as AtlasLifecycleData;
+      const data = JSON.parse(lastMatch) as AgentHqLifecycleData;
       if (data && typeof data === 'object' && data.outcome) return data;
     } catch {
       // No valid JSON found
@@ -255,22 +258,22 @@ export function parseLifecycleData(text: string): AtlasLifecycleData | null {
 
 /**
  * buildLifecycleSystemPromptSection — Returns a system prompt section that
- * instructs a remote agent to emit structured atlas_lifecycle output.
+ * instructs a remote agent to emit structured agent_hq_lifecycle output.
  *
  * Include this in the system prompt for any remote agent that relies on the
  * lifecycle proxy (i.e. agents that cannot make HTTP callbacks themselves).
  */
 export function buildLifecycleSystemPromptSection(): string {
   return [
-    'You operate as a first-class Atlas engineer — the same standard as local agent lanes.',
+    'You operate as a first-class Agent HQ engineer — the same standard as local agent lanes.',
     '',
-    'The atlas_lifecycle block is CRITICAL — the runtime parses it to:',
+    'The agent_hq_lifecycle block is CRITICAL — the runtime parses it to:',
     '- Record evidence fields that are configured for the selected outcome',
-    '- Report your task outcome to Atlas HQ',
+    '- Report your task outcome to Agent HQ',
     '- Close the run instance',
     '',
     'If blocked or failed, set the outcome field accordingly and explain why.',
-    'Do NOT make HTTP calls to Atlas HQ — the runtime handles all lifecycle callbacks for you.',
+    'Do NOT make HTTP calls to Agent HQ — the runtime handles all lifecycle callbacks for you.',
     'Do NOT use `openclaw system event` commands — this command is not available in your runtime environment.',
     '',
     'Environment:',
@@ -285,7 +288,7 @@ export function buildLifecycleSystemPromptSection(): string {
 
 /**
  * buildLifecycleUserPromptSection — Returns a user prompt section that
- * instructs a remote agent to emit structured atlas_lifecycle output.
+ * instructs a remote agent to emit structured agent_hq_lifecycle output.
  *
  * Append this to the task message for any remote agent that relies on the
  * lifecycle proxy. Includes the JSON schema and field reference.
@@ -295,20 +298,20 @@ export function buildLifecycleSystemPromptSection(): string {
  */
 export function buildLifecycleUserPromptSection(): string {
   return [
-    '## Atlas HQ Lifecycle (handled by runtime)',
+    '## Agent HQ Lifecycle (handled by runtime)',
     `The runtime will make lifecycle callbacks on your behalf. You do NOT need to make HTTP calls.`,
     `Instead, emit a structured JSON block at the END of your response with your results.`,
     ``,
     `### Environment note`,
-    `Do NOT assume any Atlas HQ or dev environment is reachable at localhost from your host.`,
-    `The runtime handles all outbound lifecycle calls — you only emit the atlas_lifecycle block.`,
+    `Do NOT assume any Agent HQ or dev environment is reachable at localhost from your host.`,
+    `The runtime handles all outbound lifecycle calls — you only emit the agent_hq_lifecycle block.`,
     `If you deploy a service or API for QA verification, use a URL that is externally reachable`,
     `(e.g. a tunnel, your agent's public hostname, or another environment the reviewer can reach).`,
     ``,
     `### Required: Emit lifecycle output`,
-    `At the end of your response, include a fenced code block tagged \`atlas_lifecycle\`:`,
+    `At the end of your response, include a fenced code block tagged \`agent_hq_lifecycle\`:`,
     ``,
-    '```atlas_lifecycle',
+    '```agent_hq_lifecycle',
     `{`,
     `  "outcome": "<valid outcome key for this task lane>",`,
     `  "summary": "One sentence describing what was done",`,
@@ -349,7 +352,7 @@ export async function proxyStart(
   ctx: LifecycleContext,
   config?: LifecycleProxyConfig,
 ): Promise<boolean> {
-  const result = await atlasCall(
+  const result = await agentHqCall(
     'PUT',
     `/api/v1/instances/${ctx.instanceId}/start`,
     { session_key: ctx.sessionKey },
@@ -367,7 +370,7 @@ export async function proxyHeartbeat(
   summary: string,
   config?: LifecycleProxyConfig,
 ): Promise<boolean> {
-  const result = await atlasCall(
+  const result = await agentHqCall(
     'POST',
     `/api/v1/instances/${ctx.instanceId}/check-in`,
     {
@@ -389,7 +392,7 @@ export async function proxyProgress(
   summary: string,
   config?: LifecycleProxyConfig,
 ): Promise<boolean> {
-  const result = await atlasCall(
+  const result = await agentHqCall(
     'POST',
     `/api/v1/instances/${ctx.instanceId}/check-in`,
     {
@@ -413,7 +416,7 @@ export async function proxyBlocker(
   blockerReason: string,
   config?: LifecycleProxyConfig,
 ): Promise<boolean> {
-  const result = await atlasCall(
+  const result = await agentHqCall(
     'POST',
     `/api/v1/instances/${ctx.instanceId}/check-in`,
     {
@@ -450,7 +453,7 @@ export async function proxyReviewEvidence(
   if (evidence.devUrl) body.dev_url = evidence.devUrl;
   if (evidence.notes) body.summary = evidence.notes;
 
-  const result = await atlasCall(
+  const result = await agentHqCall(
     'PUT',
     `/api/v1/tasks/${ctx.taskId}/review-evidence`,
     body,
@@ -469,7 +472,7 @@ export async function proxyOutcome(
   summary: string,
   blockerReason?: string | null,
   config?: LifecycleProxyConfig,
-  lifecycle?: AtlasLifecycleData | null,
+  lifecycle?: AgentHqLifecycleData | null,
 ): Promise<boolean> {
   const body: Record<string, unknown> = {
     outcome,
@@ -492,7 +495,7 @@ export async function proxyOutcome(
     body.blocker_reason = blockerReason;
   }
 
-  const result = await atlasCall(
+  const result = await agentHqCall(
     'POST',
     `/api/v1/tasks/${ctx.taskId}/outcome`,
     body,
@@ -513,7 +516,7 @@ export async function proxyComplete(
 ): Promise<boolean> {
   const instanceStatus = outcome === 'failed' ? 'failed' : 'done';
 
-  const result = await atlasCall(
+  const result = await agentHqCall(
     'PUT',
     `/api/v1/instances/${ctx.instanceId}/complete`,
     {
@@ -530,11 +533,11 @@ export async function proxyComplete(
 // ── Full post-stream lifecycle ───────────────────────────────────────────────
 
 /**
- * runPostStreamLifecycle — Execute the full Atlas lifecycle after a remote
+ * runPostStreamLifecycle — Execute the full Agent HQ lifecycle after a remote
  * agent completes its response.
  *
  * Steps:
- *   1. Parse the agent output for atlas_lifecycle data
+ *   1. Parse the agent output for agent_hq_lifecycle data
  *   2. Send a progress check-in summarizing the parse result
  *   3. Derive effective outcome and summary
  *   4. Record review evidence (if outcome is completed_for_review and branch/commit present)
@@ -598,7 +601,7 @@ export async function runPostStreamLifecycle(
   // Step 5: Post task outcome
   const blockerReason = effectiveOutcome === 'blocked'
     ? (lifecycle?.blocker_reason ||
-       (!lifecycle ? 'No atlas_lifecycle block found in agent output — agent may have failed to emit structured output' : undefined))
+       (!lifecycle ? 'No agent_hq_lifecycle block found in agent output — agent may have failed to emit structured output' : undefined))
     : undefined;
 
   const outcomePosted = await proxyOutcome(

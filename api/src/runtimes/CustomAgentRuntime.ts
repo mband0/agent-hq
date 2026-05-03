@@ -15,9 +15,9 @@
  *   Legal Counsel, etc.) runs the full agentic loop autonomously.
  *
  * Lifecycle contract parity (task #464):
- *   The runtime now honors the same Atlas engineer lifecycle contract as local
+ *   The runtime now honors the same Agent HQ engineer lifecycle contract as local
  *   agent runtimes (OpenClaw, ClaudeCode). Because the Custom chat completions
- *   endpoint cannot make outbound HTTP calls back to Atlas, the runtime
+ *   endpoint cannot make outbound HTTP calls back to Agent HQ, the runtime
  *   handles all lifecycle callbacks on behalf of the Custom agent:
  *
  *   1. PUT  /instances/:id/start           — called before streaming begins
@@ -27,7 +27,7 @@
  *   5. PUT  /instances/:id/complete         — after outcome is posted
  *
  *   The Custom agent is instructed (via system prompt) to emit a structured
- *   JSON block (```atlas_lifecycle {...}```) at the end of its response.
+ *   JSON block (```agent_hq_lifecycle {...}```) at the end of its response.
  *   The runtime parses this block for outcome, branch, commit, summary, etc.
  *
  * Credentials loaded from env:
@@ -41,7 +41,7 @@
 import type { AgentRuntime, DispatchParams, RuntimeEndEvent } from './types';
 import { getDb } from '../db/client';
 import {
-  atlasCall,
+  agentHqCall,
   parseLifecycleData,
   buildLifecycleSystemPromptSection,
   buildLifecycleUserPromptSection,
@@ -53,8 +53,6 @@ import {
   proxyComplete,
   runPostStreamLifecycle,
   type LifecycleContext,
-  type AtlasLifecycleData,
-  ALL_VALID_OUTCOMES,
 } from './lifecycleProxy';
 
 // ── Config ───────────────────────────────────────────────────────────────────
@@ -83,7 +81,7 @@ const DEFAULT_TIMEOUT_MS = 120_000;
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 60_000;
 
 // ── Lifecycle types re-exported from lifecycleProxy ──────────────────────────
-// AtlasLifecycleData and ALL_VALID_OUTCOMES are imported from lifecycleProxy.ts.
+// Lifecycle proxy helpers are imported from lifecycleProxy.ts.
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -107,7 +105,7 @@ function getCustomApiKey(config: CustomAgentRuntimeConfig): string {
   return config.apiKey || process.env.VERI_API_KEY || '';
 }
 
-// atlasCall is imported from lifecycleProxy.ts
+// agentHqCall is imported from lifecycleProxy.ts
 
 /**
  * Format a task as a structured prompt for the Custom agent stack.
@@ -118,7 +116,7 @@ function getCustomApiKey(config: CustomAgentRuntimeConfig): string {
  */
 function formatTaskPrompt(params: DispatchParams): string {
   const parts: string[] = [
-    `# Task Dispatch from Atlas HQ`,
+    `# Task Dispatch from Agent HQ`,
     ``,
     `**Task:** ${params.name}`,
     `**Agent:** ${params.agentSlug}`,
@@ -136,7 +134,7 @@ function formatTaskPrompt(params: DispatchParams): string {
   parts.push('', '## Instructions', '', params.message);
 
   // Only inject lifecycle user prompt if the dispatcher hasn't already included
-  // proxy-managed contract instructions (task #632). Check for the atlas_lifecycle
+  // proxy-managed contract instructions (task #632). Check for the runtime marker
   // marker that the contracts/transportAdapters.ts proxy-managed adapter emits.
   if (params.instanceId && !params.message.includes('Runtime: Proxy-Managed')) {
     parts.push('', buildLifecycleUserPromptSection());
@@ -148,19 +146,19 @@ function formatTaskPrompt(params: DispatchParams): string {
 /**
  * Build the system prompt for the Custom agent.
  *
- * Enhanced (task #464) to instruct the agent to operate as a full Atlas
+ * Enhanced (task #464) to instruct the agent to operate as a full Agent HQ
  * engineer — including branching, testing, and structured lifecycle output.
  * Uses shared lifecycle prompt section from lifecycleProxy (task #470).
  */
 function buildSystemPrompt(_params: DispatchParams): string {
   return [
-    'You are a senior engineer dispatched by Atlas HQ to execute a task.',
+    'You are a senior engineer dispatched by Agent HQ to execute a task.',
     '',
     'Your workflow:',
     '1. Read the task description and acceptance criteria carefully.',
     '2. Work on a feature branch (naming: forge/task-{id}-{short-slug}).',
     '3. Write clean, tested code. Run tests before declaring completion.',
-    '4. When done, emit a structured `atlas_lifecycle` JSON block at the END of your response.',
+    '4. When done, emit a structured `agent_hq_lifecycle` JSON block at the END of your response.',
     '',
     buildLifecycleSystemPromptSection(),
   ].join('\n');
@@ -204,7 +202,7 @@ export class CustomAgentRuntime implements AgentRuntime {
     }
 
     // Build a structured prompt that wraps the raw task message with lifecycle
-    // instructions (emit atlas_lifecycle JSON) so the runtime can parse outcomes.
+    // instructions (emit agent_hq_lifecycle JSON) so the runtime can parse outcomes.
     const prompt = formatTaskPrompt(params);
 
     // Use the Custom API base URL (not the tenant dashboard relay).
@@ -244,7 +242,7 @@ export class CustomAgentRuntime implements AgentRuntime {
 
       // The agent/run endpoint returns an SSE stream (text/event-stream).
       // We only need the 200 status + any session/run ID from headers.
-      // The agent runs autonomously with tools and will call back to Atlas.
+      // The agent runs autonomously with tools and will call back to Agent HQ when direct callbacks are available.
       const sessionId = resp.headers.get('x-session-id');
       const runId = sessionId || `veri-${params.instanceId ?? Date.now()}`;
 
@@ -335,7 +333,7 @@ export class CustomAgentRuntime implements AgentRuntime {
    *   2. runId param — if it's not a synthetic veri-{id} value, use it directly
    *   3. Fallback: query GET /agent/status for active session IDs
    *
-   * Errors are logged but never rethrown — the Atlas stop flow always completes.
+   * Errors are logged but never rethrown — the Agent HQ stop flow always completes.
    */
   async abort(runId: string, _sessionKey: string): Promise<void> {
     console.log(`[CustomAgentRuntime] abort called for ${runId}`);
@@ -476,7 +474,7 @@ export class CustomAgentRuntime implements AgentRuntime {
       await proxyOutcome(ctx, 'failed', summary);
       await proxyComplete(ctx, 'failed', summary);
     } else if (params.taskId) {
-      await atlasCall(
+      await agentHqCall(
         'POST',
         `/api/v1/tasks/${params.taskId}/outcome`,
         {
@@ -508,7 +506,7 @@ export class CustomAgentRuntime implements AgentRuntime {
   /**
    * pollEventsApi — poll the Custom agent engine's events API for rich,
    * timestamped event data (thoughts, tool calls, tool results) and persist
-   * them as chat_messages rows for the Atlas HQ Chats tab.
+   * them as chat_messages rows for the Agent HQ Chats tab.
    *
    * The events API (`GET /v1/agent/events/{sessionId}`) provides:
    *   - ISO 8601 `ts` timestamps on every event (preserves chronological order)
@@ -717,7 +715,7 @@ export class CustomAgentRuntime implements AgentRuntime {
 
   /**
    * consumeStream — read the streaming response to completion, then execute
-   * the full Atlas lifecycle contract based on the agent's output.
+   * the full Agent HQ lifecycle contract based on the agent's output.
    *
    * Lifecycle steps:
    *   1. Stream consumption with periodic heartbeat check-ins

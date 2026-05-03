@@ -97,8 +97,8 @@ export function cleanupDoneTaskWorktrees(db: Database.Database, taskId: number):
     taskId,
     `task-${taskId}`,
     `%/task-${taskId}`,
-    `atlas-hq-task-${taskId}`,
-    `%/atlas-hq-task-${taskId}`,
+    `agent-hq-task-${taskId}`,
+    `%/agent-hq-task-${taskId}`,
   ) as Array<{ worktree_path: string; repo_path: string | null; repo_access_mode: string | null }>;
 
   let removed = 0;

@@ -1,7 +1,7 @@
-# Provider Onboarding Spec — Atlas HQ v1
+# Provider Onboarding Spec — Agent HQ v1
 
 **Task:** #571 — Provider onboarding research: define auth/connect flows  
-**Sprint:** Atlas HQ — First-Time Experience  
+**Sprint:** Agent HQ — First-Time Experience  
 **Author:** forge  
 **Date:** 2026-04-02  
 **Status:** Ready for review
@@ -10,11 +10,11 @@
 
 ## Overview
 
-This document defines the v1 connection path for each supported provider in the Atlas HQ first-time experience. It answers:
+This document defines the v1 connection path for each supported provider in the Agent HQ first-time experience. It answers:
 
 - What auth/connect method is supported for each provider
 - What the user must input
-- How Atlas HQ validates the connection
+- How Agent HQ validates the connection
 - What credential material gets stored
 - What flows are explicitly ruled out for v1
 
@@ -34,14 +34,14 @@ API keys are created and managed at:
 
 #### User-facing onboarding
 1. User is prompted to enter their Anthropic API key
-2. Atlas HQ shows a helper link: "Get your API key at platform.claude.com/settings/keys"
+2. Agent HQ shows a helper link: "Get your API key at platform.claude.com/settings/keys"
 3. User pastes the key and clicks "Connect"
-4. Atlas HQ tests the key by calling `GET https://api.anthropic.com/v1/models` with `x-api-key: <key>` and `anthropic-version: 2023-06-01`
+4. Agent HQ tests the key by calling `GET https://api.anthropic.com/v1/models` with `x-api-key: <key>` and `anthropic-version: 2023-06-01`
 5. On HTTP 200 → connection success, store key, display available models
 6. On HTTP 401 → show "Invalid API key — check your key and try again"
 7. On network error → show "Could not reach Anthropic API — check your connection"
 
-#### What Atlas HQ stores
+#### What Agent HQ stores
 - API key (encrypted at rest)
 - Provider slug: `anthropic`
 - Display label (optional user-defined name)
@@ -70,9 +70,9 @@ API keys are managed at: `https://platform.openai.com/settings/organization/api-
 
 #### User-facing onboarding
 1. User is prompted to enter their OpenAI API key (`sk-...`)
-2. Atlas HQ shows a helper link: "Get your API key at platform.openai.com"
+2. Agent HQ shows a helper link: "Get your API key at platform.openai.com"
 3. User pastes the key and clicks "Connect"
-4. Atlas HQ tests by calling `GET https://api.openai.com/v1/models` with `Authorization: Bearer <key>`
+4. Agent HQ tests by calling `GET https://api.openai.com/v1/models` with `Authorization: Bearer <key>`
 5. On HTTP 200 → success; store key; list available models
 6. On HTTP 401 → "Invalid API key"
 7. On HTTP 429 → "Rate limited — your key is valid but you've hit a usage limit"
@@ -82,7 +82,7 @@ API keys are managed at: `https://platform.openai.com/settings/organization/api-
 - Organization ID (`OpenAI-Organization`) — surfaced as an optional "Advanced" field
 - Project ID (`OpenAI-Project`) — surfaced as an optional "Advanced" field
 
-#### What Atlas HQ stores
+#### What Agent HQ stores
 - API key (encrypted at rest)
 - Organization ID (optional, plaintext)
 - Project ID (optional, plaintext)
@@ -109,15 +109,15 @@ API keys are created in: `https://aistudio.google.com/app/apikey`
 
 #### User-facing onboarding
 1. User is prompted to enter their Google AI Studio API key
-2. Atlas HQ shows helper link: "Get your API key at aistudio.google.com/app/apikey"
+2. Agent HQ shows helper link: "Get your API key at aistudio.google.com/app/apikey"
 3. User pastes the key and clicks "Connect"
-4. Atlas HQ validates by calling:
+4. Agent HQ validates by calling:
    `GET https://generativelanguage.googleapis.com/v1beta/models?key=<key>`
 5. On HTTP 200 with model list → success; store key; populate model list
 6. On HTTP 400/403 → "Invalid API key — check your key and try again"
 7. On network error → "Could not reach Google AI API"
 
-#### What Atlas HQ stores
+#### What Agent HQ stores
 - API key (encrypted at rest)
 - Provider slug: `google`
 
@@ -148,10 +148,10 @@ Key endpoints:
 | `/api/chat` | POST | Chat completion |
 
 #### User-facing onboarding
-1. Atlas HQ shows a pre-filled host field: `http://localhost:11434`
+1. Agent HQ shows a pre-filled host field: `http://localhost:11434`
 2. User can edit the URL if Ollama is on a different host/port
 3. User clicks "Connect" (or connection is attempted automatically on first display)
-4. Atlas HQ tests connectivity by calling `GET <host>/api/tags`
+4. Agent HQ tests connectivity by calling `GET <host>/api/tags`
    - A successful response (`200 + JSON with models array`) confirms Ollama is reachable and at least responsive
 5. On success → display list of installed models from `/api/tags`; allow user to select default model
 6. On failure → show contextual error guidance:
@@ -169,7 +169,7 @@ Key endpoints:
 - No trailing slash normalization needed (strip on save)
 - Store the base URL as-entered after stripping trailing slash
 
-#### What Atlas HQ stores
+#### What Agent HQ stores
 - Base URL (plaintext — not a secret)
 - Provider slug: `ollama`
 - Last-known model list (refreshed on connect/reconnect)
@@ -180,7 +180,7 @@ Key endpoints:
 
 #### Ruled out / deferred for v1
 - **Ollama with auth headers** — Ollama can be proxied behind a reverse proxy with auth, but this is not a native Ollama feature. Deferred to v2+.
-- **Automatic Ollama install/launch** — Atlas HQ does not install or start Ollama. User is responsible for having it running.
+- **Automatic Ollama install/launch** — Agent HQ does not install or start Ollama. User is responsible for having it running.
 - **Model management UI** (pull/delete) — Out of scope for onboarding; future enhancement.
 
 ---
@@ -206,7 +206,7 @@ Key endpoints:
 ### Validation pattern
 All providers should use the same validation flow:
 1. User submits credentials/URL
-2. Atlas HQ fires a test call (listed above per provider)
+2. Agent HQ fires a test call (listed above per provider)
 3. Show inline spinner during test
 4. On success: store credentials, advance onboarding
 5. On failure: show specific error, do not advance, allow retry

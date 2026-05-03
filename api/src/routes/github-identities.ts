@@ -1,7 +1,7 @@
 /**
  * routes/github-identities.ts — CRUD for per-agent GitHub identity/credential records.
  *
- * Task #613: Implement per-agent GitHub identities so Atlas HQ agents
+ * Task #613: Implement per-agent GitHub identities so Agent HQ agents
  * (dev, QA, Harbor) can act under distinct GitHub accounts for PR open,
  * approve, and merge operations.
  *
@@ -14,7 +14,7 @@
  *
  * The PAT is stored as-is in the DB (plaintext). For production hardening,
  * consider encrypting at rest or using a secrets manager. The current approach
- * matches Atlas HQ's operational model where the DB is local and access-controlled.
+ * matches Agent HQ's operational model where the DB is local and access-controlled.
  */
 
 import { Router, Request, Response } from 'express';

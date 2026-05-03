@@ -968,7 +968,7 @@ function startTerminalSignalCapture(params: {
         maxProtocol: PROTOCOL_VERSION,
         client: {
           id: 'gateway-client',
-          displayName: 'Atlas HQ Runtime End Capture',
+          displayName: 'Agent HQ Runtime End Capture',
           version: '1.0.0',
           platform: process.platform,
           mode: 'ui',
@@ -1140,7 +1140,7 @@ export async function gatewayGetHistory(params: {
           maxProtocol: PROTOCOL_VERSION,
           client: {
             id: 'gateway-client',
-            displayName: 'Atlas HQ',
+            displayName: 'Agent HQ',
             version: '1.0.0',
             platform: process.platform,
             mode: 'ui',
@@ -1411,7 +1411,7 @@ export class OpenClawRuntime implements AgentRuntime {
   /**
    * startCapture — start background real-time transcript capture for this dispatch.
    * Use the stored short hook:* session key first; current OpenClaw gateway
-   * history/subscription resolution is keyed on that form for Atlas HQ runs.
+   * history/subscription resolution is keyed on that form for Agent HQ runs.
    */
   private startCapture(params: DispatchParams, runId?: string, routedSessionKey?: string): void {
     if (params.instanceId == null) return;

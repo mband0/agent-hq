@@ -22,7 +22,7 @@ fi
 
 PRODUCTION_OWNER="nordini"
 PRODUCTION_HOME="/Users/${PRODUCTION_OWNER}"
-PRODUCTION_REPO="${PRODUCTION_HOME}/atlas-hq"
+PRODUCTION_REPO="${PRODUCTION_HOME}/agent-hq"
 OPENCLAW_DIR="${PRODUCTION_HOME}/.openclaw"
 
 echo "============================================================"
@@ -37,7 +37,7 @@ chown "${PRODUCTION_OWNER}:staff" "${PRODUCTION_HOME}"
 chmod 750 "${PRODUCTION_HOME}"
 echo "    Owner: ${PRODUCTION_OWNER}:staff, perms: 750"
 
-# ── Step 2: Lock down atlas-hq repo ───────────────────────────────────────────
+# ── Step 2: Lock down agent-hq repo ───────────────────────────────────────────
 if [[ -d "$PRODUCTION_REPO" ]]; then
   echo "==> Hardening ${PRODUCTION_REPO}..."
   chown -R "${PRODUCTION_OWNER}:staff" "${PRODUCTION_REPO}"

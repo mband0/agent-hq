@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-BASE_DIR="${ATLAS_HQ_REPO_DIR:-$(cd "$(dirname "$0")" && pwd)}"
+BASE_DIR="${AGENT_HQ_REPO_DIR:-$(cd "$(dirname "$0")" && pwd)}"
 
 echo "🚀 Starting Agent HQ..."
 cd "$BASE_DIR"

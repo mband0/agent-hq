@@ -7,7 +7,7 @@ import { getDb } from '../db/client';
 const router = Router({ mergeParams: true });
 
 const REPO_ROOT = path.resolve(__dirname, '../../..');
-const UPLOADS_BASE = process.env.AGENT_HQ_PROJECT_UPLOADS_DIR ?? process.env.ATLAS_HQ_PROJECT_UPLOADS_DIR ?? path.join(REPO_ROOT, 'uploads', 'projects');
+const UPLOADS_BASE = process.env.AGENT_HQ_PROJECT_UPLOADS_DIR ?? path.join(REPO_ROOT, 'uploads', 'projects');
 
 // Dynamic multer storage — creates per-project directory
 const storage = multer.diskStorage({

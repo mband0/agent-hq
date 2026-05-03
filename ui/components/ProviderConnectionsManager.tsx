@@ -354,8 +354,8 @@ export default function ProviderConnectionsManager({
     if (!provider) return;
     const providerMeta = PROVIDERS.find(m => m.slug === slug);
     const confirmMsg = providerMeta?.connectionMethod === 'oauth'
-      ? `Disconnect ${provider.display_name}? This removes the OAuth connection from Atlas HQ.`
-      : `Disconnect ${provider.display_name}? This removes the saved connection and API key from Atlas HQ.`;
+      ? `Disconnect ${provider.display_name}? This removes the OAuth connection from Agent HQ.`
+      : `Disconnect ${provider.display_name}? This removes the saved connection and API key from Agent HQ.`;
     if (!confirm(confirmMsg)) return;
     setCard(slug, { loading: true });
     try {
@@ -373,7 +373,7 @@ export default function ProviderConnectionsManager({
   const intro = mode === 'onboarding'
     ? gatePassed
       ? 'You\u2019re ready to go. You can connect more providers later from Settings \u2192 Providers.'
-      : 'Atlas HQ needs at least one AI provider to work. Connect one now, then add or rotate others later from Settings.'
+      : 'Agent HQ needs at least one AI provider to work. Connect one now, then add or rotate others later from Settings.'
     : 'Manage provider connections, rotate API keys, revalidate credentials, and disconnect providers without going back through onboarding.';
 
   return (

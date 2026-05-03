@@ -1426,7 +1426,7 @@ router.put('/:id', (req: Request, res: Response) => {
     }
 
     // Keep OpenClaw agent config in sync for provisioned openclaw-runtime agents.
-    // Without this, Atlas HQ can update the DB model/provider while ~/.openclaw/openclaw.json
+    // Without this, Agent HQ can update the DB model/provider while ~/.openclaw/openclaw.json
     // still points at an older model, causing openclaw status and fresh defaulted sessions to drift.
     if ((updated.runtime_type as string | null) === 'openclaw') {
       try {

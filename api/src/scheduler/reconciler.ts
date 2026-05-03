@@ -195,7 +195,7 @@ function buildQaTaskContext(task: TaskRow): string {
     '',
     task.description || '(no description provided)',
     '',
-    `This task is already in the Atlas HQ review lane. Do not move it to in_progress or done via the generic task update endpoint.`,
+    `This task is already in the Agent HQ review lane. Do not move it to in_progress or done via the generic task update endpoint.`,
     `Keep the task in review while you test it.`,
     `Use the Agent HQ Task Contract Base URL for lifecycle writes such as task notes, QA evidence, check-ins, and outcomes.`,
     `Do not send lifecycle writes to the dev API under test unless the contract Base URL explicitly points there.`,

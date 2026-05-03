@@ -177,7 +177,7 @@ export function createAgentToolServer(
   });
 
   const server = createSdkMcpServer({
-    name: 'atlas-hq-agent-tools',
+    name: 'agent-hq-agent-tools',
     version: '1.0.0',
     tools: sdkTools,
   });

@@ -2,7 +2,7 @@
 <!-- agent-contract.md: Direct-callback contract for local runtimes (openclaw, claude-code).
      Remote proxy-managed runtimes (veri, webhook+lifecycleProxy) do NOT receive this file —
      they get runtime-specific lifecycle instructions from buildLifecycleUserPromptSection(). -->
-## Atlas HQ run contract for this dispatched instance
+## Agent HQ run contract for this dispatched instance
 Instance ID: {{instanceId}}
 Task ID: {{taskId}}
 Session key: {{sessionKey}}
@@ -47,13 +47,13 @@ Valid outcomes:
 
 5. DEV ENVIRONMENT DEPLOY (implementation lane only) — before recording evidence or posting outcome, deploy your feature branch to the Dev environment so QA can actually test it. Failure to do this is the #1 cause of QA failures.
 
-For Atlas HQ internal tasks (API changes):
+For Agent HQ internal tasks (API changes):
   cd /path/to/dev-worktree/api && npm run build
-  pm2 restart atlas-hq-dev-api
+  pm2 restart agent-hq-dev-api
 
-For Atlas HQ internal tasks (UI changes):
+For Agent HQ internal tasks (UI changes):
   cd /path/to/dev-worktree/ui && npm run build
-  pm2 restart atlas-hq-dev-ui
+  pm2 restart agent-hq-dev-ui
 
 QA will test against http://localhost:3510 / http://localhost:3511. If your code is not running there, QA will fail.
 

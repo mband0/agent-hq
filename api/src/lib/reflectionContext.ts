@@ -5,7 +5,7 @@
  * learning, and telemetry features.
  *
  * This module assembles a rich, structured context object from the canonical
- * Atlas HQ data model so reflection subagents can inspect prior work through
+ * Agent HQ data model so reflection subagents can inspect prior work through
  * one data source without needing to know about runtime-specific storage paths.
  *
  * The composite context includes:

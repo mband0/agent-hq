@@ -8,7 +8,7 @@
 # without a password prompt. This is required for the dispatcher to execute
 # agent processes under the correct OS user identity.
 #
-# Creates /etc/sudoers.d/atlas-hq-agents (atomic write via visudo -c).
+# Creates /etc/sudoers.d/agent-hq-agents (atomic write via visudo -c).
 #
 # Idempotent: overwrites the file on each run.
 #
@@ -21,10 +21,10 @@ if [[ "$(id -u)" -ne 0 ]]; then
 fi
 
 DISPATCH_USER="nordini"
-SUDOERS_FILE="/etc/sudoers.d/atlas-hq-agents"
+SUDOERS_FILE="/etc/sudoers.d/agent-hq-agents"
 TEMP_FILE=$(mktemp)
 
-echo "==> Configuring sudoers for Atlas HQ agent dispatch..."
+echo "==> Configuring sudoers for Agent HQ agent dispatch..."
 echo "    Dispatch user: ${DISPATCH_USER}"
 echo "    Sudoers file:  ${SUDOERS_FILE}"
 
@@ -32,7 +32,7 @@ echo "    Sudoers file:  ${SUDOERS_FILE}"
 # Allow nordini to run any command as any agent-* user, without password.
 # The wildcard pattern agent-* matches all agent OS users.
 cat > "${TEMP_FILE}" <<EOF
-# Atlas HQ agent dispatch — allows ${DISPATCH_USER} to run processes as agent users.
+# Agent HQ agent dispatch — allows ${DISPATCH_USER} to run processes as agent users.
 # Managed by scripts/setup-sudoers-dispatch.sh — do not edit manually.
 #
 # Pattern: ${DISPATCH_USER} can run ANY command as any user matching agent-*

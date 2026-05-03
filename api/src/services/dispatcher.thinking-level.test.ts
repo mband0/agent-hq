@@ -375,7 +375,7 @@ describe('runDispatcher thinking-level routing', () => {
       identity: {
         githubUser: 'cinder-agent',
         gitAuthorName: 'Cinder',
-        gitAuthorEmail: 'cinder@atlashq',
+        gitAuthorEmail: 'cinder@agenthq',
         token: 'secret-token',
       },
     });
@@ -592,7 +592,7 @@ describe('runDispatcher thinking-level routing', () => {
 
       await new Promise((resolve) => setImmediate(resolve));
 
-      const runContextPath = path.join(worktreeRoot, '.atlas-run-context.json');
+      const runContextPath = path.join(worktreeRoot, '.agent-hq-run-context.json');
       const runContext = JSON.parse(fs.readFileSync(runContextPath, 'utf-8')) as {
         workspace_root: string | null;
         active_repo_root: string | null;

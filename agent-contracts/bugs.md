@@ -1,6 +1,6 @@
 ---
 <!-- bugs.md: Bug sprint contract template. Keep expectations explicit and text-first. -->
-## Atlas HQ bug-fix contract for this dispatched instance
+## Agent HQ bug-fix contract for this dispatched instance
 Sprint type: {{sprintType}}
 Instance ID: {{instanceId}}
 Task ID: {{taskId}}

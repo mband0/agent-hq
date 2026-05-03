@@ -3,9 +3,9 @@ import path from 'path';
 import fs from 'fs';
 
 const REPO_ROOT = path.resolve(__dirname, '../../..');
-const DB_DIR = process.env.AGENT_HQ_DATA_DIR ?? process.env.ATLAS_HQ_DATA_DIR ?? REPO_ROOT;
-// AGENT_HQ_DB_PATH is preferred. Legacy ATLAS_HQ_DB_PATH and DATABASE_PATH remain supported.
-const DB_PATH = process.env.AGENT_HQ_DB_PATH ?? process.env.ATLAS_HQ_DB_PATH ?? process.env.DATABASE_PATH ?? path.join(DB_DIR, 'agent-hq.db');
+const DB_DIR = process.env.AGENT_HQ_DATA_DIR ?? REPO_ROOT;
+// AGENT_HQ_DB_PATH is preferred. DATABASE_PATH remains supported as a generic fallback.
+const DB_PATH = process.env.AGENT_HQ_DB_PATH ?? process.env.DATABASE_PATH ?? path.join(DB_DIR, 'agent-hq.db');
 
 // Ensure directory exists
 const dbParentDir = path.dirname(DB_PATH);

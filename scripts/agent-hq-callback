@@ -1,23 +1,23 @@
 #!/usr/bin/env node
 /**
- * atlas-callback — Atlas HQ lifecycle callback helper for local agents.
+ * agent-hq-callback — Agent HQ lifecycle callback helper for local agents.
  *
- * Provides a simple CLI surface for all Atlas HQ lifecycle events so agents
+ * Provides a simple CLI surface for all Agent HQ lifecycle events so agents
  * don't need to handcraft curl calls from prompt prose.
  *
  * Usage:
- *   atlas-callback start
- *   atlas-callback checkin [--stage progress|heartbeat] [--summary "..."] [--meaningful]
- *   atlas-callback blocker --reason "..."
- *   atlas-callback outcome --outcome completed_for_review [--summary "..."]
- *   atlas-callback complete [--status done] [--summary "..."] [--outcome completed_for_review]
- *   atlas-callback evidence --branch "..." --commit "..." [--dev-url "..."] [--notes "..."]
+ *   agent-hq-callback start
+ *   agent-hq-callback checkin [--stage progress|heartbeat] [--summary "..."] [--meaningful]
+ *   agent-hq-callback blocker --reason "..."
+ *   agent-hq-callback outcome --outcome completed_for_review [--summary "..."]
+ *   agent-hq-callback complete [--status done] [--summary "..."] [--outcome completed_for_review]
+ *   agent-hq-callback evidence --branch "..." --commit "..." [--dev-url "..."] [--notes "..."]
  *
  * Context resolution (highest priority wins):
  *   1. CLI flags: --instance-id, --task-id, --session-key, --api-base, --agent-slug
- *   2. Environment variables: ATLAS_INSTANCE_ID, ATLAS_TASK_ID, ATLAS_SESSION_KEY,
- *      ATLAS_API_BASE, ATLAS_AGENT_SLUG
- *   3. .atlas-run-context.json in CWD or up to 5 parent directories
+ *   2. Environment variables: AGENT_HQ_INSTANCE_ID, AGENT_HQ_TASK_ID, AGENT_HQ_SESSION_KEY,
+ *      AGENT_HQ_API_BASE, AGENT_HQ_AGENT_SLUG
+ *   3. .agent-hq-run-context.json in CWD or up to 5 parent directories
  *
  * Exit codes:
  *   0 — success
@@ -66,7 +66,7 @@ function parseArgs(argv) {
 
 // ── Context resolution ──────────────────────────────────────────────────────
 
-const CONTEXT_FILENAME = '.atlas-run-context.json';
+const CONTEXT_FILENAME = '.agent-hq-run-context.json';
 
 function findContextFile(startDir) {
   let dir = startDir || process.cwd();
@@ -90,11 +90,11 @@ function resolveContext(flags) {
   const fileCtx = findContextFile(process.cwd()) || {};
 
   return {
-    instanceId: flags['instance-id'] || process.env.ATLAS_INSTANCE_ID || fileCtx.instance_id || null,
-    taskId: flags['task-id'] || process.env.ATLAS_TASK_ID || fileCtx.task_id || null,
-    sessionKey: flags['session-key'] || process.env.ATLAS_SESSION_KEY || fileCtx.session_key || null,
-    apiBase: flags['api-base'] || process.env.ATLAS_API_BASE || fileCtx.api_base || 'http://localhost:3501',
-    agentSlug: flags['agent-slug'] || process.env.ATLAS_AGENT_SLUG || fileCtx.agent_slug || null,
+    instanceId: flags['instance-id'] || process.env.AGENT_HQ_INSTANCE_ID || fileCtx.instance_id || null,
+    taskId: flags['task-id'] || process.env.AGENT_HQ_TASK_ID || fileCtx.task_id || null,
+    sessionKey: flags['session-key'] || process.env.AGENT_HQ_SESSION_KEY || fileCtx.session_key || null,
+    apiBase: flags['api-base'] || process.env.AGENT_HQ_API_BASE || fileCtx.api_base || 'http://localhost:3501',
+    agentSlug: flags['agent-slug'] || process.env.AGENT_HQ_AGENT_SLUG || fileCtx.agent_slug || null,
   };
 }
 
@@ -246,7 +246,7 @@ async function cmdEvidence(ctx, flags) {
 // ── Help ────────────────────────────────────────────────────────────────────
 
 function printHelp() {
-  console.log(`atlas-callback — Atlas HQ lifecycle callback helper
+  console.log(`agent-hq-callback — Agent HQ lifecycle callback helper
 
 Commands:
   start                          Mark the instance as started
@@ -277,13 +277,13 @@ Context flags (override env / context file):
   --instance-id <id>             Instance ID
   --task-id <id>                 Task ID
   --session-key <key>            Session key
-  --api-base <url>               Atlas HQ API base (default: http://localhost:3501)
+  --api-base <url>               Agent HQ API base (default: http://localhost:3501)
   --agent-slug <slug>            Agent identifier
 
 Context resolution order:
   1. CLI flags
-  2. Environment variables (ATLAS_INSTANCE_ID, ATLAS_TASK_ID, etc.)
-  3. .atlas-run-context.json in CWD or parent directories`);
+  2. Environment variables (AGENT_HQ_INSTANCE_ID, AGENT_HQ_TASK_ID, etc.)
+  3. .agent-hq-run-context.json in CWD or parent directories`);
 }
 
 // ── Utilities ───────────────────────────────────────────────────────────────
@@ -295,14 +295,14 @@ function requireFields(ctx, fields) {
         `Missing required context: ${f}.\n` +
         `Set via --${f.replace(/([A-Z])/g, '-$1').toLowerCase()}, ` +
         `ATLAS_${f.replace(/([A-Z])/g, '_$1').toUpperCase()} env var, ` +
-        `or .atlas-run-context.json`
+        `or .agent-hq-run-context.json`
       );
     }
   }
 }
 
 function die(msg) {
-  console.error(`[atlas-callback] Error: ${msg}`);
+  console.error(`[agent-hq-callback] Error: ${msg}`);
   process.exit(1);
 }
 
@@ -328,11 +328,11 @@ async function main() {
 
   const handler = COMMANDS[command];
   if (!handler) {
-    die(`Unknown command: ${command}\nRun 'atlas-callback help' for usage.`);
+    die(`Unknown command: ${command}\nRun 'agent-hq-callback help' for usage.`);
   }
 
   const ctx = resolveContext(flags);
-  const verbose = flags.verbose || process.env.ATLAS_CALLBACK_VERBOSE === '1';
+  const verbose = flags.verbose || process.env.AGENT_HQ_CALLBACK_VERBOSE === '1';
 
   try {
     const result = await handler(ctx, flags);
@@ -350,11 +350,11 @@ async function main() {
       const errMsg = typeof result.body === 'object' && result.body
         ? (result.body.error || result.body.message || JSON.stringify(result.body))
         : String(result.body);
-      console.error(`[atlas-callback] ${command} failed (HTTP ${result.status}): ${errMsg}`);
+      console.error(`[agent-hq-callback] ${command} failed (HTTP ${result.status}): ${errMsg}`);
       process.exit(2);
     }
   } catch (err) {
-    console.error(`[atlas-callback] ${command} error: ${err.message}`);
+    console.error(`[agent-hq-callback] ${command} error: ${err.message}`);
     process.exit(2);
   }
 }

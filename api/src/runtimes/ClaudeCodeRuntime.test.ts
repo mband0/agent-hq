@@ -75,8 +75,8 @@ describe('ClaudeCodeRuntime path handoff', () => {
     expect(mockQuery).toHaveBeenCalledTimes(1);
     const [{ options }] = mockQuery.mock.calls[0] as [{ options: { cwd?: string; env?: Record<string, string> } }];
     expect(options.cwd).toBe('/parent/workspace/task-375');
-    expect(options.env?.ATLAS_WORKSPACE_ROOT).toBe('/parent/workspace');
-    expect(options.env?.ATLAS_ACTIVE_REPO_ROOT).toBe('/parent/workspace/task-375');
+    expect(options.env?.AGENT_HQ_WORKSPACE_ROOT).toBe('/parent/workspace');
+    expect(options.env?.AGENT_HQ_ACTIVE_REPO_ROOT).toBe('/parent/workspace/task-375');
   });
 
   it('keeps parent workspaceRoot as boundary while using activeRepoRoot as authoritative cwd', async () => {

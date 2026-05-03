@@ -499,7 +499,7 @@ class GatewayTranscriptCapture {
       maxProtocol: PROTOCOL_VERSION,
       client: {
         id: 'gateway-client',
-        displayName: 'Atlas HQ Transcript Capture',
+        displayName: 'Agent HQ Transcript Capture',
         version: '1.0.0',
         platform: process.platform,
         mode: 'ui',

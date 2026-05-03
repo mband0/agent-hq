@@ -9,7 +9,7 @@
  * - dispatch() is non-blocking: fires the query() loop via setImmediate and returns
  * - Session ID extracted from the first "init" system message, stored on job_instances
  * - AbortControllers are stored in an in-process Map keyed by instanceId
- * - Atlas HQ lifecycle callbacks injected as env vars — the agent calls them via Bash/curl
+ * - Agent HQ lifecycle callbacks injected as env vars — the agent calls them via Bash/curl
  * - Model and effort are configurable per-agent via runtime_config
  */
 
@@ -229,22 +229,22 @@ export class ClaudeCodeRuntime implements AgentRuntime {
           persistSession: true,
           // Inject registry tools as an in-process MCP server (task #559)
           ...(agentToolMcpServer ? {
-            mcpServers: { 'atlas-hq-agent-tools': agentToolMcpServer },
+            mcpServers: { 'agent-hq-agent-tools': agentToolMcpServer },
           } : {}),
           env: {
             ...process.env,
-            ATLAS_INSTANCE_ID: String(instanceId),
-            ATLAS_TASK_ID: taskId != null ? String(taskId) : '',
-            ATLAS_SESSION_KEY: sessionKey ?? '',
-            ATLAS_AGENT_SLUG: agentSlug ?? '',
-            ATLAS_API_BASE: baseUrl,
-            ATLAS_CALLBACK_START: `${baseUrl}/api/v1/instances/${instanceId}/start`,
-            ATLAS_CALLBACK_CHECKIN: `${baseUrl}/api/v1/instances/${instanceId}/check-in`,
-            ATLAS_CALLBACK_COMPLETE: `${baseUrl}/api/v1/instances/${instanceId}/complete`,
+            AGENT_HQ_INSTANCE_ID: String(instanceId),
+            AGENT_HQ_TASK_ID: taskId != null ? String(taskId) : '',
+            AGENT_HQ_SESSION_KEY: sessionKey ?? '',
+            AGENT_HQ_AGENT_SLUG: agentSlug ?? '',
+            AGENT_HQ_API_BASE: baseUrl,
+            AGENT_HQ_CALLBACK_START: `${baseUrl}/api/v1/instances/${instanceId}/start`,
+            AGENT_HQ_CALLBACK_CHECKIN: `${baseUrl}/api/v1/instances/${instanceId}/check-in`,
+            AGENT_HQ_CALLBACK_COMPLETE: `${baseUrl}/api/v1/instances/${instanceId}/complete`,
             // Workspace boundary remains the broader allowed container root when present.
-            ...(workspaceRoot ? { ATLAS_WORKSPACE_ROOT: workspaceRoot } : effectiveCwd ? { ATLAS_WORKSPACE_ROOT: effectiveCwd } : {}),
+            ...(workspaceRoot ? { AGENT_HQ_WORKSPACE_ROOT: workspaceRoot } : effectiveCwd ? { AGENT_HQ_WORKSPACE_ROOT: effectiveCwd } : {}),
             // Active repo root is the authoritative repo cwd for this dispatched run.
-            ...(effectiveCwd ? { ATLAS_ACTIVE_REPO_ROOT: effectiveCwd } : {}),
+            ...(effectiveCwd ? { AGENT_HQ_ACTIVE_REPO_ROOT: effectiveCwd } : {}),
           } as Record<string, string>,
         },
       })) {

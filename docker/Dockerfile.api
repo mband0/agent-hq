@@ -1,5 +1,5 @@
 ###############################################################################
-# Dockerfile.api — Production image for the Atlas HQ API
+# Dockerfile.api — Production image for the Agent HQ API
 #
 # Stack: Node.js 20 LTS (Alpine), TypeScript compiled to dist/
 # Data:  SQLite database at /data/agent-hq.db (mount a volume here)
@@ -10,7 +10,7 @@
 #
 # ── Run ───────────────────────────────────────────────────────────────────────
 #   docker run -p 3501:3501 \
-#     -v atlas-data:/data \
+#     -v agent-hq-data:/data \
 #     -e NODE_ENV=production \
 #     agent-hq-api
 #
@@ -43,7 +43,7 @@ RUN npm ci --omit=dev --ignore-scripts
 FROM node:20-alpine AS runtime
 
 # Create a non-root user for the API process
-RUN addgroup -S atlashq && adduser -S atlashq -G atlashq
+RUN addgroup -S agenthq && adduser -S agenthq -G agenthq
 
 WORKDIR /app
 
@@ -54,7 +54,7 @@ COPY --from=builder /build/package.json ./
 
 # Create the data directory and hand ownership to the runtime user.
 # This is the recommended mount point for the SQLite volume.
-RUN mkdir -p /data && chown atlashq:atlashq /data
+RUN mkdir -p /data && chown agenthq:agenthq /data
 
 # Declare /data as a volume so Docker (and compose) knows it should be
 # persisted externally. An explicit -v or named volume at runtime will
@@ -69,7 +69,7 @@ ENV NODE_ENV=production \
 
 EXPOSE 3501
 
-USER atlashq
+USER agenthq
 
 # Start the compiled API
 CMD ["node", "dist/index.js"]

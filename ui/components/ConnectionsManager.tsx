@@ -159,7 +159,7 @@ function TelegramCard() {
   };
 
   const handleDisconnect = async () => {
-    if (!confirm('Disconnect Telegram? This removes the bot token and chat ID from Atlas HQ.')) return;
+    if (!confirm('Disconnect Telegram? This removes the bot token and chat ID from Agent HQ.')) return;
     setDisconnecting(true);
     try {
       await fetch(`${apiBase}/api/v1/settings/telegram`, { method: 'DELETE' });
@@ -425,7 +425,7 @@ export default function ConnectionsManager() {
         <div>
           <h1 className="text-2xl font-bold text-white">Connections</h1>
           <p className="text-slate-400 text-sm mt-1 max-w-3xl">
-            Manage messaging channel integrations. Connect Telegram to receive Atlas HQ notifications and dispatch commands from mobile.
+            Manage messaging channel integrations. Connect Telegram to receive Agent HQ notifications and dispatch commands from mobile.
           </p>
         </div>
         <button
@@ -454,7 +454,7 @@ export default function ConnectionsManager() {
           <div className="bg-slate-900/50 border border-slate-700/50 rounded-xl p-4">
             <h2 className="text-sm font-semibold text-white mb-2">About Connections</h2>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Connections let Atlas HQ send notifications and receive commands through messaging platforms.
+              Connections let Agent HQ send notifications and receive commands through messaging platforms.
               Telegram is fully supported — WhatsApp and Discord integrations are on the roadmap.
             </p>
           </div>

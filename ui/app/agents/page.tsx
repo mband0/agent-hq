@@ -772,7 +772,7 @@ export default function AgentsPage() {
                         className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500 font-mono"
                         value={form.repo_path}
                         onChange={e => setForm(f => ({ ...f, repo_path: e.target.value }))}
-                        placeholder="/Users/nordini/.openclaw/workspace-forge/atlas-hq"
+                        placeholder="/Users/nordini/.openclaw/workspace-forge/agent-hq"
                       />
                       <p className="text-slate-600 text-xs mt-1">Dispatcher creates an isolated git worktree per task from this canonical checkout.</p>
                     </label>

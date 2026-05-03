@@ -756,7 +756,7 @@ export default function AgentDetailPage() {
                     className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500 font-mono"
                     value={editForm.repo_path}
                     onChange={e => setF({ repo_path: e.target.value })}
-                    placeholder="/Users/…/atlas-hq"
+                    placeholder="/Users/…/agent-hq"
                   />
                 </label>
               )}

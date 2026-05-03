@@ -1,7 +1,7 @@
-# Onboarding Provider Gate Spec — Atlas HQ v1
+# Onboarding Provider Gate Spec — Agent HQ v1
 
 **Task:** #572 — First-time setup spec: require at least one provider before onboarding completion  
-**Sprint:** Atlas HQ — First-Time Experience  
+**Sprint:** Agent HQ — First-Time Experience  
 **Author:** Wren (agency-pm)  
 **Date:** 2026-04-02  
 **Status:** Ready for review  
@@ -11,7 +11,7 @@
 
 ## 1. Overview
 
-A new Atlas HQ user must configure at least one usable model provider before the onboarding wizard is considered complete and the dashboard is treated as fully ready. This document defines the product behavior for the provider-setup step: where it appears, what "configured" means, every success/failure state, copy, and how it interacts with first-run detection and dashboard access.
+A new Agent HQ user must configure at least one usable model provider before the onboarding wizard is considered complete and the dashboard is treated as fully ready. This document defines the product behavior for the provider-setup step: where it appears, what "configured" means, every success/failure state, copy, and how it interacts with first-run detection and dashboard access.
 
 ---
 
@@ -99,7 +99,7 @@ See [provider-onboarding-spec.md](./provider-onboarding-spec.md) for full auth d
 
 **Display:**
 - Heading: "Connect your first AI provider"
-- Body copy: "Atlas HQ needs at least one AI provider to work. You only need to connect one to get started — you can add more later."
+- Body copy: "Agent HQ needs at least one AI provider to work. You only need to connect one to get started — you can add more later."
 - Provider selection cards for: Anthropic, OpenAI, Google, Ollama
 - "Continue" button: **disabled**, grayed out, tooltip on hover: "Connect at least one provider to continue"
 - No skip/defer option (see §6)
@@ -150,7 +150,7 @@ Partial progress is defined as: the user has entered credentials but has not com
 
 **There is no skip option for the provider step in v1.**
 
-Rationale: Atlas HQ without a provider configured is non-functional. Allowing skip creates a broken-dashboard experience for new users and complicates first-run detection. Masking the gate behind a dismiss action adds deferred-state complexity with no product benefit.
+Rationale: Agent HQ without a provider configured is non-functional. Allowing skip creates a broken-dashboard experience for new users and complicates first-run detection. Masking the gate behind a dismiss action adds deferred-state complexity with no product benefit.
 
 **What is not allowed:**
 - "Skip for now" / "I'll do this later" link
@@ -197,7 +197,7 @@ If the user's only connected provider later becomes invalid (key revoked, Ollama
 | Location | Copy |
 |----------|------|
 | Step 2 heading | "Connect your first AI provider" |
-| Step 2 body (zero providers) | "Atlas HQ needs at least one AI provider to work. You only need to connect one to get started — you can add more later." |
+| Step 2 body (zero providers) | "Agent HQ needs at least one AI provider to work. You only need to connect one to get started — you can add more later." |
 | Step 2 body (gate satisfied) | "You're ready to go. You can connect more providers at any time from Settings." |
 | Continue button (disabled tooltip) | "Connect at least one provider to continue" |
 | Provider card: connected state | "Connected ✓" |

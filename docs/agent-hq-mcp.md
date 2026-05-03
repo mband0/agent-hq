@@ -75,8 +75,7 @@ Once connected, you can ask things like:
 
 ## Tool Surface
 
-Primary tool names use the `agent_hq_*` namespace.
-Legacy `atlas_*` aliases may still exist for backward compatibility, but new docs and client configs should use `agent_hq_*` only.
+Primary tool names use the `agent_hq_*` namespace. New docs and client configs should use `agent_hq_*` only.
 
 ### Read tools
 
@@ -412,7 +411,7 @@ Missing, invalid, disabled, revoked, unmapped, or disabled-agent keys are reject
 
 ### Legacy compatibility
 
-Current implementation may still read legacy Atlas-era fallbacks for backward compatibility, but new configuration should use Agent HQ names only.
+Current implementation may still read legacy fallback names for backward compatibility, but new configuration should use Agent HQ names only.
 
 ---
 
@@ -550,7 +549,7 @@ Use these names in docs, config, and user-facing communication:
 - `AGENT_HQ_API_URL`
 - `~/.agent-hq/mcp.json`
 
-Avoid Atlas-era naming in new docs.
+Avoid legacy product naming in new docs.
 
 ---
 

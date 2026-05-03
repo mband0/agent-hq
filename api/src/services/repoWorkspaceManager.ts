@@ -237,7 +237,7 @@ export function pruneOrphanedWorktrees(params: {
 
   for (const entry of fs.readdirSync(basePath, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
-    const match = entry.name.match(/(?:^task-|^atlas-hq-task-)(\d+)$/);
+    const match = entry.name.match(/(?:^task-|^agent-hq-task-)(\d+)$/);
     if (!match) continue;
 
     const taskId = Number(match[1]);

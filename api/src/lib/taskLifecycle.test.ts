@@ -129,7 +129,7 @@ describe('task lifecycle worktree cleanup', () => {
         (11, 1, 1, 'failed', '/tmp/workspaces/task-1'),
         (12, 1, 1, 'done', '/tmp/workspaces/task-1-retry'),
         (13, 2, 1, 'done', '/tmp/workspaces/no-repo'),
-        (14, 1, NULL, 'failed', '/tmp/workspaces/atlas-hq-task-1')
+        (14, 1, NULL, 'failed', '/tmp/workspaces/agent-hq-task-1')
     `).run();
 
     cleanupTaskExecutionLinkageForStatus(db, 1, 'done');
@@ -137,7 +137,7 @@ describe('task lifecycle worktree cleanup', () => {
     expect(mockedRemoveTaskWorktree).toHaveBeenCalledTimes(3);
     expect(mockedRemoveTaskWorktree).toHaveBeenCalledWith({ repoPath: '/repo', worktreePath: '/tmp/workspaces/task-1' });
     expect(mockedRemoveTaskWorktree).toHaveBeenCalledWith({ repoPath: '/repo', worktreePath: '/tmp/workspaces/task-1-retry' });
-    expect(mockedRemoveTaskWorktree).toHaveBeenCalledWith({ repoPath: '/repo', worktreePath: '/tmp/workspaces/atlas-hq-task-1' });
+    expect(mockedRemoveTaskWorktree).toHaveBeenCalledWith({ repoPath: '/repo', worktreePath: '/tmp/workspaces/agent-hq-task-1' });
     expect(mockedRemoveTaskClone).toHaveBeenCalledWith({ workspacePath: '/tmp/workspaces/no-repo' });
   });
 

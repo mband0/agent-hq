@@ -1,7 +1,7 @@
 /**
  * lib/githubIdentity.ts — GitHub identity resolution and credential injection.
  *
- * Task #613: Per-agent GitHub identities for Atlas HQ PR approval/merge workflow.
+ * Task #613: Per-agent GitHub identities for Agent HQ PR approval/merge workflow.
  *
  * This module provides:
  *   - resolveGitHubIdentity(): look up agent's linked github_identities row
@@ -157,7 +157,7 @@ export function injectGitHubCredentials(
     // Write identity env file
     const envPath = path.join(workingDirectory, GH_IDENTITY_FILE);
     const envContent = [
-      `# Atlas HQ GitHub identity — auto-generated, do not edit`,
+      `# Agent HQ GitHub identity — auto-generated, do not edit`,
       `# GitHub user: ${identity.github_username}`,
       `# Lane: ${identity.lane}`,
       `export GH_TOKEN="${identity.token}"`,
@@ -235,7 +235,7 @@ export function buildGitHubIdentityContext(
     `- **Lane:** ${identity.lane}`,
     ``,
     `### Credential setup`,
-    `Atlas HQ has already configured this worktree's local git author as ${identity.git_author_name} <${identity.git_author_email}>.`,
+    `Agent HQ has already configured this worktree's local git author as ${identity.git_author_name} <${identity.git_author_email}>.`,
     `Before running any \`git commit\`, \`git merge\`, \`git cherry-pick\`, \`gh\`, or \`git push\` commands, source your GitHub credentials:`,
     '```bash',
     `source "${path.join(workingDirectory, GH_IDENTITY_FILE)}"`,

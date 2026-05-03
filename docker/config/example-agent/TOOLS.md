@@ -1,6 +1,6 @@
 # TOOLS.md — Example Agent Tool Notes
 
-## Atlas HQ
+## Agent HQ
 - Task management API: ${AGENT_HQ_API_URL}/api/v1
 
 ## Workspace

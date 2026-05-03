@@ -1,7 +1,7 @@
 /**
  * Canonical failure classification system for workflow exits.
  *
- * Task #95 establishes a lane-aware failure taxonomy so Atlas HQ can tell
+ * Task #95 establishes a lane-aware failure taxonomy so Agent HQ can tell
  * apart genuine QA defects, release blockers, approval gates, environment
  * drift, and runtime/infra issues without collapsing everything into a
  * generic "failed" bucket.

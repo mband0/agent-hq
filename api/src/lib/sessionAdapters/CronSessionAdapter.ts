@@ -11,7 +11,7 @@
  *     durationMs, model, provider, usage, ... }
  *
  * Session key format:
- *   cron:<jobId>:<timestamp>  (Atlas HQ canonical key for cron runs)
+ *   cron:<jobId>:<timestamp>  (Agent HQ canonical key for cron runs)
  *   agent:main:cron:<jobId>:run:<uuid>  (OpenClaw native key stored in run JSONL)
  *
  * Live chat: not supported — cron runs are non-interactive.
@@ -65,12 +65,12 @@ function mapCronStatus(record: CronRunRecord): 'active' | 'completed' | 'failed'
 /**
  * Resolve job ID from an externalKey.
  * Accepted formats:
- *   cron:<jobId>:<timestamp>  (Atlas HQ canonical)
+ *   cron:<jobId>:<timestamp>  (Agent HQ canonical)
  *   cron:<jobId>              (partial)
  *   <jobId>                   (bare UUID, used when we know we're in CronAdapter)
  */
 function extractJobId(externalKey: string): string | null {
-  // Atlas HQ canonical: cron:<jobId>:<ts>
+  // Agent HQ canonical: cron:<jobId>:<ts>
   const canonicalMatch = externalKey.match(/^cron:([^:]+)(?::\d+)?$/);
   if (canonicalMatch) return canonicalMatch[1];
   // If it looks like a plain UUID (no colons)

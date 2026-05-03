@@ -2,7 +2,6 @@
  * Agent HQ MCP Server — Configuration
  *
  * Reads optional config from ~/.agent-hq/mcp.json.
- * Legacy Atlas config paths are still accepted as a fallback.
  * All values can be overridden via environment variables.
  */
 
@@ -22,7 +21,6 @@ export interface McpConfig {
 function loadFileConfig(): Partial<McpConfig> {
   const configPaths = [
     path.join(os.homedir(), '.agent-hq', 'mcp.json'),
-    path.join(os.homedir(), '.atlas-hq', 'mcp.json'),
   ];
 
   for (const configPath of configPaths) {
@@ -67,8 +65,6 @@ export function loadConfig(): McpConfig {
   const apiUrl =
     process.env.AGENT_HQ_API_URL ??
     process.env.AGENT_HQ_INTERNAL_BASE_URL ??
-    process.env.ATLAS_HQ_API_URL ??
-    process.env.ATLAS_INTERNAL_BASE_URL ??
     file.apiUrl ??
     'http://localhost:3501';
 
@@ -85,7 +81,6 @@ export function loadConfig(): McpConfig {
 
   const apiKey = (
     process.env.AGENT_HQ_MCP_API_KEY ??
-    process.env.ATLAS_HQ_MCP_API_KEY ??
     file.apiKey ??
     ''
   ).trim() || null;

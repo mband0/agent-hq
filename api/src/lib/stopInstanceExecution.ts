@@ -105,7 +105,7 @@ export async function stopInstanceExecution(
   };
 
   const sessionKey = resolveInstanceSessionKey(instance);
-  const stopReason = `Atlas HQ manual stop for instance ${id} (${behavior})`;
+  const stopReason = `Agent HQ manual stop for instance ${id} (${behavior})`;
 
   let abortResult: ReturnType<typeof abortChatRunBySessionKey> | null = null;
   if (sessionKey) {
@@ -152,7 +152,7 @@ export async function stopInstanceExecution(
       id,
       instance.agent_id,
       instance.agent_id,
-      `Stop for instance ${id}: chat.abort timed out — underlying runtime state is uncertain. Atlas HQ proceeding with authoritative stop. Session key: ${sessionKey ?? 'none'}`,
+      `Stop for instance ${id}: chat.abort timed out — underlying runtime state is uncertain. Agent HQ proceeding with authoritative stop. Session key: ${sessionKey ?? 'none'}`,
     );
   } else if (abortResult?.status === 'failed') {
     const failureReason = abortResult.error ?? 'chat.abort failed';
@@ -163,7 +163,7 @@ export async function stopInstanceExecution(
       id,
       instance.agent_id,
       instance.agent_id,
-      `Stop for instance ${id}: remote abort failed (${failureReason}) — underlying runtime state is uncertain. Atlas HQ proceeding with authoritative stop. Session key: ${sessionKey ?? 'none'}`,
+      `Stop for instance ${id}: remote abort failed (${failureReason}) — underlying runtime state is uncertain. Agent HQ proceeding with authoritative stop. Session key: ${sessionKey ?? 'none'}`,
     );
   } else if (!sessionKey && !cronResult.removed) {
     db.prepare(`
@@ -173,15 +173,15 @@ export async function stopInstanceExecution(
       id,
       instance.agent_id,
       instance.agent_id,
-      `Stop for instance ${id}: no live session key and no queued cron job found — underlying runtime state is uncertain. Atlas HQ proceeding with authoritative stop.`,
+      `Stop for instance ${id}: no live session key and no queued cron job found — underlying runtime state is uncertain. Agent HQ proceeding with authoritative stop.`,
     );
   }
 
   const stopResult = applyStopBehavior(db, id, behavior);
   const stopRuntimeMessage = runtimeUncertain
-    ? `Run stopped in Atlas HQ (authoritative). Underlying runtime abort ${abortResult?.status === 'timed_out' ? 'timed out' : 'failed'} — runtime state is uncertain but Atlas HQ has resolved the run.`
+    ? `Run stopped in Agent HQ (authoritative). Underlying runtime abort ${abortResult?.status === 'timed_out' ? 'timed out' : 'failed'} — runtime state is uncertain but Agent HQ has resolved the run.`
     : abortResult?.status === 'already_gone'
-      ? 'Underlying hook session was already gone; Atlas HQ cleaned up the stale run state.'
+      ? 'Underlying hook session was already gone; Agent HQ cleaned up the stale run state.'
       : 'Run stopped successfully.';
 
   db.prepare(`
@@ -212,12 +212,12 @@ export async function stopInstanceExecution(
   const stopOutcome = runtimeUncertain
     ? {
         result: 'stopped_runtime_uncertain' as const,
-        message: `Run stopped in Atlas HQ (authoritative). Underlying runtime abort ${abortResult?.status === 'timed_out' ? 'timed out' : 'failed'} — runtime state is uncertain but Atlas HQ has resolved the run.`,
+        message: `Run stopped in Agent HQ (authoritative). Underlying runtime abort ${abortResult?.status === 'timed_out' ? 'timed out' : 'failed'} — runtime state is uncertain but Agent HQ has resolved the run.`,
       }
     : abortResult?.status === 'already_gone'
       ? {
           result: 'already_gone' as const,
-          message: 'Underlying hook session was already gone; Atlas HQ cleaned up the stale run state.',
+          message: 'Underlying hook session was already gone; Agent HQ cleaned up the stale run state.',
         }
       : {
           result: 'confirmed_stopped' as const,

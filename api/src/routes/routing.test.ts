@@ -21,8 +21,8 @@ function resetDb(): void {
   process.env.AGENT_CONTRACT_ROOT = path.join(tempDir, 'agent-contracts');
   fs.mkdirSync(process.env.AGENT_CONTRACT_ROOT, { recursive: true });
   fs.writeFileSync(path.join(process.env.AGENT_CONTRACT_ROOT, 'generic.md'), 'Sprint type: {{sprintType}}\n');
-  fs.writeFileSync(path.join(process.env.AGENT_CONTRACT_ROOT, 'bugs.md'), '## Atlas HQ bug-fix contract for this dispatched instance\nREQUIRED OUTPUTS FOR BUGS\n');
-  fs.writeFileSync(path.join(process.env.AGENT_CONTRACT_ROOT, 'enhancements.md'), '## Atlas HQ enhancement contract for this dispatched instance\nREQUIRED OUTPUTS FOR ENHANCEMENTS\n');
+  fs.writeFileSync(path.join(process.env.AGENT_CONTRACT_ROOT, 'bugs.md'), '## Agent HQ bug-fix contract for this dispatched instance\nREQUIRED OUTPUTS FOR BUGS\n');
+  fs.writeFileSync(path.join(process.env.AGENT_CONTRACT_ROOT, 'enhancements.md'), '## Agent HQ enhancement contract for this dispatched instance\nREQUIRED OUTPUTS FOR ENHANCEMENTS\n');
 
   const db = getDb();
   db.exec(`
@@ -252,7 +252,7 @@ describe('routing rules API', () => {
       const bugsBody = await bugsResponse.json() as { sprint_type: string; content: string; inherited_from: string | null };
       expect(bugsBody.sprint_type).toBe('bugs');
       expect(bugsBody.inherited_from).toBeNull();
-      expect(bugsBody.content).toContain('## Atlas HQ bug-fix contract for this dispatched instance');
+      expect(bugsBody.content).toContain('## Agent HQ bug-fix contract for this dispatched instance');
       expect(bugsBody.content).toContain('REQUIRED OUTPUTS FOR BUGS');
 
       const sprintSpecificResponse = await fetch(`${baseUrl}/api/v1/routing/agent-contract?sprint_type=enhancements`);

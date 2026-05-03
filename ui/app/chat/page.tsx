@@ -455,7 +455,7 @@ function ChatPageInner() {
     if (!useCanonical || !selectedInstanceId) return;
 
     const instanceId = selectedInstanceId;
-    // Ensure the canonical session exists in Atlas HQ (creates/updates it via adapter)
+    // Ensure the canonical session exists in Agent HQ (creates/updates it via adapter)
     api.ensureSessionForInstance(instanceId)
       .then(session => {
         setCanonicalSession(session);

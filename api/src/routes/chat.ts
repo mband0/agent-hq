@@ -29,7 +29,7 @@ const router = Router();
 
 // ─── Chat attachment upload (task #658) ───────────────────────────────────────
 const CHAT_UPLOADS_BASE = process.env.AGENT_HQ_CHAT_UPLOADS_DIR
-  ?? process.env.ATLAS_HQ_CHAT_UPLOADS_DIR
+  ?? process.env.AGENT_HQ_CHAT_UPLOADS_DIR
   ?? path.join(path.resolve(__dirname, '../../..'), 'uploads', 'chat');
 
 const chatAttachmentStorage = multer.diskStorage({
@@ -370,7 +370,7 @@ async function gatewayRpc(method: string, params: Record<string, unknown>, gatew
           maxProtocol: PROTOCOL_VERSION,
           client: {
             id: 'gateway-client',
-            displayName: 'Atlas HQ Chat Proxy',
+            displayName: 'Agent HQ Chat Proxy',
             version: '1.0.0',
             platform: process.platform,
             mode: 'ui',
@@ -863,7 +863,7 @@ function extractText(message: unknown): string {
 // ─── Structured event extraction ─────────────────────────────────────────────
 //
 // Gateway history messages can carry tool_use / tool_result / thinking blocks
-// in their content array. These need to be mapped to the Atlas HQ
+// in their content array. These need to be mapped to the Agent HQ
 // event_type + event_meta schema so the Chat tab renders them correctly.
 
 interface GatewayContentBlock {
@@ -1222,7 +1222,7 @@ export function setupChatProxy(wss: WebSocketServer) {
               maxProtocol: PROTOCOL_VERSION,
               client: {
                 id: 'gateway-client',
-                displayName: 'Atlas HQ',
+                displayName: 'Agent HQ',
                 version: '1.0.0',
                 platform: process.platform,
                 mode: 'ui',
@@ -1544,7 +1544,7 @@ export function setupChatProxy(wss: WebSocketServer) {
               `SELECT * FROM chat_attachments WHERE id IN (${placeholders})`
             ).all(...attachmentIds) as Array<Record<string, unknown>>;
             for (const a of attachments) {
-              const apiPort = process.env.AGENT_HQ_API_PORT ?? process.env.ATLAS_HQ_API_PORT ?? '3501';
+              const apiPort = process.env.AGENT_HQ_API_PORT ?? '3501';
               const url = `http://localhost:${apiPort}/api/v1/chat/attachments/${a.id as number}/download`;
               const mime = a.mime_type as string ?? '';
               const label = mime.startsWith('image/')

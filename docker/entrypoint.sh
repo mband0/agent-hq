@@ -16,12 +16,6 @@ log()  { printf "[entrypoint] %s\n" "$1"; }
 ok()   { printf "${GREEN}[entrypoint] ✓ %s${RESET}\n" "$1"; }
 fail() { printf "${RED}[entrypoint] ✗ %s${RESET}\n" "$1" >&2; }
 
-# ── Env compatibility aliases ─────────────────────────────────────────────────
-if [ -z "$AGENT_HQ_API_URL" ] && [ -n "$ATLAS_HQ_API_URL" ]; then
-    AGENT_HQ_API_URL="$ATLAS_HQ_API_URL"
-    export AGENT_HQ_API_URL
-fi
-
 # ── Required env var check ────────────────────────────────────────────────────
 MISSING=0
 for VAR in OPENCLAW_MODEL AGENT_ID HOOKS_TOKEN GATEWAY_AUTH_TOKEN ANTHROPIC_API_KEY CONTAINER_PORT AGENT_HQ_API_URL; do
@@ -87,7 +81,7 @@ ok "/workspace is available"
 
 log "Starting OpenClaw agent: ${AGENT_ID}"
 log "Model:          ${OPENCLAW_MODEL}"
-log "Atlas HQ API:   ${AGENT_HQ_API_URL}"
+log "Agent HQ API:   ${AGENT_HQ_API_URL}"
 log "Gateway port:   ${CONTAINER_PORT}"
 
 # ── Hand off to CMD ───────────────────────────────────────────────────────────

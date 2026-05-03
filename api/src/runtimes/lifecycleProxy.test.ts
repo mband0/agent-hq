@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import { getDb } from '../db/client';
 import { initSchema } from '../db/schema';
-import { proxyOutcome, runPostStreamLifecycle } from './lifecycleProxy';
+import { parseLifecycleData, proxyOutcome, runPostStreamLifecycle } from './lifecycleProxy';
 
 jest.mock('../lib/agentHqBaseUrl', () => ({
   getAgentHqBaseUrl: () => 'http://localhost:9',
@@ -45,6 +45,18 @@ describe('lifecycleProxy configured outcome vocabulary', () => {
     (global as typeof globalThis & { fetch: typeof fetch }).fetch = fetchMock as unknown as typeof fetch;
   });
 
+  it('parses the legacy lifecycle tag for backward compatibility', () => {
+    const legacyTag = ['atlas', 'lifecycle'].join('_');
+    const parsed = parseLifecycleData([
+      'Finished implementation.',
+      `\`\`\`${legacyTag}`,
+      JSON.stringify({ outcome: 'ship_it', summary: 'Legacy tag still parses.' }),
+      '```',
+    ].join('\n'));
+
+    expect(parsed).toMatchObject({ outcome: 'ship_it', summary: 'Legacy tag still parses.' });
+  });
+
   it('accepts configured sprint-type outcomes for proxy-managed lifecycle completion', async () => {
     const result = await runPostStreamLifecycle(
       {
@@ -55,7 +67,7 @@ describe('lifecycleProxy configured outcome vocabulary', () => {
       },
       [
         'Finished implementation.',
-        '```atlas_lifecycle',
+        '```agent_hq_lifecycle',
         JSON.stringify({ outcome: 'ship_it', summary: 'Configured outcome accepted.' }),
         '```',
       ].join('\n'),
@@ -78,7 +90,7 @@ describe('lifecycleProxy configured outcome vocabulary', () => {
       },
       [
         'Finished implementation.',
-        '```atlas_lifecycle',
+        '```agent_hq_lifecycle',
         JSON.stringify({ outcome: 'completed_for_review', summary: 'Legacy outcome should not pass here.' }),
         '```',
       ].join('\n'),
