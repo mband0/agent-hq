@@ -1778,13 +1778,13 @@ function ensureSystemPolicies(): void {
     },
     {
       policy_key:        'review_qa_routing',
-      from_status:       'review',
-      to_status:         'review',
-      trigger_event:     'no_live_instance_for_review_task',
+      from_status:       'ready|in_progress|review|ready_to_merge',
+      to_status:         'ready|in_progress|review|ready_to_merge',
+      trigger_event:     'reconciler_tick_without_live_instance',
       classification:    'configurable',
       enabled:           1,
       threshold_seconds: null,
-      description:       'Review tasks without a live instance are automatically re-dispatched to the configured QA agent for the task type within the sprint routing policy. agent_id and review_owner_agent_id are updated if routing changes.',
+      description:       'On reconciler ticks, sprint-routed tasks without a live instance have ownership converged to the current routing rule for routed statuses. Review tasks are re-dispatched to the configured QA agent when capacity is available, and review_owner_agent_id is preserved as the implementation owner when review ownership changes.',
       source_file:       'api/src/scheduler/reconciler.ts (reconcileReviewQaRouting)',
     },
     {
